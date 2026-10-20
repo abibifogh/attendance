@@ -100,6 +100,24 @@ staff account, and a payment moved to another shift or put back. This is kept
 from the day notes were added (`shift_history`, migration 0044); an answer
 changed before then left no trace of what it was.
 
+### To-dos from a difference
+
+Every exception has **＋ To-do** above its notes. An admin or a supervisor
+writes what to do, picks who it is for (an Insight admin or supervisor,
+themselves included) and the day it is due. Whoever it is for is emailed when
+it is made, and each morning after, with the daily summary, until it is done;
+past the due day the email and the Inbox say it is overdue. The card shows
+its open to-dos ("To-do for …, due …").
+
+To-dos are in Shifts › Inbox › **To-do**. An admin sees all of them; a
+supervisor, those for them and those they made. **Done** is for whoever it
+is for, whoever made it, or an admin; **Change** (what, for whom, when) and
+**Remove** are for whoever made it, or an admin. Given to somebody else, they
+are emailed. A to-do is separate from its difference: answering the
+difference does not close the to-do, and Done on the to-do does not answer
+the difference. Making, changing, removing and finishing one each go in the
+difference's history (`shift_task`, migration 0045).
+
 ## What you load, and how often
 
 All three are loaded on the Shifts tab under **Load files**, by an owner. The

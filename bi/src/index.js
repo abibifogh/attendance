@@ -17,6 +17,7 @@ import * as safe from './routes/safe.js';
 import * as safebook from './routes/safebook.js';
 import * as envelopes from './routes/envelopes.js';
 import * as notes from './routes/notes.js';
+import * as tasks from './routes/tasks.js';
 import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
@@ -175,6 +176,12 @@ const ROUTES = [
   ['POST', '/api/shifts/notes', 'shifts', (env, ctx) => notes.addNote(env, ctx.body, ctx.account, { origin: ctx.url.origin })],
   ['POST', '/api/shifts/notes/counts', 'shifts', (env, ctx) => notes.counts(env, ctx.body, ctx.account)],
   ['GET', '/api/shifts/notes/people', 'shifts', (env, ctx) => notes.people(env, ctx.account)],
+  // To-dos made from a difference, for an Insight user; reminded each morning until done.
+  ['GET', '/api/shifts/tasks', 'shifts', (env, ctx) => tasks.list(env, ctx.query, ctx.account)],
+  ['POST', '/api/shifts/tasks', 'shifts', (env, ctx) => tasks.make(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/tasks/for-keys', 'shifts', (env, ctx) => tasks.forKeys(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/tasks/:id/done', 'shifts', (env, ctx) => tasks.done(env, ctx.params.id, ctx.account)],
+  ['POST', '/api/shifts/tasks/:id', 'shifts', (env, ctx) => tasks.change(env, ctx.params.id, ctx.body, ctx.account)],
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
@@ -479,6 +486,8 @@ export default {
       execution.waitUntil(sendDailySummary(env).then((out) => { if (out.error) console.error('Daily summary', out.error); }));
       // Proof asked and not sent: a reminder, once a day, three at most.
       execution.waitUntil(proof.remindDue(env));
+      // To-dos made from a difference: whoever each is for, each morning until done.
+      execution.waitUntil(tasks.remindDue(env));
       // On the 5th, last month's prepaid stays to whoever an admin chose.
       if (new Date(event.scheduledTime || Date.now()).getUTCDate() === 5) {
         execution.waitUntil(prepaid.sendSummary(env, { auto: true }).then((out) => { if (out.failed?.length) console.error('Prepaid summary', out.failed); })
