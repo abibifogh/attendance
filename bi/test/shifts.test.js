@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { freshDb } from './helpers.js';
 import {
-  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements, summarise,
+  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements, summarise, joinShared,
 } from '../src/shifts/assd.js';
 import { parseTerminalCsv, csvRow, unwrap } from '../src/shifts/terminal.js';
 import { parseStatement, classify, sheetTime } from '../src/shifts/bank.js';
@@ -266,6 +266,59 @@ test('shifts are placed by the terminal’s clock and the marker, one slot after
   const placed = placeShifts(shifts, [ev('x', '2026-08-01 08:00:00', 5000), ev('y', '2026-08-01 23:00:00', 7000)]
     .map((e) => ({ ...e, minute: minuteOf(e.at) })));
   assert.deepEqual(placed.map((p) => p.slot), [0, 1, 2].map((s) => slotIndex('2026-08-01', s)));
+});
+
+test('a quick log-in and a hand-over in the night share a shift, placed by who signed in HIVE and the drawer they counted', () => {
+  // The night of the 1st ran on into the 2nd's morning; the morning's person
+  // logged in for a minute in the middle of it; the night of the 2nd changed
+  // hands. Made-up logins. Nights carry the next day's date on their marker.
+  const s = (user, markerDate, notes) => ({ ...shift(user, markerDate, []), closing: notes == null ? null : { notes } });
+  const sessions = [
+    s('NADIA', '2026-08-01', 50000), // the 1st's afternoon
+    s('KWEKU', '2026-08-02', 60000), // the 1st's night…
+    s('ABENA', '2026-08-02', 60000), // …the morning's person, a minute
+    s('KWEKU', '2026-08-02', 64000), // …and on into the morning: hands over at 640
+    s('ABENA', '2026-08-02', 30000), // the 2nd's morning
+    s('YAW', '2026-08-02', 80000), // the 2nd's afternoon
+    s('EFUA', '2026-08-03', 81000), // the 2nd's night, from Yaw's count
+    s('KOJO', '2026-08-03', 81500), // …taken over by Kojo, who closed it
+    s('ABENA', '2026-08-03', null), // the 3rd's morning, still open
+  ];
+  const t = (day, slot) => slotIndex(day, ['morning', 'afternoon', 'night'].indexOf(slot));
+  const signedBy = new Map([
+    [t('2026-08-01', 'afternoon'), ['NADIA', 50000]], [t('2026-08-01', 'night'), ['KWEKU', 64000]],
+    [t('2026-08-02', 'morning'), ['ABENA', 30000]], [t('2026-08-02', 'afternoon'), ['YAW', 80000]],
+    [t('2026-08-02', 'night'), ['KOJO', 81500]],
+  ]);
+  const signed = (session, slot) => {
+    const r = signedBy.get(slot);
+    return r ? (r[0] === session.user ? 3 : 0) + (session.closing?.notes === r[1] ? 1.5 : 0) : 0;
+  };
+  const placed = placeShifts(sessions, [], { signed }).map((p) => p.slot);
+  assert.deepEqual(placed, [
+    t('2026-08-01', 'afternoon'), t('2026-08-01', 'night'), t('2026-08-01', 'night'), t('2026-08-01', 'night'),
+    t('2026-08-02', 'morning'), t('2026-08-02', 'afternoon'), t('2026-08-02', 'night'), t('2026-08-02', 'night'),
+    t('2026-08-03', 'morning'),
+  ]);
+  // Without HIVE, one session to a slot can no longer be had: they still fit,
+  // sharing where they must, and nothing runs days out.
+  const alone = placeShifts(sessions, []).map((p) => p.slot);
+  assert.equal(alone.length, 9);
+  assert.ok(alone.every((x, i) => !i || x >= alone[i - 1]));
+
+  // Made one: the night's entries run together under whoever signed it.
+  const groups = sessions.map((x, i) => ({ user: x.user, startSeq: i * 10, markerDate: x.markerDate, entries: [] }));
+  const joined = joinShared(groups, placeShifts(sessions, [], { signed }), new Map(), (logins, slot) => logins.find((l) => signedBy.get(slot)?.[0] === l) || null);
+  assert.equal(joined.shifts.length, 6);
+  assert.deepEqual(joined.shifts.map((x) => x.user), ['NADIA', 'KWEKU', 'ABENA', 'YAW', 'KOJO', 'ABENA']);
+  assert.deepEqual(joined.shifts[1].sessions.map((x) => x.user), ['KWEKU', 'ABENA', 'KWEKU']);
+});
+
+test('a closing report filed on the wrong shift does not drag a journal that fits on its own', () => {
+  const sessions = [shift('A', '2026-08-01', []), shift('B', '2026-08-01', []), shift('C', '2026-08-02', [])];
+  // B's person filed on the night; ASSD has C there.
+  const signed = (session, slot) => (session.user === 'B' && slot === slotIndex('2026-08-01', 2) ? 3 : 0);
+  assert.deepEqual(placeShifts(sessions, [], { signed }).map((p) => p.slot), [0, 1, 2].map((x) => slotIndex('2026-08-01', x)));
 });
 
 test('the explained differences: split differently, keyed on another shift, corrected', () => {

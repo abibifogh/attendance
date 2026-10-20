@@ -1000,7 +1000,9 @@ export async function renderShifts(root, { range }) {
         h('div.t', avatar(s.user, true),
           h('div', title,
             h('div.m', glyph(s.slot), `${SLOT[s.slot].label} · ${SLOT[s.slot].hours} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}`,
-              s.double ? h('span.sh-chip.none', 'covered two slots') : null))),
+              s.double ? h('span.sh-chip.none', 'covered two slots') : null,
+              s.sessions ? h('span.sh-chip.none', { title: 'ASSD hand-overs inside this shift, in order. Their counts, sales and movements add up as one shift.' },
+                `${s.sessions.length} ASSD sessions: ${s.sessions.map((x) => nameOf(x.user)).join(' → ')}`) : null))),
         h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
         h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›')));
     // Without the amounts, the drawer's story is nothing but blanks: the

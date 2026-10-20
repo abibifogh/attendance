@@ -3,10 +3,10 @@ import { rebuildAssdRevenue } from './revenue.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { addDays, isDay, resolveRange, daysBetween } from '../lib/dates.js';
 import { toMinor } from '../lib/money.js';
-import { parseJournal, journalWindow, mergeEntry, segment, DRAWER } from '../shifts/assd.js';
+import { parseJournal, journalWindow, mergeEntry, segment, joinShared, DRAWER } from '../shifts/assd.js';
 import { parseStatement } from '../shifts/bank.js';
 import { parseTerminalCsv } from '../shifts/terminal.js';
-import { reconcile, settlement, GROUPS, SLOTS, minuteOf, slotAt, slotDay, slotName } from '../shifts/reconcile.js';
+import { reconcile, settlement, placeShifts, sameLogin, slotIndex, GROUPS, SLOTS, minuteOf, slotAt, slotDay, slotName } from '../shifts/reconcile.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 
@@ -761,6 +761,39 @@ export async function filesStatus(env) {
 /**
  * Everything the Shifts screen shows for a window of days.
  */
+/**
+ * Who signed each shift's closing report in HIVE, and the drawer they
+ * counted, as evidence of where an ASSD session sat: `signed(session, slot)`
+ * weighs it, and `pick(logins, slot)` is the login of whoever signed a slot
+ * several sessions share. A login is a person through Settings → Whose
+ * ASSD login is whose, else by name. Nothing when HIVE is not bound.
+ */
+async function signers(env, entries) {
+  const none = { signed: null, pick: null };
+  if (!env.ATT_DB || !entries.length) return none;
+  const days = entries.map((e) => e.date).filter(Boolean).sort();
+  if (!days.length) return none;
+  const [reports, mapped] = await Promise.all([
+    all(env.ATT_DB, 'SELECT day, slot, user_id, name, cash FROM till_report WHERE reopened_at IS NULL AND day BETWEEN ?1 AND ?2',
+      addDays(days[0], -2), addDays(days[days.length - 1], 2)).catch(() => []),
+    all(env.DB, 'SELECT assd_user, hive_user_id FROM till_people WHERE hive_user_id IS NOT NULL').catch(() => []),
+  ]);
+  if (!reports.length) return none;
+  const bySlot = new Map(reports.filter((r) => SLOTS.includes(r.slot)).map((r) => [slotIndex(r.day, SLOTS.indexOf(r.slot)), r]));
+  const owner = new Map(mapped.map((m) => [m.assd_user, Number(m.hive_user_id)]));
+  const isTheirs = (login, r) => (owner.has(login) ? owner.get(login) === Number(r.user_id) : sameLogin(login, r.name));
+  return {
+    // The person on the login signed it (3), and the drawer they counted is
+    // what this session closed on (1.5): the hand-over count.
+    signed: (session, t) => {
+      const r = bySlot.get(t);
+      if (!r) return 0;
+      return (isTheirs(session.user, r) ? 3 : 0) + (Number(r.cash) > 0 && session.closing?.notes === Number(r.cash) ? 1.5 : 0);
+    },
+    pick: (logins, t) => { const r = bySlot.get(t); return r ? logins.find((l) => isTheirs(l, r)) || null : null; },
+  };
+}
+
 export async function shifts(env, query, account) {
   let { from, to } = resolveRange(query, 'UTC', { days: 7 });
   if (daysBetween(from, to).length > MAX_DAYS) from = addDays(to, -(MAX_DAYS - 1));
@@ -812,7 +845,7 @@ export async function shifts(env, query, account) {
   // The journal ends inside its last shift unless a later hand-over exists.
   const open = !after?.seq && lastMarker?.seq === markers[markers.length - 1].seq;
 
-  const { shifts: raw } = segment(entries, corrections);
+  const { shifts: sessions, sessions: parts } = segment(entries, corrections);
   const proposed = new Map(pendingRows.map((r) => [r.seq, { kind: r.kind, expenses: r.expenses, pair: r.pair, note: r.note, by: r.by_name, at: r.at }]));
 
   const events = [
@@ -837,7 +870,13 @@ export async function shifts(env, query, account) {
 
   // A guest who paid more: the pairs somebody said are not one payment.
   const notSame = answers.filter((a) => /^paid-(more|less):/.test(String(a.key)) && a.answer === NOT_SAME && (a.status || 'applied') === 'applied');
-  const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key) });
+  // Where each ASSD session sat. Who signed each shift's closing report in
+  // HIVE is evidence; sessions that share a shift (a quick log-in, a hand-over
+  // in the middle of a night) are made one.
+  const signer = await signers(env, entries);
+  const placed0 = placeShifts(sessions, events.map((e) => ({ ...e, minute: minuteOf(e.at) })), { signed: signer.signed });
+  const { shifts: raw, places } = joinShared(parts, placed0, corrections, signer.pick);
+  const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key), places });
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
 
@@ -1355,6 +1394,8 @@ export async function shifts(env, query, account) {
     byDay.get(s.day)?.push({
       day: s.day, slot: s.slotName, user: s.user, users: s.users, double: s.double, open: s.open,
       startSeq: s.startSeq, endSeq: s.endSeq,
+      // More than one ASSD session on this shift (a quick log-in, a hand-over in the night): each login, in order.
+      sessions: s.sessions || null,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
       laundrySystem: laundryOfShift(s),
       cashLines: s.cashLines || [], laundryLines: s.laundryLines || [],
