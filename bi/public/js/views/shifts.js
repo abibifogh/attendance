@@ -12,7 +12,7 @@ import { proofBox, sendCard } from './proof.js';
 /**
  * Shifts: the front desk's control sheet, done from the source records.
  *
- * Five tabs:
+ * Six tabs:
  * - **Shifts**: the day, week or month, every shift as a coloured tile
  *   (green agrees, amber needs a look, red needs an answer). Tap one for its
  *   story: the closing report from HIVE beside ASSD, the drawer as a
@@ -21,6 +21,8 @@ import { proofBox, sendCard } from './proof.js';
  *   agree, staff answers, POs, advances, unpaid stays, and what waits for an
  *   admin. Kind chips filter it; the one picked opens beside the list.
  * - **People**: each person's shifts, how their drawer came out, and their list.
+ * - **Closing reports**: every report from HIVE and the shift it is on, the
+ *   ones that look misplaced picked out, each movable to another shift.
  * - **Files** and **Settings**. The safe book is under Money › Safe.
  *
  * Every state is shown as a word or an icon as well as a colour.
@@ -91,7 +93,7 @@ const MODES = [
 ];
 const TONE = { good: 'var(--sh-good)', warn: 'var(--sh-warn)', bad: 'var(--sh-bad)', open: 'var(--sh-info)' };
 const SEVERITY_COLOUR = { critical: 'var(--sh-bad)', warning: 'var(--sh-warn)', info: 'var(--sh-info)' };
-const TABS = [['shifts', 'Shifts'], ['inbox', 'Inbox'], ['people', 'People'], ['files', 'Files'], ['settings', 'Settings']];
+const TABS = [['shifts', 'Shifts'], ['inbox', 'Inbox'], ['people', 'People'], ['reports', 'Closing reports'], ['files', 'Files'], ['settings', 'Settings']];
 /** Where a tab of the old screen now lives, for a saved choice from before. */
 const MOVED = {
   day: 'shifts', week: 'shifts', month: 'shifts', shift: 'shifts', closing: 'shifts',
@@ -204,7 +206,7 @@ export async function renderShifts(root, { range }) {
   const allowed = {
     shifts: periods.length > 0 || may('money'),
     inbox: Object.values(can).some(Boolean),
-    people: may('net') || may('answers'), files: may('files'), settings: admin,
+    people: may('net') || may('answers'), reports: may('reports'), files: may('files'), settings: admin,
   };
   const views = TABS.filter(([id]) => allowed[id]);
   let section = store.get('section', 'shifts');
@@ -590,7 +592,7 @@ export async function renderShifts(root, { range }) {
           type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
         }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))) : null,
         h('span.sh-rule', { 'aria-hidden': 'true' }),
-        ((section === 'shifts' && !detail) || section === 'inbox') && choices.length > 1 ? h('div.sh-span', { role: 'group', 'aria-label': 'Day, week, month or dates' },
+        ((section === 'shifts' && !detail) || section === 'inbox' || section === 'reports') && choices.length > 1 ? h('div.sh-span', { role: 'group', 'aria-label': 'Day, week, month or dates' },
           choices.map((m) => h('button', {
             type: 'button', 'aria-pressed': String(mode === m), onclick: () => (section === 'shifts' ? go(m) : setMode(m)),
           }, m[0].toUpperCase() + m.slice(1)))) : null,
@@ -608,6 +610,10 @@ export async function renderShifts(root, { range }) {
     }
     if (section === 'inbox') return inboxView(v);
     if (section === 'files') return filesView(v);
+    if (section === 'reports') {
+      till.reportList(v, { open: openShift }).catch((err) => mount(v, banner('problem', err.message)));
+      return undefined;
+    }
     if (!has) return mount(v, nothingYet());
     if (section === 'people') return peopleView(v);
     if (detail) return shiftView(v);
@@ -971,7 +977,7 @@ export async function renderShifts(root, { range }) {
     const i = shifts.indexOf(s);
     // The closing report from HIVE, read on its own so the drawer shows at once.
     const report = h('div');
-    till.shiftReport(s.day, s.slot, () => load()).then((card) => mount(report, card)).catch(() => {});
+    till.shiftReport(s.day, s.slot, (words) => load(words ? banner('good', words) : null)).then((card) => mount(report, card)).catch(() => {});
     // Checked or not yet: what its people see depends on it.
     const checked = h('div');
     till.shiftCheck(s.day, s.slot, (words) => load(banner('good', words))).then((card) => mount(checked, card)).catch(() => {});

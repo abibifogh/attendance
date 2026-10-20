@@ -1863,3 +1863,31 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 /* Brief: findings somebody put down, folded under the list. */
 details.bf-down > summary { cursor: pointer; list-style: revert; }
 details.bf-down[open] > summary { margin-bottom: .4rem; }
+
+/* Moving a closing report, and the list of every report. */
+.tl-hint { border: 1px solid color-mix(in srgb, var(--sh-warn) 55%, transparent); background: color-mix(in srgb, var(--sh-warn) 10%, var(--surface)); border-radius: 10px; padding: .65rem .8rem; margin: .2rem 0 .8rem; font-size: .9rem; }
+.tl-hint > div { margin-top: .5rem; }
+.tl-moved { border-left: 4px solid var(--sh-good); background: color-mix(in srgb, var(--sh-good) 8%, var(--surface)); border-radius: 8px; padding: .5rem .8rem; margin: .2rem 0 .8rem; font-size: .88rem; }
+.tl-move { display: grid; gap: .6rem; border: 2px solid var(--series-1); border-radius: 12px; padding: .8rem .9rem; background: var(--surface); width: 100%; box-sizing: border-box; }
+.tl-moverow { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; }
+.tl-moverow input, .tl-why input { padding: .4rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.tl-why { display: grid; gap: .25rem; font-size: .85rem; font-weight: 600; }
+.tl-why input { font-weight: 400; }
+.tl-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem; }
+.tl-slot { display: grid; gap: .1rem; text-align: left; border: 1px solid var(--border); border-radius: 10px; padding: .5rem .65rem; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.tl-slot small { color: var(--ink-2); font-size: .78rem; }
+.tl-slot.on { border: 2px solid var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, var(--surface)); }
+.tl-slot:disabled { opacity: .55; cursor: default; }
+.tl-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.tl-chip { border: 1px solid var(--border); border-radius: 999px; padding: .25rem .7rem; font: inherit; font-size: .84rem; background: var(--surface); color: var(--ink); cursor: pointer; }
+.tl-chip.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.tl-list { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.tl-list th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); text-align: left; padding: .5rem; background: var(--surface-2); }
+.tl-list td { padding: .55rem .5rem; border-top: 1px solid var(--border); vertical-align: top; }
+.tl-list td small { display: block; color: var(--ink-2); font-size: .78rem; }
+.tl-list tr.tl-odd td { background: color-mix(in srgb, var(--sh-warn) 8%, var(--surface)); }
+.tl-list tr.tl-none td { background: var(--surface-2); color: var(--ink-2); }
+.tl-list tr.tl-moving td { border-top: 0; padding-top: 0; }
+.tl-maybe { display: grid; gap: .3rem; justify-items: start; margin-bottom: .3rem; }
+.tl-links { white-space: nowrap; }
+.tl-act:has(> .tl-move) { display: flex; }

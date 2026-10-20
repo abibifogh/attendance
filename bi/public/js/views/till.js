@@ -43,6 +43,27 @@ export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', cash
 const dayText = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`);
 const pill = (tone, text) => h(`span.sh-chip.${tone}`, text);
+const HOURS = { morning: '06:00–14:00', afternoon: '14:00–22:00', night: '22:00–06:00' };
+const START = { morning: 6, afternoon: 14, night: 22 };
+const slotWord = (x) => `${SLOT[x.slot]} · ${dayText(x.day)}`;
+const plusDays = (day, n) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+/** "Mon 19 Oct, 22:41" from HIVE's "2026-10-19 22:41:00". */
+const when = (at) => (at ? `${dayText(String(at).slice(0, 10))}, ${String(at).slice(11, 16)}` : '');
+/**
+ * When a report was signed, against the shift it is on: before it began, or
+ * early in it (most likely the shift before, closed late), or long after it.
+ */
+function signedNote(r) {
+  const at = String(r.report?.signedAt || '');
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(at)) return null;
+  const start = Date.parse(`${r.day}T${String(START[r.slot]).padStart(2, '0')}:00:00Z`);
+  const mins = Math.round((Date.parse(`${at.slice(0, 10)}T${at.slice(11, 16)}:00Z`) - start) / 60000);
+  const span = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`);
+  if (mins < 0) return h('small', `${span(-mins)} before this shift began`);
+  if (mins <= 90) return h('small', `${span(mins)} into the ${SLOT[r.slot].toLowerCase()}`);
+  if (mins > 8 * 60 + 120) return h('small', `${span(mins - 8 * 60)} after this shift ended`);
+  return null;
+}
 const yes = (ok, good, bad) => (ok == null ? pill('none', '—') : ok ? pill('ok', `✓ ${good}`) : pill('short', `✗ ${bad}`));
 
 /**
@@ -53,6 +74,8 @@ const yes = (ok, good, bad) => (ok == null ? pill('none', '—') : ok ? pill('ok
 export function tillViews({ who, period, onChange = () => {}, describeKey = (k) => k }) {
   const access = who?.access || {};
   const admin = who?.role === 'admin';
+  // Moving a report: whoever may reopen one.
+  const canMove = admin || (access.reopen || 0) > 1;
   let cache = null;
 
   // Kept for half a minute only: a report sent from HIVE while this screen is
@@ -91,7 +114,10 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       return h('section.card', head,
         r.open ? pill('none', 'Still open') : pill('short', 'No closing report'),
         r.nearby ? h('p', `${r.nearby.name}’s report is filed under ${SLOT[r.nearby.slot]} · ${dayText(r.nearby.day)}. Wrong shift picked?`) : null,
-        r.nearby && access.reopen > 1 ? h('div', act, h('button.btn', { type: 'button', onclick: (e) => move(e, r, after) }, 'Move it to this shift')) : null);
+        r.nearby && canMove ? h('div', act, h('button.btn', {
+          type: 'button',
+          onclick: () => mount(act, moveChooser({ ...r.nearby }, { to: { day: r.day, slot: r.slot }, after, close: () => mount(act) })),
+        }, 'Move it to this shift')) : null);
     }
     const env = rep.toSafe ? rep.envelopes.map((e) => `${e.no}${money_ ? ` · ${money(e.amount)}` : ''}`).join(', ') : 'Nothing';
     const sign = money_ ? Math.sign(c.unexplained ?? 0) : c.unexplainedSign;
@@ -110,12 +136,167 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       ['Opening float', rep.floatOk ? 'Correct' : `Out by ${money_ ? signed(rep.floatDiff) : ''}`, rep.floatOk ? pill('ok', '✓') : pill('over', 'look')],
       ...(rep.checks || []).map((k) => [k.label, k.ok ? 'At the desk' : (k.guest ? `With ${k.guest}` : k.why || 'Not at the desk'), k.ok ? pill('ok', '✓') : pill('short', '✗')]),
     ];
+    const it = { id: rep.id, name: rep.name, signedAt: rep.signedAt, day: r.day, slot: r.slot };
+    const choose = (to = null) => mount(act, moveChooser(it, { to, after, close: () => mount(act, buttons()) }));
+    const buttons = () => [
+      access.reopen > 1 ? h('button.btn', { type: 'button', onclick: (e) => reopen(e, rep, after) }, 'Reopen report') : null,
+      canMove ? h('button.btn', { type: 'button', onclick: () => choose() }, '⇄ Move to another shift') : null,
+    ];
+    mount(act, buttons());
     return h('section.card', head,
+      r.belongs && canMove ? h('div.tl-hint',
+        h('strong', `This report may belong to ${slotWord(r.belongs)}. `),
+        `ASSD has ${r.belongs.assdUser} on that shift and it has no report${r.assdUser ? `; this shift’s ASSD user is ${r.assdUser}` : ''}.`,
+        h('div', h('button.btn.primary', { type: 'button', onclick: () => choose(r.belongs) }, `Move it to ${slotWord(r.belongs)}`))) : null,
+      rep.moved ? h('div.tl-moved',
+        `Moved here from ${slotWord(rep.moved.from)}${rep.moved.by ? ` by ${rep.moved.by}` : ''}${rep.moved.at ? `, ${when(rep.moved.at)}` : ''}.`,
+        rep.moved.reason ? ` “${rep.moved.reason}”` : '',
+        canMove ? [' ', h('button.sh-link', { type: 'button', onclick: () => choose(rep.moved.from) }, 'Move it back')] : null) : null,
       h('div.table-wrap', h('table.tl-vs',
         h('thead', h('tr', h('th', ''), h('th', 'HIVE report'), h('th', 'ASSD'))),
         h('tbody', rows.map(([label, hive, assd]) => h('tr', h('td', label), h('td', hive), h('td', assd)))))),
       rep.note ? h('p.tl-small', `“${rep.note}”`) : null,
-      access.reopen > 1 ? h('div', act, h('button.btn', { type: 'button', onclick: (e) => reopen(e, rep, after) }, 'Reopen report')) : null);
+      access.reopen > 1 || canMove ? h('div', act) : null);
+  }
+
+  // ------------------------------------------------- moving a report --
+
+  /**
+   * Choose where a report goes: a day up to two either side of when it was
+   * signed, one of that day's shifts (one with a report already cannot be
+   * picked), and why, which is kept with it. `rep` is { id, name, signedAt,
+   * day, slot }; `to` a shift to start on.
+   */
+  function moveChooser(rep, { to = null, after = () => {}, close = () => {} } = {}) {
+    const signedDay = String(rep.signedAt || rep.day).slice(0, 10);
+    const dayBox = h('input', { type: 'date', value: to?.day || rep.day, min: plusDays(signedDay, -2), max: plusDays(signedDay, 2), 'aria-label': 'Day' });
+    const slots = h('div.tl-slots');
+    const reason = h('input', { type: 'text', maxlength: 300, placeholder: 'Submitted late, after the shift ended', 'aria-label': 'Why' });
+    const said = h('span.tl-small');
+    const go = h('button.btn.primary', { type: 'button', disabled: true }, 'Choose a shift');
+    const read_ = new Map();
+    let chosen = to?.slot || null;
+    const here = (slot) => dayBox.value === rep.day && slot === rep.slot;
+    const paint = async () => {
+      const day = dayBox.value;
+      if (!read_.has(day)) {
+        mount(slots, h('span.tl-small', 'Reading that day’s shifts…'));
+        try { read_.set(day, await api(`/till/slots?day=${day}`)); } catch (err) { mount(slots, h('span.tl-small.form-error', err.message)); return; }
+      }
+      if (dayBox.value !== day) return;
+      const d = read_.get(day);
+      if (chosen && (here(chosen) || d.slots.find((x) => x.slot === chosen)?.report)) chosen = null;
+      mount(slots, d.slots.map((x) => h(`button.tl-slot${chosen === x.slot ? '.on' : ''}`, {
+        type: 'button', disabled: here(x.slot) || Boolean(x.report), 'aria-pressed': String(chosen === x.slot),
+        onclick: () => { chosen = x.slot; paint(); },
+      },
+      h('b', SLOT[x.slot]),
+      h('small', x.assdUser ? `ASSD: ${x.assdUser}` : 'Nobody in ASSD'),
+      h('small', here(x.slot) ? 'Where it is now' : x.report ? `Has a report (${x.report.name})` : '✓ No report'))));
+      go.disabled = !chosen;
+      go.textContent = chosen ? `Move to ${slotWord({ day, slot: chosen })}` : 'Choose a shift';
+    };
+    dayBox.addEventListener('change', () => { if (dayBox.value) paint(); });
+    go.addEventListener('click', async () => {
+      if (!reason.value.trim()) { said.textContent = 'Say why it is being moved: it is kept with the report.'; reason.focus(); return; }
+      go.disabled = true;
+      said.textContent = 'Moving…';
+      const target = { day: dayBox.value, slot: chosen };
+      try {
+        await api('/till/move', { method: 'POST', body: { reportId: rep.id, day: target.day, slot: target.slot, reason: reason.value } });
+        forget();
+        onChange();
+        await after(`Moved ${rep.name}’s report to ${slotWord(target)}. ${rep.name} has been told.`);
+      } catch (err) { said.textContent = err.message; go.disabled = false; }
+    });
+    paint();
+    return h('div.tl-move',
+      h('b', `Move ${rep.name}’s report (signed ${when(rep.signedAt)}) to`),
+      h('div.tl-moverow', h('label', 'Day ', dayBox), h('span.tl-small', 'Up to two days either side of when it was signed.')),
+      slots,
+      h('label.tl-why', 'Why (kept with the report)', reason),
+      h('div.tl-act', go, h('button.btn', { type: 'button', onclick: close }, 'Cancel'), said),
+      h('p.tl-small', 'Its person is told in HIVE. Both shifts are worked out again; one already checked shows “Changed since checked”.'));
+  }
+
+  /**
+   * Every closing report in the period and the shift it is on, newest first:
+   * who signed it and when, who ASSD has on that shift, the drawer, and
+   * whether it is checked. One that looks misplaced stands out with where it
+   * may belong; a shift with no report says where its person's report went.
+   */
+  async function reportList(v, { open = () => {}, notice = null } = {}) {
+    if (!access.reports && !admin) { mount(v, banner('problem', 'Closing reports have not been shared with you.')); return; }
+    mount(v, h('p.muted', 'Reading the closing reports…'));
+    const d = await read();
+    const money_ = access.money > 0;
+    const rows = (d.reports || []).filter((r) => r.report || (r.inJournal && !r.open));
+    const misplaced = (r) => Boolean(r.report && (r.belongs || r.assdMatches === false));
+    const kinds = [
+      ['all', 'All', () => true],
+      ['misplaced', 'Looks misplaced', misplaced],
+      ['none', 'No report', (r) => !r.report],
+      ['unchecked', 'Not checked', (r) => r.report && !r.check],
+    ];
+    let filter = 'all';
+    const list = h('div');
+    const chips = h('div.tl-chips');
+    const again = (words) => reportList(v, { open, notice: words ? banner('good', words) : null });
+    const paint = () => {
+      const keep = kinds.find(([k]) => k === filter)[2];
+      mount(chips, kinds.map(([k, label, test]) => h(`button.tl-chip${filter === k ? '.on' : ''}`, {
+        type: 'button', 'aria-pressed': String(filter === k), onclick: () => { filter = k; paint(); },
+      }, `${label} ${rows.filter(test).length}`)));
+      const shown = rows.filter(keep);
+      mount(list, shown.length ? h('div.table-wrap', h('table.tl-list',
+        h('thead', h('tr', h('th', 'Put on shift'), h('th', 'Signed by'), h('th', 'Signed'), h('th', 'ASSD on that shift'), h('th', 'Drawer'), h('th', 'Checked'), h('th', ''))),
+        h('tbody', shown.flatMap((r) => line(r))))) : h('p.muted', 'Nothing here for these days.'));
+    };
+    const line = (r) => {
+      const at = h('div.tl-act');
+      const extra = h('tr.tl-moving', { hidden: true }, h('td', { colspan: 7 }, at));
+      const shift = h('td', h('b', slotWord(r)), h('small', HOURS[r.slot]));
+      if (!r.report) {
+        return [h('tr.tl-none', shift, h('td', { colspan: 2 }, h('i', 'No report')), h('td', r.assdUser || '—'), h('td', '—'), h('td', '—'),
+          h('td', r.nearby ? `${r.nearby.name}’s report is on ${slotWord(r.nearby)}` : '', ' ', h('button.sh-link', { type: 'button', onclick: () => open(r.day, r.slot) }, 'Open')))];
+      }
+      const rep = r.report;
+      const it = { id: rep.id, name: rep.name, signedAt: rep.signedAt, day: r.day, slot: r.slot };
+      const choose = (to = null) => {
+        extra.hidden = false;
+        mount(at, moveChooser(it, { to, after: again, close: () => { extra.hidden = true; mount(at); } }));
+      };
+      const c = r.compare || {};
+      const diff = money_ && rep.cash != null && c.assdClosing != null ? rep.cash - c.assdClosing : null;
+      const drawer = !r.inJournal ? pill('none', 'not in the journal yet')
+        : c.countAgrees == null ? pill('none', 'no ASSD count')
+          : c.countAgrees ? pill('ok', '✓ agrees')
+            : pill(Math.abs(diff ?? 1000) < 1000 ? 'over' : 'short', diff == null ? '✗ differs' : `${money(Math.abs(diff))} ${diff > 0 ? 'over' : 'short'}`);
+      const checked = !r.check ? pill('none', 'Not checked') : r.check.changed ? pill('over', '! Changed') : pill('ok', `✓ ${r.check.by}`);
+      const odd = misplaced(r);
+      return [h(`tr${odd ? '.tl-odd' : ''}`,
+        shift,
+        h('td', rep.name),
+        h('td', when(rep.signedAt), signedNote(r), rep.moved ? h('small', `moved here from ${slotWord(rep.moved.from)}${rep.moved.by ? ` by ${rep.moved.by}` : ''}${rep.moved.reason ? `: “${rep.moved.reason}”` : ''}`) : null),
+        h('td', !r.assdUser ? pill('none', 'not in the journal') : r.assdMatches === false ? pill('short', `✗ ${r.assdUser}`) : r.assdMatches ? pill('ok', `✓ ${r.assdUser}`) : r.assdUser),
+        h('td', drawer),
+        h('td', checked),
+        h('td',
+          r.belongs && canMove ? h('div.tl-maybe', h('b', `Looks like ${slotWord(r.belongs)}`),
+            h('button.btn.primary', { type: 'button', onclick: () => choose(r.belongs) }, `Move to ${slotWord(r.belongs)}`)) : null,
+          h('div.tl-links',
+            h('button.sh-link', { type: 'button', onclick: () => open(r.day, r.slot) }, 'Open'),
+            canMove ? [' · ', h('button.sh-link', { type: 'button', onclick: () => choose() }, r.belongs ? 'Somewhere else…' : 'Move…')] : null))),
+      extra];
+    };
+    paint();
+    mount(v, notice, notLinked(d),
+      h('section.card',
+        h('div.sh-cardhead',
+          h('div', h('h2', 'Closing reports'),
+            h('p.sh-sub', 'Every report signed in HIVE, the shift it is on, and whether that looks right. A row stands out when ASSD has somebody else on its shift. Open goes to the shift; Move… puts the report on another one.')),
+          chips),
+        list));
   }
 
   /**
@@ -172,21 +353,6 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   async function checks() {
     const d = await read();
     return new Map((d.reports || []).map((r) => [`${r.day}|${r.slot}`, !r.check ? 'wait' : r.check.changed ? 'changed' : 'ok']));
-  }
-
-  async function move(event, r, after) {
-    const cell = event.target.parentElement;
-    const said = h('span.tl-small');
-    event.target.disabled = true;
-    said.textContent = 'Moving…';
-    cell.append(said);
-    try {
-      await api('/till/move', { method: 'POST', body: { reportId: r.nearby.id, day: r.day, slot: r.slot } });
-      forget();
-      mount(cell, pill('ok', `Moved to ${SLOT[r.slot]} · ${dayText(r.day)}. ${r.nearby.name} has been told.`));
-      onChange();
-      after();
-    } catch (err) { said.textContent = err.message; event.target.disabled = false; }
   }
 
   async function reopen(event, rep, after) {
@@ -546,7 +712,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   }
 
   return {
-    read, forget, notLinked, shiftReport, shiftCheck, checks, issueCard, peopleExtras, settings,
+    read, forget, notLinked, shiftReport, shiftCheck, checks, issueCard, peopleExtras, settings, reportList,
     ...(admin ? { answerApprovalCard, correctionCard } : {}),
   };
 }

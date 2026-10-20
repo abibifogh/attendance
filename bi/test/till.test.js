@@ -598,6 +598,39 @@ test('a report filed on the shift beside the one ASSD has its writer on is point
   // Only an admin, or a supervisor allowed to reopen, may move it.
   await assert.rejects(till.moveReport(env, { reportId: afternoon.nearby.id, day: '2026-08-01', slot: 'afternoon' }, SUPERVISOR), /not been shared|look at this/);
   await assert.rejects(till.moveReport(env, { reportId: afternoon.nearby.id, day: '2026-08-01', slot: 'evening' }, OWNER), /Which shift/);
+  // CHARLIE is nobody's login yet: not known, which is not a mismatch. Once
+  // mapped to Ama, ASSD has somebody else on the night it sits on.
+  assert.equal(night.assdMatches, null);
+  await env.DB.prepare("INSERT INTO till_people (assd_user, hive_user_id) VALUES ('CHARLIE', 7)").run();
+  const again = await till.overview(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  assert.equal(again.reports.find((r) => r.day === '2026-08-01' && r.slot === 'night').assdMatches, false);
+});
+
+test('a report moves to any free shift near when it was signed, with a reason kept', async () => {
+  const { env, hive } = await setUp();
+  const id = hive.raw.prepare('SELECT id FROM till_report WHERE user_id = 8').get().id;
+  const sent = [];
+  const fetchImpl = async (req) => { sent.push(await req.json()); return Response.json({ ok: true, moved: true }); };
+  const move = (body) => till.moveReport(env, { reportId: id, day: '2026-08-01', slot: 'night', reason: 'Signed after 22:00', ...body }, OWNER, { fetchImpl });
+  await assert.rejects(move({ reason: '' }), /Say why/);
+  await assert.rejects(move({ day: '2026-08-04' }), /two days either side/i, 'signed on 1 August: the 4th is too far');
+  await move({ day: '2026-07-30' });
+  await move({});
+  assert.deepEqual(sent.at(-1), { reportId: id, day: '2026-08-01', slot: 'night', by: 'Test Owner', reason: 'Signed after 22:00' });
+
+  // The chooser's view of a day: who ASSD has on each shift and any report there.
+  const day = await till.slotsFor(env, { day: '2026-08-01' }, OWNER);
+  assert.deepEqual(day.slots.map((x) => [x.slot, x.assdUser, x.report?.name || null]),
+    [['morning', 'ALPHA', 'Ama Test'], ['afternoon', 'BRAVO', 'Kofi Test'], ['night', 'CHARLIE', null]]);
+  await assert.rejects(till.slotsFor(env, { day: 'soon' }, OWNER), /Which day/);
+  await assert.rejects(till.slotsFor(env, { day: '2026-08-01' }, SUPERVISOR), /not been shared|look at this/);
+
+  // Once moved in HIVE, the report says where it came from, who moved it and why.
+  hive.raw.exec("UPDATE till_report SET slot = 'night', moved_from = '2026-08-01|afternoon', moved_by = 'Test Owner', moved_at = '2026-08-02 09:14:00', moved_reason = 'Signed after 22:00' WHERE user_id = 8");
+  const view = await till.overview(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  assert.deepEqual(view.reports.find((r) => r.slot === 'night' && r.day === '2026-08-01').report.moved, {
+    from: { day: '2026-08-01', slot: 'afternoon' }, by: 'Test Owner', at: '2026-08-02 09:14:00', reason: 'Signed after 22:00',
+  });
 });
 
 test('a shift card shows the POs from its closing report, not "no PO numbers yet"', async () => {

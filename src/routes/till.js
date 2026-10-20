@@ -1110,15 +1110,22 @@ export async function linkMove(ctx) {
   const slot = String(body.slot || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !SLOTS.includes(slot)) throw badRequest('Which shift?');
   if (day === report.day && slot === report.slot) return json({ ok: true, moved: false });
-  const taken = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
-    .bind(day, slot, report.user_id).first();
-  if (taken) throw badRequest(`${report.name} already has a report for ${labelOf({ day, slot })}.`);
+  // One report to a shift: another one there is reopened first.
+  const taken = await ctx.db.prepare('SELECT id, user_id, name FROM till_report WHERE day = ?1 AND slot = ?2 AND reopened_at IS NULL AND id != ?3')
+    .bind(day, slot, id).first();
+  if (taken) {
+    throw badRequest(Number(taken.user_id) === Number(report.user_id)
+      ? `${report.name} already has a report for ${labelOf({ day, slot })}.`
+      : `${taken.name} has a report on ${labelOf({ day, slot })} already. Reopen it first.`);
+  }
   const by = str(body.by, 'By', { max: 120 }) || 'Insight';
-  await ctx.db.prepare('UPDATE till_report SET day = ?2, slot = ?3 WHERE id = ?1').bind(id, day, slot).run();
+  const reason = str(body.reason, 'Why', { max: 300 });
+  await ctx.db.prepare(`UPDATE till_report SET day = ?2, slot = ?3, moved_from = ?4, moved_by = ?5, moved_at = datetime('now'), moved_reason = ?6
+      WHERE id = ?1`).bind(id, day, slot, `${report.day}|${report.slot}`, by, reason || null).run();
   await ctx.db.prepare('UPDATE till_po SET day = ?2, slot = ?3 WHERE report_id = ?1').bind(id, day, slot).run();
   await createNotice(ctx.db, {
     kind: 'till.reopened', level: 'info', title: `Your closing report was moved to ${labelOf({ day, slot })}`,
-    body: `${by} moved it from ${labelOf(report)}, the shift ASSD has you on. Nothing else in it changed.`,
+    body: `${by} moved it from ${labelOf(report)}${reason ? `: “${reason}”` : ''}. Nothing else in it changed.`,
     link: '#/att-my-till', userId: report.user_id, push: false, email: true, text: false,
     mail: safeMail(() => {
       const shift = (s) => [SLOT_LABEL[s.slot] ? `${SLOT_LABEL[s.slot]} shift` : null, sayShortDate(s.day)].filter(Boolean).join(', ');
@@ -1126,8 +1133,8 @@ export async function linkMove(ctx) {
         tone: 'info', status: 'Moved', eyebrow: 'Till',
         headline: 'Your closing report was moved to another shift',
         sub: [SLOT_LABEL[slot] ? `${SLOT_LABEL[slot]} shift` : null, sayDate(day)].filter(Boolean).join(' · '),
-        facts: [['Was on', shift(report)], ['Now on', shift({ day, slot })], ['Moved by', by]],
-        note: 'It now sits on the shift ASSD has you on. Nothing else in it changed.',
+        facts: [['Was on', shift(report)], ['Now on', shift({ day, slot })], ['Moved by', by], ...(reason ? [['Why', reason]] : [])],
+        note: 'Nothing else in it changed, and there is nothing for you to do.',
         button: 'See My till',
         subject: `Your closing report was moved to ${slotWord(slot) ? `the ${slotWord(slot)} shift` : 'another shift'} on ${sayShortDate(day)}`,
         preheader: `${by} moved it from the ${shift(report)}. Nothing else changed.`,

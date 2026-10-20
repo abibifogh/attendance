@@ -171,10 +171,25 @@ A report is matched to its shift by day and shift. Somebody who closes after
 eleven at night is offered the night by the clock, so an afternoon closed late
 can land on the night row. Where ASSD has somebody on a shift with no report
 and that person's report is on the shift just before or after (one ASSD has
-somebody else on, or nobody), the shift's closing report says so, and an
-admin (or a supervisor allowed to reopen) can press **Move it to this shift**:
-the report and its POs move, and the person is told. A report cannot be moved
-onto a shift its writer already has a report for.
+somebody else on, or nobody), both shifts say so: the empty one offers **Move
+it to this shift**, the one it landed on **Move it to …**.
+
+Any signed report can also be moved by hand: **⇄ Move to another shift** on
+its card, or **Move…** on Shifts → **Closing reports**. Choose a day (up to
+two days either side of when it was signed), one of that day's shifts (each
+says who ASSD has on it; one that already has a report cannot be chosen,
+reopen that one first), and say why. The report and its POs move, the reason
+is kept on the report ("Moved here from … by …, when, why", with **Move it
+back**), and the person is told in HIVE. Admins, and supervisors allowed to
+reopen a report, can move one.
+
+**Closing reports** (a tab of Shifts) lists every report in the period,
+newest first: the shift it is on, who signed it and when (with "36 min into
+the night" when it was signed early in its shift or before it), who ASSD has
+on that shift (✗ when it is somebody else), the drawer, and whether the shift
+is checked. A report that looks misplaced is shaded, with where it may belong
+and a button to move it there; a shift with no report says where its person's
+report went. Filters: All, Looks misplaced, No report, Not checked.
 
 The list is read again whenever the tab is opened (it is kept for half a
 minute at most), so a report sent from HIVE while Insight is open shows without

@@ -203,6 +203,7 @@ const ROUTES = [
   ['POST', '/api/till/resolve', 'shifts', (env, ctx) => till.resolve(env, ctx.body, ctx.account)],
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
   ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],
+  ['GET', '/api/till/slots', 'shifts', (env, ctx) => till.slotsFor(env, ctx.query, ctx.account)],
   ['POST', '/api/till/approve', 'shifts', (env, ctx) => till.approve(env, ctx.body, ctx.account)],
   // A difference put on staff accounts, and taken back off.
   ['GET', '/api/till/staff', 'shifts', (env, ctx) => till.staffList(env, ctx.account)],
