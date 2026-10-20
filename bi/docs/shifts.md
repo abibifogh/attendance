@@ -117,7 +117,10 @@ Everything typed is signed with the name of whoever typed it.
 
 - **Where shifts start and end.** ASSD's *Beginn of Day Processing* marker is
   the hand-over. Everything between two markers is one shift, held by the user
-  on the marker. Two markers in a row by the same person are one shift.
+  on the marker. Two markers in a row by the same person are one shift when
+  nothing was closed between them (begun, interrupted, begun again); somebody
+  who closed their shift (End cash deficit/surplus) and began again worked a
+  double, two shifts.
 - **Which slot.** Shifts run 06–14, 14–22 and 22–06, and a night belongs to the
   day it starts. ASSD has no clock, so each shift is placed by the terminal's
   clock for card payments that identify it, and by the marker's date. A night's
@@ -130,8 +133,11 @@ Everything typed is signed with the name of whoever typed it.
   ASSD login is whose, or by name) and the drawer they counted (the session
   that closed on that count). Sessions on the same shift are made one: its
   counts, sales and movements add up across them, it is named after whoever
-  signed it, and its page says "N ASSD sessions: …" in order. A report filed
-  on the wrong shift never moves a journal that fits on its own.
+  signed it, and its page says "N ASSD sessions: …" in order. The reports'
+  answer is only taken for the sessions that move together with the place
+  that does not fit; every other session stays where the journal alone puts
+  it, so a report filed on the wrong shift never moves a journal that fits on
+  its own.
 - **How it was paid.** Every payment line, by ASSD's own method: cash, card
   and MoMo (staff record MoMo as card), prepaid by bank transfer, prepaid by
   card online. Only cash goes into the drawer. Laundry paid in cash is part of
