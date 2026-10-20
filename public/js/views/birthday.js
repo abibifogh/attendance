@@ -152,12 +152,7 @@ export function openCard(person, state, reload) {
         title: `Tell ${firstName(person)} and the rest`,
         submitLabel: 'Send it',
         body: h('div',
-          h('p.muted', { style: { fontSize: '.85rem' } },
-            person.hasLogin
-              ? `${firstName(person)} gets this on their phone, and everybody else is told it `
-                + 'is their birthday.'
-              : `${firstName(person)} has no login yet, so this only tells everybody else. `
-                + 'The card is still yours to share.'),
+          h('p.muted', { style: { fontSize: '.85rem' } }, reachOf(person)),
           field('Anything to add', h('input', {
             type: 'text', name: 'message', maxlength: 300, value: line.value,
           })),
@@ -169,17 +164,29 @@ export function openCard(person, state, reload) {
           staffId: person.id,
           message: form.get('message') || null,
           everybody: form.get('everybody') === 'on',
+          // The picture itself, so it reaches them as a card.
+          image: canvas.toDataURL('image/png'),
         }),
       });
       if (!done) return;
-      toast(done.told ? `Sent. ${firstName(person)} has it.` : 'Sent to everybody.', 'good');
+      const ways = [
+        done.emailed ? `emailed to ${done.emailed}` : null,
+        done.texted ? 'texted' : null,
+        done.told ? 'in HIVE' : null,
+      ].filter(Boolean);
+      toast(ways.length
+        ? `Sent. ${firstName(person)} has it: ${ways.join(', ')}.`
+        : (done.everybody ? 'Everybody was told. Share the card with them yourself.' : 'Nothing could reach them. Share the card yourself.'),
+      ways.length ? 'good' : 'warn');
       await reload();
     },
   }, person.cardSent ? 'Already sent today' : 'Send it through the app');
 
+  const when = whenNote(person, state.today);
   showSheet({
     title: `Happy birthday, ${firstName(person)}`,
     body: h('div',
+      when ? h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } }, when) : null,
       h('div.bd-preview', canvas),
       field('What it says', line),
       h('div.btn-row', { style: { marginTop: '.8rem' } }, share, send),
@@ -188,6 +195,35 @@ export function openCard(person, state, reload) {
         + 'Nobody’s age is on it.'),
     ),
   });
+}
+
+/** Where the card will reach them, said before it is sent. */
+function reachOf(person) {
+  const first = firstName(person);
+  const ways = [];
+  if (person.email) ways.push(`emailed to ${person.email}`);
+  else if (person.phone && !person.hasLogin) ways.push(`texted to ${person.phone} (a text cannot carry the picture)`);
+  if (person.hasLogin) ways.push('shown in HIVE on their phone');
+  if (person.email === undefined) {
+    return person.hasLogin
+      ? `${first} gets this in HIVE, and the card by email if their address is on file. Everybody else is told it is their birthday.`
+      : `${first} has no login, so the card goes by email if their address is on file. Everybody else is told it is their birthday.`;
+  }
+  return ways.length
+    ? `${first}'s card is ${ways.join(' and ')}.`
+    : `${first} has no login, email or mobile number on file, so only everybody else can be told. The card is still yours to share.`;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+  'September', 'October', 'November', 'December'];
+
+/** Said when the card is not being made on the day itself. */
+function whenNote(person, today) {
+  if (person.birthday === undefined) return null;
+  if (!person.birthday) return 'There is no date of birth on their record. You can still send a card.';
+  const [m, d] = person.birthday.split('-').map(Number);
+  if (today && today.slice(5) === person.birthday) return null;
+  return `Their birthday is ${d} ${MONTHS[m - 1]}. The card can go now anyway.`;
 }
 
 /**

@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   ageOn, birthdaysOn, daysUntil, greeting, monthDay, prompt, upcoming,
 } from '../src/lib/birthdays.js';
-import { birthdays, sendBirthdayCard, wishThem } from '../src/routes/birthdays.js';
+import { birthdayAdmin, birthdays, sendBirthdayCard, wishThem } from '../src/routes/birthdays.js';
 
 /**
  * Birthdays.
@@ -200,4 +200,75 @@ test('the card can be sent to them alone', async () => {
   await sendBirthdayCard(ctx(db, { staffId: 1, everybody: false }));
   assert.equal(raw.prepare("SELECT count(*) AS n FROM app_notices WHERE kind = 'birthday.today'").get().n, 0);
   assert.equal(raw.prepare("SELECT count(*) AS n FROM app_notices WHERE kind = 'birthday.wish'").get().n, 1);
+});
+
+// ------------------------------------------------------ cards by hand --
+
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+function withMail(raw) {
+  raw.exec("INSERT INTO settings (key, value) VALUES ('email_from', 'hive@example.com') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  raw.exec("INSERT INTO settings (key, value) VALUES ('sms_enabled', '1') ON CONFLICT(key) DO UPDATE SET value = '1'");
+  raw.exec("INSERT INTO settings (key, value) VALUES ('sms_sender', 'SomewhrNice') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  const sent = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    sent.push({ url: String(url), body: JSON.parse(init.body) });
+    return new Response('{"id":"x","status":"success","code":"ok","data":[{"recipient":"233240000001","id":"m"}]}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  return { sent, restore: () => { globalThis.fetch = real; } };
+}
+const mailCtx = (db, body) => ({ ...ctx(db, body), env: { RESEND_API_KEY: 'k', SMS_API_KEY: 's' } });
+
+test('a card sent by hand reaches them as the picture, by email, on any day', async () => {
+  const { db, raw, person } = setup();
+  person(1, 'Ama Serwaa', '1990-03-14', { login: true });
+  raw.prepare("UPDATE hr_profile SET personal_email = 'ama@example.com' WHERE staff_id = 1").run();
+  const { sent, restore } = withMail(raw);
+  try {
+    const out = await (await sendBirthdayCard(mailCtx(db, { staffId: 1, image: PNG, everybody: false }))).json();
+    assert.equal(out.emailed, 'ama@example.com');
+    const mail = sent.find((m) => m.url.includes('resend') && m.body.to?.[0] === 'ama@example.com');
+    assert.ok(mail, 'emailed');
+    assert.match(mail.body.attachments[0].filename, /^happy-birthday-ama\.png$/);
+    assert.ok(mail.body.attachments[0].content.startsWith('iVBOR'), 'the picture itself');
+    assert.match(mail.body.html, /Your card is attached/);
+    const wish = raw.prepare("SELECT * FROM app_notices WHERE kind = 'birthday.wish'").get();
+    assert.ok(wish, 'and it is in HIVE too');
+    assert.equal(sent.filter((m) => m.url.includes('resend')).length, 1, 'one email, not two');
+  } finally { restore(); }
+});
+
+test('somebody with only a phone number is texted the wish', async () => {
+  const { db, raw, person } = setup();
+  person(1, 'Kofi Mensah', null);
+  raw.prepare("UPDATE hr_profile SET personal_phone = '024 000 0001' WHERE staff_id = 1").run();
+  const { sent, restore } = withMail(raw);
+  try {
+    const out = await (await sendBirthdayCard(mailCtx(db, { staffId: 1, image: PNG, everybody: false }))).json();
+    assert.equal(out.texted, '024 000 0001');
+    assert.match(JSON.stringify(sent.at(-1).body), /Happy birthday/i);
+  } finally { restore(); }
+});
+
+test('a card that is not a picture is refused', async () => {
+  const { db, person } = setup();
+  person(1, 'Ama Serwaa', '1990-03-14', { login: true });
+  await assert.rejects(sendBirthdayCard(ctx(db, { staffId: 1, image: 'data:text/html;base64,PHA+' })), /did not come through/);
+});
+
+test('the settings screen lists everybody, how a card would reach them, and the cards sent', async () => {
+  const { db, raw, person } = setup();
+  person(1, 'Ama Serwaa', '1990-03-14', { login: true });
+  person(2, 'Kofi Mensah', null);
+  raw.prepare("UPDATE hr_profile SET personal_email = 'ama@example.com' WHERE staff_id = 1").run();
+  await sendBirthdayCard(ctx(db, { staffId: 1, everybody: false }));
+  const out = await (await birthdayAdmin(ctx(db))).json();
+  const ama = out.people.find((p) => p.id === 1);
+  assert.equal(ama.email, 'ama@example.com');
+  assert.equal(ama.birthday, '03-14');
+  assert.equal(ama.cardSent, true);
+  assert.equal(out.people.find((p) => p.id === 2).birthday, null, 'somebody with no date can still have a card');
+  assert.equal(out.cards[0].to, 'Ama Serwaa');
+  assert.match(out.cards[0].body, /in HIVE/);
 });

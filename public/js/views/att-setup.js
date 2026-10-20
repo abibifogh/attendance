@@ -4,6 +4,7 @@ import {
   confirmAction, fmtDay, fmtNum, h, mount, toast, todayISO, watchForm,
 } from '../util.js';
 import { bulkUpload, card, emptyState, table } from './components.js';
+import { openCard } from './birthday.js';
 import {
   byPosition, field, formDialog, fullDayIsOwn, shiftColour, shiftColourPicker, shiftMinutes,
 } from './att-shared.js';
@@ -3368,7 +3369,43 @@ async function birthdaysTab(reload) {
     ),
   );
 
+  // A card for anybody, on any day: an early one before somebody goes on
+  // leave, a late one after a day off, or one for somebody with no date on
+  // file at all.
+  const cardState = { wording: { line: s.line }, property: data.property, today: data.today };
+  const makeCard = (person) => openCard(person, cardState, reload);
+  const picker = h('select', { 'aria-label': 'Who the card is for' },
+    h('option', { value: '' }, 'Choose somebody…'),
+    (data.people ?? []).map((p) => h('option', { value: String(p.id) },
+      `${p.preferred || p.name}${p.department ? ` · ${p.department}` : ''}${p.cardSent ? ' · card sent today' : ''}`)));
+  const byId = new Map((data.people ?? []).map((p) => [String(p.id), p]));
+
   return h('div',
+    card('Make a birthday card', { note: 'For anybody, any day', wide: true },
+      h('p.muted', 'Draw a card for somebody, then share it or send it. Sending emails them the card, '
+        + 'texts them where there is only a phone number, shows it in HIVE if they have a login, '
+        + 'and tells everybody else if you want.'),
+      h('div.btn-row',
+        picker,
+        h('button.btn.btn-primary', {
+          type: 'button',
+          onclick: () => {
+            const person = byId.get(picker.value);
+            if (!person) { toast('Choose who the card is for.', 'bad'); return; }
+            makeCard(person);
+          },
+        }, 'Make the card')),
+      data.cards?.length
+        ? h('details', { style: { marginTop: '.8rem' } },
+          h('summary', `Cards sent (${data.cards.length})`),
+          table([
+            { key: 'at', label: 'When', format: (v) => fmtDay(String(v).slice(0, 10)) },
+            { key: 'to', label: 'To' },
+            { key: 'body', label: 'How' },
+            { key: 'by', label: 'Sent by' },
+          ], data.cards))
+        : null),
+
     form,
 
     // The chase list, and the reason this screen exists at all beyond the
@@ -3406,7 +3443,14 @@ async function birthdaysTab(reload) {
             ? h('ul', month.people.map((p) => h('li',
               { class: p.isToday ? 'is-today' : '' },
               h('span.bd-year-day', String(p.day).padStart(2, '0')),
-              h('a', { href: `#/att-staff?id=${p.id}` }, p.preferred || p.name))))
+              h('a', { href: `#/att-staff?id=${p.id}` }, p.preferred || p.name),
+              byId.get(String(p.id))
+                ? h('button.btn-sm.btn-ghost.bd-year-card', {
+                  type: 'button',
+                  'aria-label': `Make a card for ${p.preferred || p.name}`,
+                  onclick: () => makeCard(byId.get(String(p.id))),
+                }, 'Card')
+                : null)))
             : h('p.muted', 'Nobody'))))
         : emptyState('No dates on file yet',
           'Every birthday in here comes off a date of birth on somebody’s record.')),

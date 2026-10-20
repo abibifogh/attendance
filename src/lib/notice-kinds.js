@@ -477,6 +477,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'birthday.card',
+    group: 'people',
+    label: 'A birthday card, to the person',
+    who: 'The member of staff whose birthday it is',
+    when: 'Somebody sends them a card',
+    ways: ['email', 'text'],
+  },
+  {
     key: 'recruitment.interview',
     group: 'people',
     label: 'Interview details, to the candidate',

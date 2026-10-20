@@ -3,6 +3,8 @@ import { createNotice } from '../lib/notices.js';
 import { WORDING, ageOn, birthdaysOn, greeting, monthDay, prompt, upcoming } from '../lib/birthdays.js';
 import { todayIn } from '../util/dates.js';
 import { firstName } from '../lib/email-design.js';
+import { emailPersonally, isEmail } from '../lib/notify.js';
+import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 
 /**
  * Whose birthday it is, who has been told, and the card.
@@ -124,12 +126,19 @@ export async function sendBirthdayCard(ctx) {
   const staffId = int(body.staffId, 'Who', { required: true, min: 1 });
   const message = str(body.message, 'Message', { max: 300 });
   const tellEverybody = body.everybody !== false;
+  // The card itself, drawn on the sender's screen, so it reaches the person
+  // as the picture rather than as a sentence about one.
+  const image = typeof body.image === 'string' ? body.image : '';
+  if (image && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 4_000_000)) {
+    throw badRequest('The card did not come through. Try again.');
+  }
 
   const set = await wording(ctx.db);
   const today = todayIn(set.timezone);
 
   const person = await ctx.db.prepare(
-    `SELECT s.id, s.name, p.preferred_name, p.date_of_birth, u.id AS user_id
+    `SELECT s.id, s.name, p.preferred_name, p.date_of_birth, p.personal_email, p.personal_phone,
+            u.id AS user_id, u.email AS login_email
        FROM att_staff s
        LEFT JOIN hr_profile p ON p.staff_id = s.id
        LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
@@ -148,6 +157,47 @@ export async function sendBirthdayCard(ctx) {
   const wish = greeting(person.preferred_name || person.name,
     { property, title: set.title, line: set.line });
 
+  // Where the picture can go: their own email first, a text where there is
+  // only a phone, and HIVE's bell for anybody with a login.
+  const address = [person.login_email, person.personal_email].map((e) => String(e ?? '').trim()).find((e) => isEmail(e)) || null;
+  const phone = firstUsableNumber(person.personal_phone);
+  const first = String(person.preferred_name || person.name).split(/\s+/)[0];
+  let emailed = false;
+  let texted = false;
+  if (image && address && body.email !== false) {
+    const out = await emailPersonally(ctx.db, ctx.env, {
+      kind: 'birthday.card',
+      level: 'good',
+      title: wish.title,
+      body: message || wish.line,
+      to: address,
+      wanted: true,
+      attachments: [{ filename: `happy-birthday-${first.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'card'}.png`, content: image.split(',')[1] }],
+      mail: {
+        status: 'Happy birthday',
+        tone: 'good',
+        eyebrow: 'From all of us',
+        headline: wish.title,
+        intro: wish.line,
+        quote: message
+          ? { by: `${firstName(ctx.session?.user?.name) || 'Somebody'} added`, text: message }
+          : null,
+        after: 'Your card is attached. Save it, or share it wherever you like.',
+        why: 'You get this because it is your birthday.',
+        subject: wish.title,
+        preheader: property ? `A card from all of us at ${property}.` : 'A card from all of us.',
+        settingsLink: false,
+      },
+    }).catch(() => ({ sent: 0 }));
+    emailed = Number(out?.sent ?? 0) > 0;
+  }
+  if (!emailed && !person.user_id && phone && body.text !== false) {
+    const words = `${wish.title}! ${message || wish.line}`.replace(/\s+/g, ' ').slice(0, 300);
+    const out = await sendTexts(ctx.db, ctx.env, { kind: 'birthday.card', messages: [{ to: phone, text: words }] })
+      .catch(() => ({ sent: 0 }));
+    texted = Number(out?.sent ?? 0) > 0;
+  }
+
   // To them, if they have a way of being reached.
   if (person.user_id) {
     await createNotice(ctx.db, {
@@ -160,7 +210,8 @@ export async function sendBirthdayCard(ctx) {
       actor: property || 'HIVE',
       userId: person.user_id,
       push: set.push,
-      email: true,
+      // Not a second email where the card has just been emailed.
+      email: !emailed,
       mail: {
         status: 'Happy birthday',
         tone: 'good',
@@ -215,13 +266,18 @@ export async function sendBirthdayCard(ctx) {
     'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?1, ?2, ?3, ?4)',
   ).bind(
     actorOf(ctx), 'birthday.card', String(staffId),
-    JSON.stringify({ day: today, everybody: tellEverybody, told: Boolean(person.user_id) }),
+    JSON.stringify({
+      day: today, everybody: tellEverybody, told: Boolean(person.user_id), emailed, texted,
+      name: person.name, message: message || null,
+    }),
   ).run().catch(() => {});
 
   return json({
     ok: true,
     name: person.name,
     told: Boolean(person.user_id),
+    emailed: emailed ? address : null,
+    texted: texted ? person.personal_phone : null,
     everybody: tellEverybody,
   });
 }
@@ -375,9 +431,50 @@ export async function birthdayAdmin(ctx) {
   }
   for (const month of months) month.people.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name));
 
+  // Everybody on the books, for making a card for anyone: who has a date,
+  // and how a card would reach them.
+  const everyone = (await ctx.db.prepare(
+    `SELECT s.id, s.name, s.department, p.preferred_name, p.date_of_birth, p.personal_email,
+            p.personal_phone, u.id AS user_id, u.email AS login_email
+       FROM att_staff s
+       LEFT JOIN hr_profile p ON p.staff_id = s.id
+       LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+      WHERE s.active = 1
+      ORDER BY s.name`,
+  ).all().catch(() => ({ results: [] }))).results ?? [];
+  const sentToday = new Set(((await ctx.db.prepare(
+    "SELECT staff_id FROM att_nudge WHERE day = ? AND kind = 'birthday_card'",
+  ).bind(today).all().catch(() => ({ results: [] }))).results ?? []).map((r) => Number(r.staff_id)));
+  const cards = ((await ctx.db.prepare(
+    "SELECT at, actor, entity, detail FROM audit_log WHERE action = 'birthday.card' ORDER BY id DESC LIMIT 30",
+  ).all().catch(() => ({ results: [] }))).results ?? []).map((row) => {
+    let d = {};
+    try { d = JSON.parse(row.detail || '{}'); } catch { d = {}; }
+    return {
+      at: row.at,
+      to: d.name || `Staff ${row.entity}`,
+      title: 'A card',
+      body: [d.emailed ? 'by email' : null, d.texted ? 'by text' : null, d.told ? 'in HIVE' : null,
+        d.everybody ? 'and everybody told' : null].filter(Boolean).join(', ') || 'shared by hand',
+      by: String(row.actor ?? '').replace(/\s*\([^)]*\)$/, ''),
+    };
+  });
+
   return json({
     today,
     property: set.property,
+    people: everyone.map((p) => ({
+      id: p.id,
+      name: p.name,
+      preferred: p.preferred_name || null,
+      department: p.department || null,
+      birthday: monthDay(p.date_of_birth),
+      hasLogin: Boolean(p.user_id),
+      email: [p.login_email, p.personal_email].map((e) => String(e ?? '').trim()).find((e) => isEmail(e)) || null,
+      phone: firstUsableNumber(p.personal_phone) ? p.personal_phone : null,
+      cardSent: sentToday.has(Number(p.id)),
+    })),
+    cards,
     settings: {
       wish: set.wish,
       title: set.title,
