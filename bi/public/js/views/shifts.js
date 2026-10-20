@@ -2088,14 +2088,20 @@ export async function renderShifts(root, { range }) {
     const open = all.filter((x) => !settled(x));
     const done = all.filter(settled);
     const seen = seenTwice(s);
-    return [
+    // Each with its notes and history underneath.
+    const withNotes = (x) => { const c = exceptionCard(x); c.append(notesBox(x)); return c; };
+    const blocks = [
       open.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
-        h('div.sh-exgrid', seen.map(seenTwiceCard), open.map(exceptionCard))) : null,
+        h('div.sh-exgrid', seen.map(seenTwiceCard), open.map(withNotes))) : null,
       done.length ? h('section.card.sh-settled',
         h('div.sh-cardhead', h('div', h('h2', `✓ Matched and explained · ${done.length}`),
           h('p.sh-sub', 'Differences already answered, matched or explained by the rules. Nothing to do; Undo is still there.'))),
-        h('div.sh-exgrid', done.map(exceptionCard))) : null,
+        h('div.sh-exgrid', done.map(withNotes))) : null,
+    ];
+    for (const b of blocks) if (b) fillNoteCounts(b);
+    return [
+      ...blocks,
       // Ticked here, or on another shift or day: reconcile them from here too.
       pickedBar(),
     ];
@@ -2111,7 +2117,7 @@ export async function renderShifts(root, { range }) {
     const box = h('div.sh-payhome');
     const back = async () => {
       try {
-        await api('/shifts/payment-home', { method: 'POST', body: { eventId: x.event.id, back: true } });
+        await api('/shifts/payment-home', { method: 'POST', body: { eventId: x.event.id, back: true, key: x.key } });
         await load(banner('good', 'Put back on the shift its time falls in.'));
       } catch (err) { alert(err.message); }
     };
@@ -2130,7 +2136,7 @@ export async function renderShifts(root, { range }) {
         if (!why.value.trim()) { said.textContent = 'Say why it belongs to that shift.'; why.focus(); return; }
         said.textContent = 'Moving…';
         try {
-          await api('/shifts/payment-home', { method: 'POST', body: { eventId: x.event.id, day: to.day, slot: to.slot, why: why.value, fromDay: x.day, fromSlot: x.slot } });
+          await api('/shifts/payment-home', { method: 'POST', body: { eventId: x.event.id, key: x.key, day: to.day, slot: to.slot, why: why.value, fromDay: x.day, fromSlot: x.slot } });
           await load(banner('good', `Moved to the ${SLOT[to.slot].label.toLowerCase()} of ${dayText(to.day)}. Its person answers it now.`));
         } catch (err) { said.textContent = err.message; }
       };
@@ -2146,6 +2152,74 @@ export async function renderShifts(root, { range }) {
     const link = () => h('button.sh-link', { type: 'button', onclick: open }, 'Wrong shift? Move it');
     mount(box, link());
     return box;
+  }
+
+  /**
+   * Notes and history on a difference: what happened to it, with who and
+   * when, and notes by admins and supervisors, tagging whoever should read
+   * them (they are emailed). Read when opened; the count is filled in for the
+   * cards on screen at once.
+   */
+  const notesOpen = new Set();
+  let notePeople = null;
+  function notesBox(x) {
+    const toggle = h('button.sh-link.sh-notes-tog', { type: 'button', dataset: { notesKey: x.key } }, 'Notes and history');
+    const body = h('div.sh-notes');
+    const draw = async () => {
+      mount(body, h('p.small.muted', 'Reading…'));
+      let d;
+      try { d = await api(`/shifts/notes?key=${encodeURIComponent(x.key)}`); } catch (err) { mount(body, h('p.small', err.message)); return; }
+      if (!notePeople) notePeople = (await api('/shifts/notes/people').catch(() => ({ people: [] }))).people;
+      toggle.textContent = `▾ Notes and history${d.items.length ? ` · ${d.items.length}` : ''}`;
+      const text = h('textarea', { rows: 2, maxlength: 1000, placeholder: 'Add a note (seen by admins and supervisors)' });
+      const tagged = new Set();
+      const tags = h('div.sh-tags', h('span.small.muted', 'Tag:'), notePeople.map((p) => h('button.sh-tag', {
+        type: 'button', 'aria-pressed': 'false',
+        onclick: (e) => { if (tagged.has(p.id)) tagged.delete(p.id); else tagged.add(p.id); e.target.setAttribute('aria-pressed', String(tagged.has(p.id))); },
+      }, p.name)));
+      const said = h('span.small');
+      const add = h('button.btn.primary', {
+        type: 'button',
+        onclick: async () => {
+          if (!text.value.trim()) { said.textContent = 'Write the note first.'; return; }
+          add.disabled = true; said.textContent = 'Saving…';
+          const about = `${(KIND[x.kind] || [x.kind])[0].toLowerCase()}${x.day ? `, ${dayText(x.day)}` : ''}${x.slot ? ` ${SLOT[x.slot].label.toLowerCase()}` : ''}`;
+          try {
+            const out = await api('/shifts/notes', { method: 'POST', body: { key: x.key, text: text.value, tags: [...tagged], about } });
+            await draw();
+            if (out.told) mount(body.querySelector('.sh-notesaid') || body, h('span.small', `Emailed ${out.told} tagged.`));
+          } catch (err) { said.textContent = err.message; add.disabled = false; }
+        },
+      }, 'Add note');
+      mount(body,
+        d.items.length ? h('ul.sh-tl', d.items.map((it) => h(`li${it.type === 'note' ? '.note' : ''}`,
+          it.type === 'note'
+            ? [h('b', it.by), ' (note)', it.tags?.length ? h('span.small.muted', ` · tagged ${it.tags.map((t) => t.name).join(', ')}`) : null, h('div.txt', it.text)]
+            : [it.text, it.by ? h('span.small.muted', ` · ${it.by}`) : null],
+          h('small', String(it.at).slice(0, 16).replace('T', ' ')))))
+          : h('p.small.muted', 'Nothing yet. Answers, approvals, proof and moves are kept here from now on.'),
+        h('div.sh-noteform', text, tags, h('div.sh-safeinline', add, said, h('span.sh-notesaid'))),
+        h('p.small.muted', 'Notes never change the answer, and whoever answered is not told.'));
+    };
+    toggle.addEventListener('click', () => {
+      if (notesOpen.has(x.key)) { notesOpen.delete(x.key); body.hidden = true; toggle.textContent = toggle.textContent.replace('▾', '▸'); return; }
+      notesOpen.add(x.key); body.hidden = false; draw();
+    });
+    body.hidden = !notesOpen.has(x.key);
+    if (notesOpen.has(x.key)) draw();
+    return h('div.sh-notesbox', toggle, body);
+  }
+
+  /** The counts on the notes toggles on screen, in one ask. */
+  function fillNoteCounts(root) {
+    const els = [...root.querySelectorAll('.sh-notes-tog[data-notes-key]')];
+    if (!els.length) return;
+    api('/shifts/notes/counts', { method: 'POST', body: { keys: els.map((e) => e.dataset.notesKey) } }).then((d) => {
+      for (const e of els) {
+        const n = d.counts?.[e.dataset.notesKey] || 0;
+        if (!notesOpen.has(e.dataset.notesKey)) e.textContent = `▸ Notes and history${n ? ` · ${n}` : ''}`;
+      }
+    }).catch(() => {});
   }
 
   function exceptionCard(x) {

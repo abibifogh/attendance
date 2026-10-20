@@ -16,6 +16,7 @@ import * as invitations from './routes/invitations.js';
 import * as safe from './routes/safe.js';
 import * as safebook from './routes/safebook.js';
 import * as envelopes from './routes/envelopes.js';
+import * as notes from './routes/notes.js';
 import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
@@ -169,6 +170,11 @@ const ROUTES = [
       `${ctx.account?.name || 'A supervisor'} answered “${ctx.body?.answer || ''}” for ${approvals.keyWords(String(ctx.body?.key || '')).replace(/^A /, 'a ').replace(/^An /, 'an ').replace(/^The /, 'the ')}.`);
   }],
   ['POST', '/api/shifts/answer-many', 'shifts', answerMany],
+  // Notes and history on a difference: admins and supervisors.
+  ['GET', '/api/shifts/notes', 'shifts', (env, ctx) => notes.history(env, ctx.query, ctx.account)],
+  ['POST', '/api/shifts/notes', 'shifts', (env, ctx) => notes.addNote(env, ctx.body, ctx.account, { origin: ctx.url.origin })],
+  ['POST', '/api/shifts/notes/counts', 'shifts', (env, ctx) => notes.counts(env, ctx.body, ctx.account)],
+  ['GET', '/api/shifts/notes/people', 'shifts', (env, ctx) => notes.people(env, ctx.account)],
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.

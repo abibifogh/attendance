@@ -85,6 +85,21 @@ longer asks for a look on its account, and the difference leaves its person's
 **To sort out** list in HIVE. Its size is still shown, because it is still
 what ASSD counted.
 
+### Notes and history
+
+Every exception has **Notes and history** under it. Admins and supervisors
+write notes there and can tag other admins and supervisors; whoever is tagged
+gets an email with the note (the writer is not emailed). Whoever answered the
+exception is not told: a note is between the people checking, and it never
+changes the answer.
+
+Beside the notes, in the order it happened, is what happened to the exception,
+each with who did it and when: answered, answer changed, taken back,
+approved or rejected, proof asked, sent or cancelled, put on or taken off a
+staff account, and a payment moved to another shift or put back. This is kept
+from the day notes were added (`shift_history`, migration 0044); an answer
+changed before then left no trace of what it was.
+
 ## What you load, and how often
 
 All three are loaded on the Shifts tab under **Load files**, by an owner. The

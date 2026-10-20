@@ -2,6 +2,7 @@ import { all, first, run } from '../lib/db.js';
 import { badRequest, forbidden, HttpError, str } from '../lib/http.js';
 import { callLink } from '../lib/link.js';
 import { requireArea, accessOf, tell } from './till.js';
+import { logEvent } from './notes.js';
 
 /**
  * Proof for an answer.
@@ -33,6 +34,8 @@ export const REMIND_MAX = 3;
 const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const who = (account) => account?.name || account?.email || 'Owner';
 const TARGET = /^(answer|link|issue):(.{1,200})$/;
+/** The difference a proof request is about, for its history. */
+const keyOf = (target) => String(target || '').replace(/^(answer|issue):/, '');
 
 /** Who gave the answer a target names, and the answer in words. */
 async function answererOf(env, target) {
@@ -109,6 +112,7 @@ export async function ask(env, body, account, { fetchImpl } = {}) {
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING *`,
   target, p.about, p.account, p.hive, p.name, JSON.stringify(kinds), note, who(account), at);
   const told = await notify(env, row, { fetchImpl });
+  await logEvent(env, keyOf(target), `Proof asked from ${p.name || 'whoever answered'}${note ? `: “${note}”` : ''}`, who(account));
   return { ok: true, request: view(row), told };
 }
 
@@ -132,6 +136,7 @@ export async function cancel(env, body, account) {
   const r = await requestFor(env, body?.id);
   if (r.status !== 'asked') throw badRequest('That request has been answered already.');
   await run(env.DB, "UPDATE proof_request SET status = 'cancelled', replied_at = ?2 WHERE id = ?1", r.id, now());
+  await logEvent(env, keyOf(r.target), 'Proof request cancelled', who(account));
   return { ok: true };
 }
 
@@ -213,6 +218,7 @@ async function reply(env, r, body) {
     await run(env.DB, 'INSERT INTO proof_file (request_id, name, type, data, at) VALUES (?1, ?2, ?3, ?4, ?5)', r.id, f.name, f.type, f.data, at);
   }
   await run(env.DB, 'UPDATE proof_request SET status = ?2, reply = ?3, replied_at = ?4 WHERE id = ?1', r.id, cannot ? 'cannot' : 'sent', note, at);
+  await logEvent(env, keyOf(r.target), cannot ? `Proof cannot be sent${note ? `: “${note}”` : ''}` : `Proof sent: ${parsed.length} file${parsed.length === 1 ? '' : 's'}${note ? `, “${note}”` : ''}`, r.asked_name || null);
   return { ok: true, status: cannot ? 'cannot' : 'sent', files: parsed.length };
 }
 
