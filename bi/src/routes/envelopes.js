@@ -2,7 +2,7 @@ import { all, run } from '../lib/db.js';
 import { badRequest, csvResponse, str } from '../lib/http.js';
 import { addDays } from '../lib/dates.js';
 import { shifts as shiftsFor } from './shifts.js';
-import { hiveReports, requireAdmin } from './till.js';
+import { hiveReports, requireArea } from './till.js';
 
 /**
  * Money › Safe › Envelopes received: every envelope receptionists moved to
@@ -13,7 +13,8 @@ import { hiveReports, requireAdmin } from './till.js';
  * journal moved cash to the safe with no envelope in HIVE gets one line of
  * its own, so nothing that left the drawer goes unaccounted for. Separate from
  * the safe book on purpose: the book says what the safe should hold; this
- * says which envelopes have been seen in it.
+ * says which envelopes have been seen in it. Admins, and supervisors an admin
+ * gave "Envelopes received" (See, or See and act to mark them received).
  */
 
 const SLOTS = ['morning', 'afternoon', 'night'];
@@ -98,7 +99,7 @@ function rangeOf(query) {
 
 /** The page: the lines and the four totals. */
 export async function envelopesView(env, query, account) {
-  await requireAdmin(account);
+  await requireArea(env, account, 'envelopes', 1);
   const range = rangeOf(query);
   let lines = await envelopeLines(env, range, account);
   if (range.open) lines = lines.filter((l) => !l.received);
@@ -132,7 +133,7 @@ export async function envelopesView(env, query, account) {
  * worked out here, not taken from the page.
  */
 export async function receive(env, body, account) {
-  await requireAdmin(account);
+  await requireArea(env, account, 'envelopes', 2);
   const items = Array.isArray(body?.items) ? body.items : [];
   if (!items.length) throw badRequest('Tick the envelopes received.');
   if (items.length > 300) throw badRequest('Three hundred at most at once.');
@@ -167,7 +168,7 @@ export async function receive(env, body, account) {
 
 /** Take a "received" back. */
 export async function undo(env, body, account) {
-  await requireAdmin(account);
+  await requireArea(env, account, 'envelopes', 2);
   const day = String(body?.day || '');
   const slot = String(body?.slot || '');
   if (!DAY.test(day) || !SLOTS.includes(slot)) throw badRequest('Which envelope?');

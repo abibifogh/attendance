@@ -48,8 +48,8 @@ const ROUTES = [
   { path: 'labour', label: 'Labour', render: renderLabour },
   { path: 'guests', label: 'Guests', render: renderDemand },
   { path: 'cash', label: 'Tills & collections', render: renderCash },
-  // The safe book: cash in from the shifts, out as written, and the counts. Admins.
-  { path: 'safe', label: 'Safe', render: renderSafe, needs: 'admin' },
+  // The safe book (admins) and Envelopes received (admins, and supervisors given it).
+  { path: 'safe', label: 'Safe', render: renderSafe, needs: 'safe' },
   // A month of its own rather than the window: its address names the month.
   { path: 'prepaid', label: 'Prepaid stays', render: renderPrepaid, ownHash: true },
   // The one screen a supervisor gets, with the parts an admin gave them.
@@ -96,6 +96,8 @@ function allowed(route) {
   if (route.needs === 'shifts') return ['admin', 'supervisor'].includes(me.till?.role);
   if (route.needs === 'owner') return false;
   if (route.needs === 'admin') return me.till?.role === 'admin';
+  // The safe book is the admins'; a supervisor given Envelopes received sees that tab.
+  if (route.needs === 'safe') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.envelopes || 0) >= 1);
   return me.canSeeReports === true;
 }
 
