@@ -60,6 +60,11 @@ export function readReport(row) {
     note: row.note || null,
     signedAt: row.signed_at,
     device: row.device || null,
+    // Moved from another shift in Insight: from where, by whom, when and why.
+    moved: row.moved_from ? {
+      from: { day: String(row.moved_from).split('|')[0], slot: String(row.moved_from).split('|')[1] },
+      by: row.moved_by || null, at: row.moved_at || null, reason: row.moved_reason || null,
+    } : null,
   };
 }
 

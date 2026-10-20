@@ -382,13 +382,23 @@ test('Insight can move a report to the shift it belongs to, with its POs, only w
   const call = async (body, headers) => linkMove({ db, env: { INSIGHT_SSO_SECRET: SECRET }, url: new URL(`https://x${path}`), executionContext: null,
     request: new Request(`https://x${path}`, { method: 'POST', headers: headers || await signLink(SECRET, path, body), body }) });
 
-  const body = JSON.stringify({ reportId: id, day: right.day, slot: right.slot, by: 'Test Owner' });
+  const body = JSON.stringify({ reportId: id, day: right.day, slot: right.slot, by: 'Test Owner', reason: 'Signed after the shift ended' });
   await assert.rejects(call(body, { 'Content-Type': 'application/json' }), /401|signed|did not come/i);
   const out = await (await call(body)).json();
   assert.equal(out.moved, true);
   assert.deepEqual({ ...raw.prepare('SELECT day, slot FROM till_report WHERE id = ?').get(id) }, { day: right.day, slot: right.slot });
   assert.deepEqual(raw.prepare('SELECT day, slot FROM till_po').all().map((r) => [r.day, r.slot]), [[right.day, right.slot]], 'its POs move with it');
   assert.ok(raw.prepare("SELECT title FROM app_notices WHERE user_id = 7 AND title LIKE 'Your closing report was moved%'").get(), 'she is told');
+  assert.match(raw.prepare("SELECT body FROM app_notices WHERE user_id = 7 AND title LIKE 'Your closing report was moved%'").get().body, /Signed after the shift ended/);
+  // Where it was, who moved it and why are kept on it, so it can be moved back.
+  assert.deepEqual({ ...raw.prepare('SELECT moved_from, moved_by, moved_reason FROM till_report WHERE id = ?').get(id) },
+    { moved_from: `${wrong.day}|${wrong.slot}`, moved_by: 'Test Owner', moved_reason: 'Signed after the shift ended' });
+
+  // A shift with somebody else's report on it cannot take another.
+  raw.prepare(`INSERT INTO till_report (day, slot, user_id, name, float_ok, cash, to_safe, envelopes, expenses, rentals, checks, signed_at)
+    VALUES (?, ?, 8, 'Kofi Test', 1, 0, 0, '[]', '[]', '{}', '[]', datetime('now'))`).run(wrong.day, wrong.slot);
+  await assert.rejects(call(JSON.stringify({ reportId: id, day: wrong.day, slot: wrong.slot, by: 'Test Owner' })), /Kofi Test has a report on .* Reopen it first/);
+  raw.prepare('DELETE FROM till_report WHERE user_id = 8').run();
 
   // She now has a report on that shift: another of hers cannot be moved onto it.
   await closeShift(ctx(db, AMA, { env, body: good(wrong, { expenses: [] }) }));

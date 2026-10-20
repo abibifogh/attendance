@@ -457,7 +457,7 @@ export async function overview(env, query, account) {
           po: e.po, name: e.name || null, paid: hide(e.paid), state: e.state || null, counted: Boolean(e.counted),
           ...(odoo ? { vendor: e.vendor || null, total: hide(e.total) } : {}),
         })),
-        rentals: report.rentals, checks: report.checks, note: report.note,
+        rentals: report.rentals, checks: report.checks, note: report.note, moved: report.moved,
       },
       compare: money ? c : {
         ...Object.fromEntries(Object.entries(c).map(([k, v]) => [k, typeof v === 'number' ? null : v])),
@@ -504,6 +504,15 @@ export async function overview(env, query, account) {
       if (other) other.belongs = { day: row.day, slot: row.slot, assdUser: row.assdUser };
       break;
     }
+  }
+  // Whether ASSD has the report's writer on the shift it is on: one where ASSD
+  // has somebody else may be on the wrong shift.
+  for (const row of reportRows) {
+    if (!row.report || !row.assdUser) continue;
+    const owner = mapped.get(row.assdUser);
+    const writer = reports.find((r) => r.id === row.report.id);
+    // Not known (no login mapped, and the names do not match) is not a mismatch.
+    row.assdMatches = owner != null ? Number(writer?.userId) === Number(owner) : sameName(row.assdUser, row.report.name) || null;
   }
 
   const list = issues.map((i) => ({
@@ -855,10 +864,42 @@ export async function moveReport(env, body, account, { fetchImpl } = {}) {
   const day = String(body?.day || '');
   const slot = String(body?.slot || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !SLOT_ORDER.includes(slot)) throw badRequest('Which shift?');
+  const reason = str(body?.reason, 'Why', { max: 300 });
+  if (!reason || reason.length < 3) throw badRequest('Say why it is being moved: it is kept with the report.');
+  // Two days either side of when it was signed: a slip of the clock, not a
+  // report written for some other week.
+  const report = (await hive(env, 'SELECT id, day, slot, signed_at FROM till_report WHERE id = ?1 AND reopened_at IS NULL', id))[0];
+  if (report) {
+    const signed = String(report.signed_at || report.day).slice(0, 10);
+    if (day < addDays(signed, -MOVE_DAYS) || day > addDays(signed, MOVE_DAYS)) {
+      throw badRequest(`A report can go on a shift up to two days either side of when it was signed (${signed}).`);
+    }
+  }
   return hiveCall({
     binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/move',
-    body: { reportId: id, day, slot, by: who(account) },
+    body: { reportId: id, day, slot, by: who(account), reason },
   });
+}
+
+/** How far a report may be moved, in days either side of when it was signed. */
+const MOVE_DAYS = 2;
+
+/**
+ * A day's three shifts, for choosing where a report goes: who ASSD has on
+ * each, and the report already there, if any.
+ */
+export async function slotsFor(env, query, account) {
+  await requireArea(env, account, 'reopen', 2);
+  const day = String(query?.day || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw badRequest('Which day?');
+  const [list, reports] = await Promise.all([shiftList(env, day, day).catch(() => []), hiveReports(env, day, day)]);
+  return {
+    day,
+    slots: SLOT_ORDER.map((slot) => {
+      const r = reports.find((x) => x.slot === slot);
+      return { slot, assdUser: list.find((x) => x.day === day && x.slot === slot)?.user || null, report: r ? { id: r.id, name: r.name } : null };
+    }),
+  };
 }
 
 /** Approve or reject a supervisor's correction to a cash movement. */
