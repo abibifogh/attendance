@@ -122,6 +122,16 @@ Everything typed is signed with the name of whoever typed it.
   day it starts. ASSD has no clock, so each shift is placed by the terminal's
   clock for card payments that identify it, and by the marker's date. A night's
   marker is usually dated the next morning, and that is allowed for.
+- **Two sessions, one shift.** Sometimes there are more hand-overs than
+  shifts: somebody logs in for a minute in the middle of another person's
+  shift, or a night changes hands. The journal alone is tried first, one
+  session to a shift. When that cannot fit, the HIVE closing reports decide:
+  the person who signed a shift (their ASSD login, under Settings → Whose
+  ASSD login is whose, or by name) and the drawer they counted (the session
+  that closed on that count). Sessions on the same shift are made one: its
+  counts, sales and movements add up across them, it is named after whoever
+  signed it, and its page says "N ASSD sessions: …" in order. A report filed
+  on the wrong shift never moves a journal that fits on its own.
 - **How it was paid.** Every payment line, by ASSD's own method: cash, card
   and MoMo (staff record MoMo as card), prepaid by bank transfer, prepaid by
   card online. Only cash goes into the drawer. Laundry paid in cash is part of

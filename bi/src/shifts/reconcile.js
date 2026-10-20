@@ -98,16 +98,44 @@ export function hoursOf(first, last = first) {
 
 // ----------------------------------------------------------------- slots --
 
+/** Whether an ASSD login looks like a person's name in HIVE: "AMA" and "Ama Mensah". */
+export function sameLogin(assd, name) {
+  const a = String(assd || '').trim().toLowerCase();
+  const n = String(name || '').trim().toLowerCase();
+  return Boolean(a && n && (n === a || n.split(/\s+/).includes(a) || n.startsWith(`${a} `)));
+}
+
+/** What a share of one slot costs: only taken when the evidence asks for it. */
+const SHARE = -1.5;
+
 /**
- * Put every shift on a slot.
+ * Put every ASSD session on a slot.
  *
- * `shifts` are in ASSD order, each with `markerDate` and `cards`; `events`
- * are payments with an exact time. Returns, per shift, `{ slot, last }` —
- * `last` is later than `slot` only when the next shift starts more than one
- * slot on, and this shift is taken to have covered the gap.
+ * `shifts` are the sessions in ASSD order (one per hand-over), each with
+ * `markerDate` and `cards`; `events` are payments with an exact time.
+ * Returns, per session, `{ slot, last }` — `last` is later than `slot` only
+ * when the next session starts more than one slot on, and this one is taken
+ * to have covered the gap.
+ *
+ * Two sessions can share a slot: somebody logging in for a minute in another
+ * person's shift, or a hand-over in the middle of a night. It costs a little,
+ * so it is only chosen when the evidence asks for it. `signed(session, slot)`
+ * weighs that slot's closing report in HIVE against the session: whether the
+ * person who signed it is the person on this login, and whether the drawer
+ * they counted is what this session closed on.
  */
-export function placeShifts(shifts, events) {
-  if (!shifts.length) return [];
+export function placeShifts(shifts, events, { signed = null } = {}) {
+  // The journal alone first. Only when it cannot be placed one session to a
+  // slot (a session has to share one, or a marker is days out) are the HIVE
+  // reports asked: a report filed on the wrong shift must not drag a journal
+  // that fits on its own, or "filed on the wrong shift" could never be seen.
+  const alone = place(shifts, events, null);
+  return signed && alone.trouble ? place(shifts, events, signed).places : alone.places;
+}
+
+function place(shifts, events, signed) {
+  if (!shifts.length) return { places: [], trouble: false };
+  let trouble = false;
   const timed = events.filter((e) => e.minute != null);
   const byAmount = new Map();
   for (const e of timed) {
@@ -132,11 +160,15 @@ export function placeShifts(shifts, events) {
     // The marker's date: mornings and afternoons carry their own day; a night
     // usually carries the next morning's, sometimes its own.
     const marker = new Map([[d * 3, 1], [d * 3 + 1, 1], [(d - 1) * 3 + 2, 1], [d * 3 + 2, 0.5]]);
-    const candidates = new Set([...marker.keys(), ...votes.keys()]);
-    return [...candidates].map((t) => ({ t, score: 2 * (votes.get(t) || 0) + (marker.get(t) || 0) }));
+    // The closing report in HIVE, near the marker's date.
+    const reported = new Map();
+    if (signed) for (let t = d * 3 - 3; t <= d * 3 + 5; t += 1) { const w = signed(shift, t); if (w) reported.set(t, w); }
+    const candidates = new Set([...marker.keys(), ...votes.keys(), ...reported.keys()]);
+    return [...candidates].map((t) => ({ t, score: 2 * (votes.get(t) || 0) + (marker.get(t) || 0) + (reported.get(t) || 0) }));
   });
 
   const step = (gap) => {
+    if (gap === 0) return SHARE;
     if (gap === 1) return 0;
     if (gap === 2) return -2;
     if (gap === 3) return -3.5;
@@ -159,6 +191,7 @@ export function placeShifts(shifts, events) {
     // A shift whose every candidate is behind the previous one (a marker
     // dated days early) is placed straight after the previous shift.
     if (next.every((n) => n.total === -Infinity)) {
+      trouble = true;
       const prev = best.reduce((a, b) => (b.total > a.total ? b : a));
       next.push({ t: prev.t + 1, total: prev.total - 4, back: prev });
     }
@@ -169,13 +202,17 @@ export function placeShifts(shifts, events) {
   const placed = [];
   while (node) { placed.unshift(node.t); node = node.back; }
 
-  return placed.map((t, i) => {
-    const next = placed[i + 1];
-    // One missing slot between two shifts is most likely this person working
-    // on through it. More than one is a gap in what was loaded.
-    const last = next === t + 2 ? t + 1 : t;
-    return { slot: t, last };
-  });
+  if (placed.some((t, i) => i && t === placed[i - 1])) trouble = true;
+  return {
+    trouble,
+    places: placed.map((t, i) => {
+      const next = placed[i + 1];
+      // One missing slot between two shifts is most likely this person working
+      // on through it. More than one is a gap in what was loaded.
+      const last = next === t + 2 ? t + 1 : t;
+      return { slot: t, last };
+    }),
+  };
 }
 
 // -------------------------------------------------------------- matching --
@@ -236,7 +273,8 @@ export function reconcile(shifts, events, declines = [], options = {}) {
   const timed = evs.filter((e) => e.minute != null);
   const dated = evs.filter((e) => e.minute == null);
 
-  const places = placeShifts(shifts, evs);
+  // Placed already (sessions sharing a slot made one), or placed here.
+  const places = options.places || placeShifts(shifts, evs, { signed: options.signed });
   const out = shifts.map((shift, i) => {
     const { slot, last } = places[i];
     const { start, end } = hoursOf(slot, last);

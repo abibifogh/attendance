@@ -279,7 +279,40 @@ export function segment(entries, corrections = new Map()) {
     if (current) current.entries.push(e);
     else before.push(e);
   }
-  return { shifts: shifts.map((sh) => summarise(sh, corrections)), before };
+  return { shifts: shifts.map((sh) => summarise(sh, corrections)), before, sessions: shifts };
+}
+
+/**
+ * Sessions placed on the same slot, made one shift: a quick log-in in the
+ * middle of somebody's shift, or a hand-over in the middle of a night. Its
+ * entries run together, so its counts, sales and movements add up across
+ * both; its name is whoever `pick(users, slot)` says (the person who signed
+ * it in HIVE), else whoever made the most entries. `places` are
+ * placeShifts' answer for `sessions`; returns the shifts and their places.
+ */
+export function joinShared(sessions, places, corrections = new Map(), pick = null) {
+  const groups = [];
+  sessions.forEach((g, i) => {
+    const last = groups[groups.length - 1];
+    if (last && last.place.slot === places[i].slot) {
+      last.parts.push(g);
+      last.place = { slot: last.place.slot, last: Math.max(last.place.last, places[i].last) };
+    } else groups.push({ parts: [g], place: { ...places[i] } });
+  });
+  return {
+    places: groups.map((x) => x.place),
+    shifts: groups.map(({ parts, place }) => {
+      if (parts.length === 1) return summarise(parts[0], corrections);
+      const users = [...new Set(parts.map((g) => g.user))];
+      const most = users.map((u) => [u, parts.filter((g) => g.user === u).reduce((t, g) => t + g.entries.length, 0)])
+        .sort((a, b) => b[1] - a[1])[0][0];
+      const user = (pick && pick(users, place.slot)) || most;
+      const s = summarise({ user, startSeq: parts[0].startSeq, markerDate: parts[0].markerDate, entries: parts.flatMap((g) => g.entries) }, corrections);
+      // Every login that held the drawer in it, in order.
+      s.sessions = parts.map((g) => ({ user: g.user, startSeq: g.startSeq }));
+      return s;
+    }),
+  };
 }
 
 /**
