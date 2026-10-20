@@ -3,8 +3,10 @@ import { api } from '../api.js';
 import { banner } from './components.js';
 
 /**
- * Money › Safe: the safe book. A page runs from one count of the safe to the
- * next. What comes in is read from the shifts; what goes out is written here.
+ * Money › Safe, two tabs. The safe book: a page runs from one count of the
+ * safe to the next; what comes in is read from the shifts, what goes out is
+ * written here. Envelopes received: every envelope receptionists moved to the
+ * safe in a period, and which an admin has actually received and counted.
  * Admins. It was a tab of Shifts; it is money, so it lives with the money.
  */
 
@@ -13,10 +15,192 @@ const nameOf = (user) => (user ? user.charAt(0) + user.slice(1).toLowerCase() : 
 const dayText = (day, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${day}T12:00:00Z`)
   .toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
 
+const TABS = [['book', 'Safe book'], ['envelopes', 'Envelopes received']];
+const remembered = () => { try { return localStorage.getItem('insight-safe-tab') || 'book'; } catch { return 'book'; } };
+
 export async function renderSafe(root, { range }) {
   const v = h('div.sh-view');
-  add(root, h('div.sh', v));
-  await safeView(v, range).catch((err) => mount(v, banner('problem', err.message)));
+  const tabs = h('div.sv-tabs', { role: 'tablist', 'aria-label': 'Parts of the safe' });
+  add(root, h('div.sh', tabs, v));
+  const show = (id) => {
+    try { localStorage.setItem('insight-safe-tab', id); } catch { /* private mode */ }
+    mount(tabs, TABS.map(([k, label]) => h(`button.sv-tab${k === id ? '.on' : ''}`, { type: 'button', role: 'tab', 'aria-selected': String(k === id), onclick: () => show(k) }, label)));
+    const view = id === 'envelopes' ? envelopesView(v, range) : safeView(v, range);
+    return view.catch((err) => mount(v, banner('problem', err.message)));
+  };
+  await show(TABS.some(([k]) => k === remembered()) ? remembered() : 'book');
+}
+
+// ------------------------------------------------- envelopes received --
+
+const amt = (minor) => (minor == null ? '—' : `${minor < 0 ? '−' : ''}${(Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+const plain = (minor) => (minor == null ? '' : (minor / 100).toFixed(2));
+const typed = (text) => { const n = Number(String(text).replace(/[,\s]/g, '')); return String(text).trim() && Number.isFinite(n) ? Math.round(n * 100) : null; };
+const pill = (tone, text) => h(`span.sh-chip.${tone}`, text);
+const iso = (d) => d.toISOString().slice(0, 10);
+/** The quick picks: Monday to today, last Monday to Sunday, the 1st to today. */
+function picks() {
+  const t = new Date();
+  const mon = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() - ((t.getUTCDay() + 6) % 7)));
+  const lastMon = new Date(mon); lastMon.setUTCDate(mon.getUTCDate() - 7);
+  const lastSun = new Date(mon); lastSun.setUTCDate(mon.getUTCDate() - 1);
+  return [
+    ['week', 'This week', { from: iso(mon), to: iso(t) }],
+    ['last', 'Last week', { from: iso(lastMon), to: iso(lastSun) }],
+    ['month', 'This month', { from: `${iso(t).slice(0, 8)}01`, to: iso(t) }],
+    ['open', 'Everything not received', { open: true }],
+  ];
+}
+
+/**
+ * Every envelope moved to the safe in the days chosen, a line each, as on a
+ * control sheet: the shift, who, the envelope, what it says, what ASSD moved,
+ * and whether it has been received and counted. Tick the ones in the safe,
+ * check the count, and mark them received.
+ */
+async function envelopesView(v, range, notice = null) {
+  let want = { from: range.from, to: range.to, open: false };
+  try { want = { ...want, ...JSON.parse(sessionStorage.getItem('insight-safe-envelopes') || '{}') }; } catch { /* none */ }
+  let filter = 'all';
+  const picked = new Map();
+  let d = null;
+  // The ticked total on the bar, kept up to date as a count is typed.
+  let sumEl = null;
+  const refreshSum = () => {
+    if (!sumEl) return;
+    const ticked = [...picked.values()];
+    sumEl.textContent = `${ticked.length} ticked · ${money(ticked.reduce((a, x) => a + (x.counted ?? x.line.expected), 0))}`;
+  };
+  const keyOf = (l) => `${l.day}|${l.slot}|${l.no || ''}`;
+
+  const load = async (words = null) => {
+    try { sessionStorage.setItem('insight-safe-envelopes', JSON.stringify(want)); } catch { /* private mode */ }
+    mount(v, h('p.muted', 'Reading the envelopes…'));
+    d = await api(`/safe/envelopes?${want.open ? 'open=1' : `from=${want.from}&to=${want.to}`}`);
+    picked.clear();
+    paint(words ? banner('good', words) : notice);
+    notice = null;
+  };
+
+  const paint = (top = null) => {
+    sumEl = h('b');
+    const t = d.totals;
+    const from = h('input', { type: 'date', value: d.range.from, 'aria-label': 'From' });
+    const to = h('input', { type: 'date', value: d.range.to, 'aria-label': 'To' });
+    const kinds = [
+      ['all', 'All', () => true], ['waiting', 'Not received', (l) => !l.received],
+      ['got', 'Received', (l) => l.received], ['diff', 'Differences', (l) => (l.received && l.received.diff !== 0) || (l.first && l.shiftDiff)],
+    ];
+    const keep = kinds.find(([k]) => k === filter)[2];
+    const shown = d.lines.filter(keep);
+    const csv = `/api/safe/envelopes.csv?${d.range.open ? 'open=1' : `from=${d.range.from}&to=${d.range.to}`}`;
+    const bar = h('section.card.sv-bar',
+      h('div.sv-row',
+        h('label', 'From', from), h('label', 'To', to),
+        h('button.btn', { type: 'button', onclick: () => { if (from.value && to.value) { want = { from: from.value, to: to.value, open: false }; load(); } } }, 'Show'),
+        picks().map(([k, label, r]) => h(`button.tl-chip${(r.open ? d.range.open : !d.range.open && r.from === d.range.from && r.to === d.range.to) ? '.on' : ''}`, {
+          type: 'button', onclick: () => { want = r.open ? { ...want, open: true } : { ...r, open: false }; load(); },
+        }, label))),
+      h('div.sv-row',
+        kinds.map(([k, label, test]) => h(`button.tl-chip${filter === k ? '.on' : ''}`, { type: 'button', onclick: () => { filter = k; paint(top); } }, `${label} ${d.lines.filter(test).length}`)),
+        h('span.sv-gap'),
+        h('a.btn', { href: csv }, '⬇ Spreadsheet'),
+        h('button.btn', { type: 'button', onclick: () => window.print() }, '🖨 Print')));
+    const tile = (label, value, note, tone = '') => h('div.sv-tile', h('small', label), h(`b${tone}`, value), h('i', note));
+    const tiles = h('div.sv-tiles',
+      tile('Expected in the safe', money(t.expected), `${t.count} envelope${t.count === 1 ? '' : 's'}, ${t.shifts} shift${t.shifts === 1 ? '' : 's'}`),
+      tile('Received', money(t.received), `${t.receivedCount} envelope${t.receivedCount === 1 ? '' : 's'}`, '.good'),
+      tile('Not received yet', money(t.waiting), t.waitingCount ? `${t.waitingCount} envelope${t.waitingCount === 1 ? '' : 's'} · oldest ${dayText(t.oldest)}` : 'Nothing waiting', t.waitingCount ? '.bad' : ''),
+      tile('Received short or over', t.diff ? `${t.diff < 0 ? '−' : '+'}${money(Math.abs(t.diff))}` : money(0), t.diffCount ? `${t.diffCount} counted at a different amount` : 'Every count agrees', t.diff ? '.warn' : ''));
+
+    const body = [];
+    let lastDay = null;
+    for (const l of shown) {
+      if (l.day !== lastDay) { body.push(h('tr.sv-day', h('td', { colspan: 10 }, dayText(l.day, { weekday: 'long', day: 'numeric', month: 'long' })))); lastDay = l.day; }
+      body.push(line(l));
+    }
+    const ticked = [...picked.values()];
+    const receivedOn = h('input', { type: 'date', value: iso(new Date()), max: iso(new Date()), 'aria-label': 'Received on' });
+    const withName = h('input', { type: 'text', placeholder: 'Who counted with you', 'aria-label': 'Counted with', maxlength: 120 });
+    const said = h('span.sv-said');
+    const mark = h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        mark.disabled = true; said.textContent = 'Saving…';
+        try {
+          const out = await api('/safe/envelopes/receive', {
+            method: 'POST',
+            body: {
+              receivedOn: receivedOn.value, with: withName.value,
+              items: ticked.map((x) => ({ day: x.line.day, slot: x.line.slot, no: x.line.no || '', counted: plain(x.counted ?? x.line.expected), why: x.why || '' })),
+            },
+          });
+          await load(`${out.received} envelope${out.received === 1 ? '' : 's'} marked received, ${money(out.counted)} counted.`);
+        } catch (err) { said.textContent = err.message; mark.disabled = false; }
+      },
+    }, `✓ Mark ${ticked.length} as received`);
+    mount(v, top, bar, tiles,
+      h('section.card', shown.length ? h('div.table-wrap', h('table.sv-sheet',
+        h('thead', h('tr', h('th', ''), h('th', 'Shift'), h('th', 'Receptionist'), h('th', 'Envelope'), h('th.n', 'Envelope says'), h('th.n', 'ASSD moved'),
+          h('th.n', 'Envelope vs ASSD'), h('th', 'Received'), h('th.n', 'Counted in the safe'), h('th.n', 'Short / over'))),
+        h('tbody', body),
+        h('tfoot', h('tr', h('td', ''), h('td', { colspan: 3 }, `${d.range.open ? 'Not received' : `${dayText(d.range.from)} – ${dayText(d.range.to)}`} · ${t.count} envelope${t.count === 1 ? '' : 's'}`),
+          h('td.n', amt(t.said)), h('td.n', amt(t.assd)), h('td.n', amt(t.said - t.assd)), h('td', `${t.receivedCount} received`), h('td.n', amt(t.counted)), h('td.n', amt(t.diff))))))
+        : h('p.muted', d.lines.length ? 'Nothing under this filter.' : 'No cash was moved to the safe on these days.'),
+      h('p.sv-note', '“Envelope says” is what the receptionist wrote in their HIVE closing report; “ASSD moved” is the cash movement to the safe in the journal, for the whole shift. “Counted in the safe” starts at what the envelope says: change it when the count differs, and say why.')),
+      ticked.length ? h('div.sv-sticky',
+        sumEl,
+        h('label', 'Received on ', receivedOn), h('label', 'Counted with ', withName), mark, said) : null);
+    refreshSum();
+  };
+
+  const line = (l) => {
+    const k = keyOf(l);
+    const p = picked.get(k);
+    const r = l.received;
+    const tick = r ? pill('ok', '✓') : h('input', {
+      type: 'checkbox', checked: Boolean(p), 'aria-label': `Received ${l.no ? `envelope ${l.no}` : 'the cash'} from the ${l.slot} of ${l.day}`,
+      onchange: (e) => { if (e.target.checked) picked.set(k, { line: l, counted: l.expected, why: '' }); else picked.delete(k); paint(); },
+    });
+    const vsAssd = !l.first ? '' : !l.inJournal ? pill('none', 'not in the journal') : l.amount == null ? pill('over', 'no report')
+      : l.shiftDiff === 0 ? pill('ok', '✓') : pill('short', `${l.shiftDiff > 0 ? '+' : ''}${amt(l.shiftDiff)}`);
+    let counted = amt(r?.counted);
+    const short = h('td.n', r ? (r.diff === 0 ? pill('ok', '✓') : h('span', pill(r.diff < 0 ? 'short' : 'over', `${r.diff > 0 ? '+' : ''}${amt(r.diff)}`), r.why ? h('small', `“${r.why}”`) : null)) : '—');
+    if (!r) {
+      const box = h('input.sv-amt', { type: 'text', inputmode: 'decimal', value: plain(p?.counted ?? l.expected), disabled: !p, 'aria-label': 'Counted in the safe' });
+      const why = h('input.sv-why', { type: 'text', placeholder: 'Why it differs', value: p?.why || '', maxlength: 300, hidden: !p || (p.counted ?? l.expected) === l.expected });
+      // Only this row and the bar's total change as a count is typed: the
+      // table is not drawn again under the typing.
+      const differs = () => {
+        const off = p ? (p.counted ?? l.expected) - l.expected : 0;
+        why.hidden = !off;
+        mount(short, off ? pill('over', `${off > 0 ? '+' : ''}${amt(off)}`) : '—');
+        refreshSum();
+      };
+      box.addEventListener('input', () => { if (!p) return; p.counted = typed(box.value) ?? l.expected; differs(); });
+      why.addEventListener('input', () => { if (p) p.why = why.value; });
+      counted = h('div', box, why);
+      differs();
+    }
+    return h(`tr${r ? '.sv-got' : ''}${l.first ? '' : '.sv-more'}`,
+      h('td', tick),
+      h('td', l.first ? SLOT[l.slot].label : ''),
+      h('td', l.first ? (l.by || '—') : ''),
+      h('td', l.no ? `No. ${l.no}` : h('span', '—', h('small', 'no envelope in HIVE'))),
+      h('td.n', amt(l.amount)),
+      h('td.n', l.first ? amt(l.assd) : ''),
+      h('td.n', vsAssd),
+      h('td', r ? [dayText(r.on), h('small', `${r.by}${r.with ? ` with ${r.with}` : ''} · `, h('button.sh-link', {
+        type: 'button',
+        onclick: async () => {
+          try { await api('/safe/envelopes/undo', { method: 'POST', body: { day: l.day, slot: l.slot, no: l.no || '' } }); await load('No longer marked received.'); } catch (err) { alert(err.message); }
+        },
+      }, 'Undo'))] : pill('none', 'Not yet')),
+      h('td.n', counted),
+      short);
+  };
+
+  await load();
 }
 
 async function safeView(v, range, notice = null) {

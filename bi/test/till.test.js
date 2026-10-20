@@ -8,6 +8,7 @@ import { issuesFor, withStatus, compare, readReport } from '../src/shifts/till.j
 import { signLink, verifyLink, callLink } from '../src/lib/link.js';
 import { parseJournal } from '../src/shifts/assd.js';
 import * as safe from '../src/routes/safe.js';
+import * as envelopes from '../src/routes/envelopes.js';
 
 /**
  * Closing a shift in HIVE, as Insight sees it.
@@ -849,4 +850,46 @@ test('Odoo not answering a PO lookup is said in Odoo’s words, not “something
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test('envelopes moved to the safe: one line each, marked received with a count, undone, and as a spreadsheet', async () => {
+  const { env, hive } = await setUp();
+  // Kofi's afternoon sent two envelopes as well.
+  hive.raw.exec(`UPDATE till_report SET to_safe = 1, envelopes = '[{"no":"418","amount":3000},{"no":"419","amount":2000}]' WHERE user_id = 8`);
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  let view = await envelopes.envelopesView(env, range, OWNER);
+  const mine = view.lines.filter((l) => l.no);
+  assert.deepEqual(mine.map((l) => [l.slot, l.no, l.amount, l.first]),
+    [['afternoon', '418', 3000, true], ['afternoon', '419', 2000, false], ['morning', '417', 25000, true]]);
+  const ama = mine.find((l) => l.no === '417');
+  assert.deepEqual([ama.by, ama.assd, ama.shiftDiff], ['Ama Test', 20000, 5000], 'her envelope says 250 where ASSD moved 200');
+  await assert.rejects(envelopes.envelopesView(env, range, SUPERVISOR), /admin/i);
+
+  // Received: counted short needs a reason; the rest are counted at what they say.
+  const item = (no, slot, extra = {}) => ({ day: '2026-08-01', slot, no, ...extra });
+  await assert.rejects(envelopes.receive(env, { receivedOn: '2026-08-03', items: [item('417', 'morning', { counted: '240' })] }, OWNER), /say why/);
+  await assert.rejects(envelopes.receive(env, { receivedOn: '2099-01-01', items: [item('418', 'afternoon')] }, OWNER), /still to come/);
+  await assert.rejects(envelopes.receive(env, { receivedOn: '2026-08-03', items: [item('999', 'afternoon')] }, OWNER), /not one moved/);
+  const out = await envelopes.receive(env, {
+    receivedOn: '2026-08-03', with: 'Sam Supervisor',
+    items: [item('417', 'morning', { counted: '240', why: 'One 10 note missing' }), item('418', 'afternoon')],
+  }, OWNER);
+  assert.deepEqual([out.received, out.counted], [2, 27000]);
+  await assert.rejects(envelopes.receive(env, { receivedOn: '2026-08-03', items: [item('418', 'afternoon')] }, OWNER), /already marked/);
+
+  view = await envelopes.envelopesView(env, range, OWNER);
+  const got = view.lines.find((l) => l.no === '417').received;
+  assert.deepEqual([got.on, got.with, got.counted, got.diff, got.why], ['2026-08-03', 'Sam Supervisor', 24000, -1000, 'One 10 note missing']);
+  assert.equal(view.totals.waitingCount, view.lines.length - 2);
+  assert.equal(view.totals.diff, -1000);
+  // "Everything not received" leaves the received ones out.
+  const open = await envelopes.envelopesView(env, { open: '1' }, OWNER);
+  assert.ok(!open.lines.some((l) => l.received));
+
+  const csv = await (await envelopes.envelopesCsv(env, range, OWNER)).text();
+  assert.match(csv, /2026-08-01,morning,Ama Test,417,250\.00,200\.00,50\.00,2026-08-03,Sam Supervisor,240\.00,-10\.00,One 10 note missing,Test Owner/);
+
+  await envelopes.undo(env, { day: '2026-08-01', slot: 'morning', no: '417' }, OWNER);
+  view = await envelopes.envelopesView(env, range, OWNER);
+  assert.equal(view.lines.find((l) => l.no === '417').received, null);
 });

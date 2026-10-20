@@ -1891,3 +1891,40 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .tl-maybe { display: grid; gap: .3rem; justify-items: start; margin-bottom: .3rem; }
 .tl-links { white-space: nowrap; }
 .tl-act:has(> .tl-move) { display: flex; }
+
+/* Money › Safe: the two tabs, and Envelopes received. */
+.sv-tabs { display: flex; gap: .4rem; flex-wrap: wrap; }
+.sv-tab { border: 1px solid var(--border); border-radius: 999px; padding: .4rem .9rem; font: inherit; font-size: .9rem; background: var(--surface); color: var(--ink); cursor: pointer; }
+.sv-tab.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.sv-bar { display: grid; gap: .6rem; }
+.sv-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+.sv-row label { display: grid; gap: .2rem; font-size: .8rem; font-weight: 600; color: var(--ink-2); }
+.sv-row input { padding: .4rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.sv-gap { flex: 1; }
+.sv-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; }
+.sv-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem; }
+.sv-tile small { display: block; color: var(--ink-2); font-size: .8rem; }
+.sv-tile b { display: block; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.sv-tile b.good { color: var(--sh-good-ink); } .sv-tile b.bad { color: var(--sh-bad-ink); } .sv-tile b.warn { color: var(--sh-warn-ink); }
+.sv-tile i { font-style: normal; font-size: .8rem; color: var(--ink-2); }
+.sv-sheet { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.sv-sheet th { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); text-align: left; padding: .45rem; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.sv-sheet td { padding: .45rem; border-top: 1px solid var(--border); vertical-align: top; }
+.sv-sheet .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sv-sheet td small { display: block; color: var(--ink-2); font-size: .75rem; white-space: normal; }
+.sv-sheet tr.sv-day td { background: var(--surface-2); font-weight: 700; font-size: .8rem; color: var(--ink-2); padding: .3rem .45rem; }
+.sv-sheet tr.sv-got td { background: color-mix(in srgb, var(--sh-good) 6%, var(--surface)); }
+.sv-sheet tr.sv-more td { border-top-style: dashed; }
+.sv-sheet tfoot td { font-weight: 800; border-top: 2px solid var(--ink); }
+.sv-sheet input[type=checkbox] { width: 1.1rem; height: 1.1rem; accent-color: var(--series-1); }
+.sv-amt { width: 6.5rem; padding: .25rem .4rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; text-align: right; background: var(--surface); color: var(--ink); }
+.sv-amt:disabled { opacity: .6; }
+.sv-why { display: block; width: 10rem; margin: .3rem 0 0 auto; padding: .25rem .4rem; border: 1px solid var(--sh-warn); border-radius: 6px; font: inherit; font-size: .8rem; }
+.sv-note { font-size: .82rem; color: var(--ink-2); margin: .7rem 0 0; }
+.sv-sticky { position: sticky; bottom: .6rem; z-index: 5; display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; background: #111; color: #fff; border-radius: 12px; padding: .7rem 1rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.sv-sticky input { padding: .35rem .5rem; border-radius: 7px; border: 0; font: inherit; }
+.sv-said { font-size: .85rem; }
+@media print {
+  header.top, .sv-tabs, .sv-bar, .sv-sticky, .sv-sheet input[type=checkbox] { display: none !important; }
+  .sv-sheet { font-size: 10pt; }
+}

@@ -232,6 +232,29 @@ open; a count can be undone from **Counts**, which puts its shifts and entries
 back on the open page. An entry or a count cannot be dated before the last
 count.
 
+### Envelopes received
+
+Money › Safe › **Envelopes received** (admins only) is the check that the
+envelopes receptionists moved to the safe actually arrived. It is separate
+from the safe book, which goes on taking every envelope as in the safe.
+
+- **The days**: From and To, or This week, Last week, This month, and
+  **Everything not received** (the last 90 days, received ones left out).
+- **Four totals**: expected in the safe, received, not received yet (with the
+  oldest), and received short or over.
+- **One line per envelope**, grouped by day, newest first: the shift, the
+  receptionist, the envelope number, what it says (their HIVE closing report),
+  what ASSD moved to the safe for the shift and the difference, when it was
+  received and by whom, what was counted, and short or over. A shift whose
+  journal moved cash to the safe with no envelope in HIVE gets a line of its
+  own ("no envelope in HIVE"), expected at what ASSD moved.
+- **Marking received**: tick the envelopes, check "Counted in the safe" (it
+  starts at what the envelope says; a different count asks why), choose the
+  day received and who counted with you, and press **Mark as received**. Each
+  received line has **Undo**.
+- **Filters**: All, Not received, Received, Differences. **Spreadsheet**
+  downloads the same table; **Print** prints it.
+
 ## How the two apps talk
 
 Over a Cloudflare service binding, so the call never leaves Cloudflare, and
