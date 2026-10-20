@@ -15,6 +15,7 @@ import * as till from './routes/till.js';
 import * as invitations from './routes/invitations.js';
 import * as safe from './routes/safe.js';
 import * as safebook from './routes/safebook.js';
+import * as envelopes from './routes/envelopes.js';
 import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
@@ -185,6 +186,12 @@ const ROUTES = [
   // Answers to them go through /api/shifts/answer, like any exception.
   ['GET', '/api/stays', 'shifts', area('unpaid', 1, (env, ctx) => stays.unpaidStays(env, ctx.account))],
 
+  // Envelopes moved to the safe, and which have been received. Admins only.
+  // Before the routes below, which would read "envelopes" as an id.
+  ['GET', '/api/safe/envelopes', 'shifts', (env, ctx) => envelopes.envelopesView(env, ctx.query, ctx.account)],
+  ['GET', '/api/safe/envelopes.csv', 'shifts', (env, ctx) => envelopes.envelopesCsv(env, ctx.query, ctx.account)],
+  ['POST', '/api/safe/envelopes/receive', 'shifts', (env, ctx) => envelopes.receive(env, ctx.body, ctx.account)],
+  ['POST', '/api/safe/envelopes/undo', 'shifts', (env, ctx) => envelopes.undo(env, ctx.body, ctx.account)],
   // The safe: what each shift moved into it, and the closures. Admins only.
   ['GET', '/api/safe', 'shifts', (env, ctx) => safe.safeView(env, ctx.query, ctx.account)],
   // The safe book: in from the shifts, out as written, a count to close a page.
