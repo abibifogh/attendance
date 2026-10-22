@@ -110,6 +110,11 @@ start();
 async function start() {
   // An invitation's link opens its own page, signed in or not: the person
   // following it may be on a shared desk PC where somebody else is signed in.
+  // A to-do's email links straight to it: Shifts › Inbox with the to-do open.
+  const todo = /^#\/shifts\?(?:.*&)?todo=(\d+)/.exec(location.hash);
+  if (todo) {
+    try { sessionStorage.setItem('insight-shifts-section', 'inbox'); sessionStorage.setItem('insight-shifts-opentodo', todo[1]); } catch { /* private mode */ }
+  }
   const invited = /^#join=([A-Za-z0-9_-]+)/.exec(location.hash);
   if (invited) {
     return renderJoin(root, invited[1], () => {

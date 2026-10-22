@@ -178,10 +178,10 @@ const ROUTES = [
   ['GET', '/api/shifts/notes/people', 'shifts', (env, ctx) => notes.people(env, ctx.account)],
   // To-dos made from a difference, for an Insight user; reminded each morning until done.
   ['GET', '/api/shifts/tasks', 'shifts', (env, ctx) => tasks.list(env, ctx.query, ctx.account)],
-  ['POST', '/api/shifts/tasks', 'shifts', (env, ctx) => tasks.make(env, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/tasks', 'shifts', (env, ctx) => tasks.make(env, ctx.body, ctx.account, { origin: ctx.url.origin })],
   ['POST', '/api/shifts/tasks/for-keys', 'shifts', (env, ctx) => tasks.forKeys(env, ctx.body, ctx.account)],
   ['POST', '/api/shifts/tasks/:id/done', 'shifts', (env, ctx) => tasks.done(env, ctx.params.id, ctx.account)],
-  ['POST', '/api/shifts/tasks/:id', 'shifts', (env, ctx) => tasks.change(env, ctx.params.id, ctx.body, ctx.account)],
+  ['POST', '/api/shifts/tasks/:id', 'shifts', (env, ctx) => tasks.change(env, ctx.params.id, ctx.body, ctx.account, { origin: ctx.url.origin })],
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
