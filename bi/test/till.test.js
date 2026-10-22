@@ -1019,3 +1019,35 @@ test('water and padlocks on each shift: the counts, what went out and came back,
   const rep = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'morning');
   assert.equal(rep.compare.rentals.find((x) => x.id === 'padlock').article, '405');
 });
+
+test('a PO the closing report says the drawer paid, paid from the big safe instead: off the drawer, on the safe book', async () => {
+  const { env } = await setUp();
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  const afternoon = async () => (await routes.shifts(env, range, OWNER)).days.flatMap((d) => d.shifts).find((s) => s.slot === 'afternoon');
+  const safeBook = () => env.DB.prepare("SELECT kind, day, amount, po FROM safe_entry WHERE po = 'P00412'").all().then((r) => r.results.map((x) => ({ ...x })));
+  let s = await afternoon();
+  assert.equal(s.expense.sheetTotal, 3000, 'the closing report says GH₵30 left the drawer for P00412');
+  await assert.rejects(routes.poFromSafe(env, { day: '2026-08-01', slot: 'afternoon', po: '412', amount: '10' }, OWNER), /Why/);
+
+  // Part of it: GH₵10 from the safe, GH₵20 the drawer's.
+  await routes.poFromSafe(env, { day: '2026-08-01', slot: 'afternoon', po: '412', amount: '10', why: 'Topped up from the safe' }, OWNER);
+  s = await afternoon();
+  assert.equal(s.expense.sheetTotal, 2000);
+  const order = s.expense.odoo.orders.find((o) => o.name === 'P00412');
+  assert.deepEqual([order.total, order.fromSafe], [2000, 1000]);
+  assert.deepEqual(await safeBook(), [{ kind: 'po', day: '2026-08-01', amount: 1000, po: 'P00412' }]);
+
+  // All of it: off the drawer altogether; the safe book's line follows.
+  await routes.poFromSafe(env, { day: '2026-08-01', slot: 'afternoon', po: 'P00412', amount: '30', why: 'Paid from the safe' }, OWNER);
+  s = await afternoon();
+  assert.equal(s.expense.sheetTotal, 0);
+  assert.equal((s.expense.odoo?.orders || []).some((o) => o.name === 'P00412'), false);
+  assert.deepEqual(s.expense.fromSafe.map((x) => [x.po, x.amount, x.why]), [['P00412', 3000, 'Paid from the safe']]);
+  assert.deepEqual((await safeBook()).map((r) => r.amount), [3000], 'one line, not two');
+
+  // Undone: the drawer's again, and off the safe book.
+  await routes.poFromSafe(env, { day: '2026-08-01', slot: 'afternoon', po: 'P00412', back: true }, OWNER);
+  s = await afternoon();
+  assert.equal(s.expense.sheetTotal, 3000);
+  assert.deepEqual(await safeBook(), []);
+});

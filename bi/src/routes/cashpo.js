@@ -40,9 +40,16 @@ export async function gatherCashPos(env) {
   const out = new Map();
   const up = (n) => poName(n);
   const put = (po, row) => { if (po && !out.has(up(po))) out.set(up(po), { po: up(po), ...row }); };
+  // What the big safe paid of a PO a shift reported: that much is not the drawer's.
+  const fromSafe = await all(env.DB, 'SELECT day, slot, po, amount FROM shift_po_safe').catch(() => []);
+  const safeOf = (r) => fromSafe.find((x) => x.day === r.day && x.slot === r.slot && x.po === up(r.po))?.amount || 0;
   if (env.ATT_DB) {
     try {
-      for (const r of await all(env.ATT_DB, 'SELECT * FROM till_po ORDER BY day, slot')) {
+      for (const r0 of await all(env.ATT_DB, 'SELECT * FROM till_po ORDER BY day, slot')) {
+        const safe = safeOf(r0);
+        // Wholly from the safe: the safe book's line says so instead.
+        if (safe && (Number(r0.paid) || 0) - safe <= 0) continue;
+        const r = safe ? { ...r0, paid: (Number(r0.paid) || 0) - safe } : r0;
         // A PO whose price changed is paid over several shifts: a top-up adds,
         // change back takes off. What left the drawers is the sum.
         const have = out.get(up(r.po));
