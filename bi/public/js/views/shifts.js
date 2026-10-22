@@ -626,9 +626,19 @@ export async function renderShifts(root, { range }) {
     }
     if (!has) return mount(v, nothingYet());
     if (section === 'people') return peopleView(v);
-    if (detail) return shiftView(v);
-    // Chosen dates: side by side up to ten days, as a calendar beyond.
-    ({ day: dayView, week, month: monthView, table: tableView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
+    // Whatever goes wrong drawing a shift or a period is said on screen, with
+    // a way back, rather than a click that does nothing.
+    const failed = (err) => {
+      console.error(err);
+      mount(v, banner('problem', h('strong', 'This could not be shown. '), `${err?.message || err}. Reload the page; if it stays, send this message.`),
+        detail ? h('p', h('button.btn', { type: 'button', onclick: () => go('shifts') }, '‹ Back to the shifts')) : null);
+    };
+    try {
+      if (detail) return shiftView(v);
+      // Chosen dates: side by side up to ten days, as a calendar beyond.
+      const out = ({ day: dayView, week, month: monthView, table: tableView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
+      if (out?.catch) out.catch(failed);
+    } catch (err) { failed(err); }
     return undefined;
   }
 

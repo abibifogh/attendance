@@ -980,3 +980,24 @@ test('a payment moved to another shift says so in its own field, apart from one 
   assert.equal(z.home.fromSlot, x.slot);
   assert.deepEqual(z.moved.shares.map((s) => s.name), ['Yaw Test']);
 });
+
+test('an answer waiting for an admin whose difference is gone leaves Waiting for admin', async () => {
+  const { env } = await setUp();
+  const range = { from: '2026-08-01', to: '2026-08-03' };
+  const still = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.find((e) => e.severity !== 'info' && e.day === '2026-08-01');
+  assert.ok(still, 'a difference that is still there');
+  await routes.saveAnswer(env, { key: still.key, answer: 'Explained' }, SUPERVISOR, { pending: true });
+  // Gone since: a card ASSD showed that has since been found, on a day read.
+  await routes.saveAnswer(env, { key: 'not-found:2026-08-01:999:0', answer: 'Explained', note: 'Paid at 1:53 am' }, SUPERVISOR, { pending: true });
+  await routes.saveLink(env, { keys: ['paid-more:2026-08-01:night:1', 'paid-less:2026-08-01:night:2'] }, SUPERVISOR, { pending: true });
+  // Not judged: a day not read, and a key that names no day.
+  await routes.saveAnswer(env, { key: 'drawer:2026-05-01:morning', answer: 'Explained' }, SUPERVISOR, { pending: true });
+  await routes.saveAnswer(env, { key: 'odd:key', answer: 'Explained' }, SUPERVISOR, { pending: true });
+  const waiting = (await till.overview(env, range, OWNER)).answerApprovals.map((a) => a.keys.join('+')).sort();
+  assert.deepEqual(waiting, ['drawer:2026-05-01:morning', 'odd:key', still.key].sort());
+  // Keys that carry an ASSD line rather than a day are dated by the line.
+  assert.equal(await routes.dayOfKey(env, 'not-found:400104:0'), '2026-08-01');
+  assert.equal(await routes.dayOfKey(env, 'stay:70001-50001'), null);
+  const h = (await notes.history(env, { key: 'not-found:2026-08-01:999:0' }, OWNER)).items.map((i) => i.text);
+  assert.match(h.at(-1), /set aside: the difference is no longer on its shift/);
+});

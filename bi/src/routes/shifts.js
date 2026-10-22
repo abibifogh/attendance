@@ -800,6 +800,22 @@ export async function whereIs(env, query) {
   return { seq, day: row?.day || null };
 }
 
+/**
+ * The day a difference's key belongs to, near enough: the day in the key, the
+ * day its payment was made, or the day of its ASSD line (a night's lines can
+ * carry the next day's date). Null when the key says nothing about a day.
+ */
+export async function dayOfKey(env, key) {
+  const k = String(key || '');
+  if (/^(stay|notpair):/.test(k)) return null;
+  const date = /\d{4}-\d{2}-\d{2}/.exec(k);
+  if (date) return date[0];
+  if (/(?:^|:)(t|b):[^:]+$/.test(k)) return (await whereIs(env, { key: k }).catch(() => null))?.day || null;
+  const seq = /:(\d{5,})(?::|$)/.exec(k);
+  if (seq) return (await first(env.DB, 'SELECT day FROM assd_entry WHERE seq = ?1', Number(seq[1])).catch(() => null))?.day || null;
+  return null;
+}
+
 /** What has been loaded, and nothing about what is in it: the Upload page. */
 export async function filesStatus(env) {
   const uploads = await all(env.DB, 'SELECT kind, name, from_day, to_day, rows, note, by_name, at FROM shift_upload ORDER BY id DESC LIMIT 40');
