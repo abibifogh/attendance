@@ -216,7 +216,10 @@ function readBlock(b) {
     }
     if (b.kind === 'Items Count') {
       const item = ITEM.exec(line);
-      if (item) entry.stock = { ...(entry.stock || {}), [item[1]]: Number(item[3]) };
+      if (item) {
+        entry.stock = { ...(entry.stock || {}), [item[1]]: Number(item[3]) };
+        entry.stockNames = { ...(entry.stockNames || {}), [item[1]]: item[2].trim() };
+      }
       continue;
     }
     if (b.kind === 'Cash Movement') {
@@ -241,7 +244,7 @@ function readBlock(b) {
         entry.laundry.push({ date: assdDate(article[1]), amount });
       }
       const qty = Number(article[4]);
-      if (qty) entry.items.push({ date: dated ? assdDate(article[1]) : b.date, code: article[2], qty });
+      if (qty) entry.items.push({ date: dated ? assdDate(article[1]) : b.date, code: article[2], qty, name: article[3].trim(), amount });
       continue;
     }
     const pay = PAYMENT.exec(line);
@@ -342,9 +345,16 @@ export function summarise(shift, corrections = new Map()) {
     // Articles by number, net of refunds: a rental's deposits taken less
     // deposits given back on this shift.
     items: {},
-    // ASSD's own Items Count at the start and the end of the shift.
+    // ASSD's own Items Count at the start and the end of the shift, and
+    // which counts they were.
     stockStart: null,
     stockEnd: null,
+    stockStartSeq: null,
+    stockEndSeq: null,
+    stockNames: {},
+    // Articles that are counted at the desk (water, padlocks): what went out
+    // and came back on this shift, line by line.
+    goods: {},
     drawerOut: 0,
     expensesCounted: 0,
     booked: [],
@@ -410,10 +420,21 @@ export function summarise(shift, corrections = new Map()) {
     if (laundry && paidCash >= laundry && !paidOther) s.laundryCash += laundry;
 
     if (e.stock) {
-      if (!s.stockStart) s.stockStart = e.stock;
+      if (!s.stockStart) { s.stockStart = e.stock; s.stockStartSeq = e.seq; }
       s.stockEnd = e.stock;
+      s.stockEndSeq = e.seq;
+      Object.assign(s.stockNames, e.stockNames || {});
     }
-    if (!ADMIN.has(e.kind)) for (const i of e.items || []) s.items[i.code] = (s.items[i.code] || 0) + i.qty;
+    if (!ADMIN.has(e.kind)) {
+      for (const i of e.items || []) {
+        s.items[i.code] = (s.items[i.code] || 0) + i.qty;
+        const g = s.goods[i.code] || (s.goods[i.code] = { name: i.name || null, out: 0, back: 0, amount: 0, lines: [] });
+        if (i.qty > 0) g.out += i.qty; else g.back -= i.qty;
+        g.amount += i.amount || 0;
+        if (!g.name && i.name) g.name = i.name;
+        g.lines.push({ seq: e.seq, kind: e.kind, user: e.user, qty: i.qty, amount: i.amount ?? null });
+      }
+    }
 
     if (DEFICIT.test(e.kind) && e.booked) {
       s.booked.push({ seq: e.seq, user: e.user, when: e.kind.startsWith('End') ? 'close' : 'open', amount: e.booked });

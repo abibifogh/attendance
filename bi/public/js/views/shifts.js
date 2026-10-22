@@ -1201,6 +1201,7 @@ export async function renderShifts(root, { range }) {
             h('span', h('i', { style: 'background:var(--surface);border:2px dashed var(--sh-bad);border-radius:50%' }), 'Declined'),
             h('span', h('i', { style: 'background:var(--surface);box-shadow:0 0 0 2px var(--sh-bad);border-radius:50%' }), 'Needs an answer'))),
         timeline(s)),
+      goodsCard(s),
       h('section.card',
         h('div.sh-cardhead', h('div', h('h2', 'Where the cash went'),
           h('p.sh-sub', 'Each Cash Movement out of the front drawer, labelled by the Money Count done just before it.'))),
@@ -1611,6 +1612,92 @@ export async function renderShifts(root, { range }) {
     const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge', 'laundry-card'].includes(x.kind) && x.event);
     for (const x of extra) rows.push({ state: 'bad', cells: ['Not in ASSD', '—', h('span', h('div', `${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))] });
     return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'ASSD', num: true }, { label: 'Matched to' }], rows));
+  }
+
+  /**
+   * What is counted at the desk (water, padlocks): ASSD's Items Count at the
+   * start, what went out and came back on the shift, what should be left
+   * against what was counted at the end, and the money. Each opens to its
+   * lines.
+   */
+  const goodsOpen = new Set();
+  function goodsCard(s) {
+    const start = s.stockStart || {};
+    const end = s.stockEndSeq && s.stockEndSeq !== s.stockStartSeq ? s.stockEnd || {} : {};
+    // Whatever the desk counts (on any shift on screen, and the usual two),
+    // counted on this shift or only sold or given back on it.
+    const counted = new Set(['405', '718', ...shifts.flatMap((o) => [...Object.keys(o.stockStart || {}), ...Object.keys(o.stockEnd || {})])]);
+    const codes = [...new Set([...Object.keys(start), ...Object.keys(s.stockEnd || {}), ...Object.keys(s.goods || {}).filter((c) => counted.has(c))])].sort();
+    if (!codes.length) return null;
+    const hide = Boolean(data.redacted);
+    // Journals loaded before names were kept have none: the usual two by number.
+    const nameOf_ = (code) => s.stockNames?.[code] || s.goods?.[code]?.name || { 405: 'Padlocks', 718: 'Water' }[code] || `Article ${code}`;
+    const body = h('div');
+    const draw = () => mount(body, h('div.sh-dtable', h('table',
+      h('thead', h('tr', h('th', 'Item'),
+        h('th.num', `At the start${s.stockStartSeq ? ` (count ASSD ${s.stockStartSeq})` : ''}`),
+        h('th.num', 'Sold or out'), h('th.num', 'Back'), h('th.num', 'Should be left'),
+        h('th.num', `Counted at the end${s.stockEndSeq && s.stockEndSeq !== s.stockStartSeq ? ` (count ASSD ${s.stockEndSeq})` : ''}`),
+        h('th.num', 'Difference'), hide ? null : h('th.num', 'Money'))),
+      h('tbody', codes.flatMap((code) => {
+        const g = s.goods?.[code] || { out: 0, back: 0, amount: 0, lines: [] };
+        const at = start[code];
+        const should = at == null ? null : at - g.out + g.back;
+        const atEnd = end[code];
+        const diff = should == null || atEnd == null ? null : atEnd - should;
+        const open = goodsOpen.has(code);
+        return [
+          h(`tr.${diff == null ? 'none' : diff === 0 ? 'ok' : 'bad'}`,
+            h('td', h('b', nameOf_(code)), h('small', `ASSD article ${code}`),
+              g.lines.length ? h('button.sh-link', { type: 'button', onclick: () => { if (open) goodsOpen.delete(code); else goodsOpen.add(code); draw(); } }, open ? 'Hide lines ▴' : `${g.lines.length} line${g.lines.length === 1 ? '' : 's'} ▾`) : null),
+            h('td.num', at ?? '—'), h('td.num', g.out || '·'), h('td.num', g.back || '·'),
+            h('td.num', should ?? '—'), h('td.num', atEnd ?? (s.stockStartSeq && s.stockEndSeq === s.stockStartSeq ? 'one count only' : '—')),
+            h('td.num', diff == null ? '—' : diff === 0 ? '✓ 0' : `${diff > 0 ? '+' : '−'}${Math.abs(diff)}`),
+            hide ? null : h('td.num', money(g.amount))),
+          open ? h('tr', h('td', { colspan: hide ? '7' : '8' }, h('div.sh-dtable', h('table',
+            h('thead', h('tr', h('th', 'ASSD line'), h('th', 'What'), h('th', 'Keyed by'), h('th.num', 'Quantity'), hide ? null : h('th.num', 'Amount'))),
+            h('tbody', g.lines.map((l) => h('tr', h('td', `ASSD ${l.seq}`), h('td', l.kind, l.qty < 0 ? h('small', 'given back') : null), h('td', nameOf(l.user)),
+              h('td.num', l.qty), hide ? null : h('td.num', l.amount == null ? '—' : money(l.amount))))))))) : null,
+        ];
+      })))));
+    draw();
+    // Beside ASSD, what the closing report in HIVE says for each rental (padlocks).
+    const fromHive = h('div');
+    till.read().then((d) => {
+      const row = (d.reports || []).find((x) => x.day === s.day && x.slot === s.slot);
+      const rentals = (row?.compare?.rentals || []).filter((x) => x.article && codes.includes(String(x.article)));
+      if (!row?.report) { mount(fromHive, h('p.small.muted', 'No closing report in HIVE for this shift, so nothing to set the padlocks against.')); return; }
+      mount(fromHive, rentals.map((x) => rentalCheck(s, x)));
+    }).catch(() => {});
+    return h('section.card',
+      h('div.sh-cardhead', h('div', h('h2', 'Water and padlocks'),
+        h('p.sh-sub', 'What ASSD counted at the desk at the start, what went out and came back on this shift, and what should be left against the count at the end. Padlocks out are deposits taken; back are deposits given back.'))),
+      body, fromHive);
+  }
+
+  /** A rental (padlocks) as the closing report in HIVE has it, against ASSD: at the start, at the end, and how many went out net. */
+  function rentalCheck(s, x) {
+    const code = String(x.article);
+    const g = s.goods?.[code] || { out: 0, back: 0 };
+    const assdStart = s.stockStart?.[code] ?? null;
+    const assdEnd = s.stockEndSeq && s.stockEndSeq !== s.stockStartSeq ? s.stockEnd?.[code] ?? null : null;
+    const hiveNet = x.start == null || x.end == null ? null : x.start - x.end;
+    const assdNet = g.out - g.back;
+    const line = (label, hive, assd, note = '') => {
+      const agree = hive == null || assd == null ? null : hive === assd;
+      return h(`tr.${agree == null ? 'none' : agree ? 'ok' : 'bad'}`, h('td', mark(agree == null ? 'none' : agree ? 'ok' : 'bad')), h('td', label, note ? h('small', note) : null),
+        h('td.num', hive ?? '—'), h('td.num', assd ?? '—'),
+        h('td.num', agree == null ? '—' : agree ? '✓' : `${hive - assd > 0 ? '+' : '−'}${Math.abs(hive - assd)}`));
+    };
+    return h('div.sh-rentcheck',
+      h('h3', `${x.label}: the closing report against ASSD`),
+      h('div.sh-dtable', h('table',
+        h('thead', h('tr', h('th', ''), h('th', ''), h('th.num', 'Closing report (HIVE)'), h('th.num', 'ASSD'), h('th.num', 'Difference'))),
+        h('tbody',
+          line('At the start', x.start ?? null, assdStart, assdStart != null && s.stockStartSeq ? `ASSD: count ${s.stockStartSeq}` : ''),
+          line('At the end', x.end ?? null, assdEnd, assdEnd != null && s.stockEndSeq ? `ASSD: count ${s.stockEndSeq}` : ''),
+          line(`${x.label || 'Items'} out, net`, hiveNet, assdNet, `HIVE: start less end. ASSD: ${g.out} deposit${g.out === 1 ? '' : 's'} taken, ${g.back} given back`)))),
+      x.gap != null && x.gap !== 0 ? h('p.small', `By the closing report's own count, ${Math.abs(x.gap)} ${x.unit || 'item'}${Math.abs(x.gap) === 1 ? '' : 's'} ${x.gap > 0 ? 'more' : 'fewer'} at the end than its start less the deposits in ASSD.`) : null);
   }
 
   /** What makes "Cash taken": every cash payment ASSD has on the shift, money given back as minus. */
