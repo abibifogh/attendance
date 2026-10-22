@@ -53,11 +53,13 @@ test('history keeps what happened to an answer, beside the notes, oldest first',
   await routes.saveAnswer(env, { key: KEY, answer: 'Not the same payment' }, OWNER);
   await routes.saveAnswer(env, { key: KEY, answer: '' }, OWNER);
   const { items } = await notes.history(env, { key: KEY }, SUP);
-  assert.deepEqual(items.map((i) => [i.type, i.by]), [['event', 'Sup Kofi'], ['note', 'Test Owner'], ['event', 'Test Owner'], ['event', 'Test Owner']]);
+  assert.deepEqual(items.map((i) => [i.type, i.by]), [['event', 'Sup Kofi'], ['note', 'Test Owner'], ['event', 'Test Owner'], ['event', 'Test Owner'], ['event', 'Test Owner']]);
   assert.match(items[0].text, /^Answered “Keyed short in ASSD”: “The 9:51pm one” \(waiting for an admin\)/);
-  assert.match(items[2].text, /^Answer changed to “Not the same payment”/);
-  assert.match(items[3].text, /taken back/);
-  assert.deepEqual((await notes.counts(env, { keys: [KEY, 'drawer:2026-10-14:night', 'bad key'] }, SUP)).counts, { [KEY]: 4 });
+  // The owner answering instead sets Kofi's waiting answer aside, and says so.
+  assert.equal(items[2].text, 'Sup Kofi’s answer “Keyed short in ASSD” set aside: answered by an admin instead');
+  assert.match(items[3].text, /^Answered “Not the same payment”/);
+  assert.match(items[4].text, /taken back/);
+  assert.deepEqual((await notes.counts(env, { keys: [KEY, 'drawer:2026-10-14:night', 'bad key'] }, SUP)).counts, { [KEY]: 5 });
 });
 
 test('moving a payment is in its history', async () => {

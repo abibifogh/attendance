@@ -5,7 +5,7 @@ import { callLink } from '../lib/link.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shifts/till.js';
-import { shifts as shiftsFor } from './shifts.js';
+import { shifts as shiftsFor, setAside } from './shifts.js';
 import { formLive, poExtras } from './advances.js';
 import { openForHive } from './proof.js';
 import { madeHere } from './newpo.js';
@@ -561,6 +561,17 @@ function netByPerson(issues, nameOf) {
 
 /** A supervisor's answers and reconciliations, waiting for an admin. */
 export async function pendingAnswers(env) {
+  // Anything decided another way meanwhile (put on a staff account, or in a
+  // reconciliation an admin made) is done with, not waiting.
+  const decided = await all(env.DB, `SELECT a.key FROM shift_answer a WHERE a.status = 'pending'
+      AND EXISTS (SELECT 1 FROM till_move m WHERE m.key = a.key AND m.undone_at IS NULL)`).catch(() => []);
+  const linked = await all(env.DB, "SELECT keys FROM shift_link WHERE COALESCE(status, 'applied') = 'applied'").catch(() => []);
+  const inLinks = new Set(linked.flatMap((l) => { try { return JSON.parse(l.keys); } catch { return []; } }));
+  const waiting = await all(env.DB, "SELECT key FROM shift_answer WHERE status = 'pending'").catch(() => []);
+  const moved = decided.map((r) => r.key);
+  if (moved.length) await setAside(env, moved, 'put on a staff account', { name: 'Insight' }).catch(() => 0);
+  const done = waiting.map((r) => r.key).filter((k) => inLinks.has(k));
+  if (done.length) await setAside(env, done, 'reconciled together by an admin', { name: 'Insight' }).catch(() => 0);
   const answers = await all(env.DB, "SELECT * FROM shift_answer WHERE status = 'pending' ORDER BY at").catch(() => []);
   const links = await all(env.DB, "SELECT * FROM shift_link WHERE status = 'pending' ORDER BY at").catch(() => []);
   return [
@@ -650,6 +661,8 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
   }
   await run(env.DB, `INSERT INTO till_resolution (key, hive_user_id, outcome, amount, note, advance_id, by_name, at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`, key, userId, outcome, outcome === 'recover' ? amount : null, note, advanceId, who(account), now());
+  // Settled on their list: nothing a supervisor proposed for it still waits.
+  if (FINAL.has(outcome)) await setAside(env, [key], `settled on the person’s list instead (${SETTLED_WORDS[outcome]})`, account).catch(() => 0);
 
   // Tell them. Never fails the decision: it has been made either way.
   const words = {
@@ -796,8 +809,8 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
   key, x.kind, day, slot, x.user || null, ownerId, ownerName, amount, JSON.stringify(shares), reason, who(account), now());
   const id = (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL ORDER BY id DESC LIMIT 1', key))?.id ?? null;
-  // A supervisor's answer waiting for approval: this decides it instead.
-  if (x.proposed) await run(env.DB, "DELETE FROM shift_answer WHERE key = ?1 AND status = 'pending'", key).catch(() => null);
+  // A supervisor's answer or reconciliation waiting for approval: this decides it instead.
+  await setAside(env, [key], 'put on a staff account instead', account).catch(() => 0);
   await logEvent(env, key, `Put on staff accounts: ${shares.map((y) => `${y.name} ${ghs(y.amount)}`).join(', ')}: “${reason}”`, who(account));
 
   const what = moveWord(x.kind, amount);

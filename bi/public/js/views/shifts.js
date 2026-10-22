@@ -319,7 +319,7 @@ export async function renderShifts(root, { range }) {
    * is shown as it was; without it, everything is read again, because
    * something has just changed.
    */
-  async function load(notice = null, { cached = false } = {}) {
+  async function load(notice = null, { cached = false, inboxRead = false } = {}) {
     period = periodNow();
     if (!cached) cache.clear();
     const waitingFor = canShifts && !cache.has(keyOf(period));
@@ -350,6 +350,13 @@ export async function renderShifts(root, { range }) {
     }
     paint(notice);
     readAhead();
+    // Something changed: the Inbox's own lists too (what waits for an admin,
+    // to-dos, staff answers), so what was just decided leaves them at once.
+    if (!cached && !inboxRead && data) {
+      const counted = () => inboxItems().filter((x) => x.counts).length;
+      const before = counted();
+      readInbox(true).then(() => { if (view.isConnected && (section === 'inbox' || counted() !== before)) paint(notice); }).catch(() => {});
+    }
   }
 
   /**
@@ -2341,7 +2348,6 @@ export async function renderShifts(root, { range }) {
       try {
         await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
         // A refund owed goes on, or comes off, the list of them.
-        if (x.kind === 'paid-more') await readInbox(true).catch(() => null);
         await load();
       } catch (err) { said.textContent = err.message; }
     };
@@ -2818,7 +2824,7 @@ export async function renderShifts(root, { range }) {
   /** Read every source of the Inbox again, then the period, and show `notice`. */
   async function refreshInbox(notice = null) {
     await readInbox(true);
-    await load(typeof notice === 'string' ? banner('good', notice) : notice);
+    await load(typeof notice === 'string' ? banner('good', notice) : notice, { inboxRead: true });
   }
 
   const daysAgo = (day) => {
@@ -3325,5 +3331,5 @@ export async function renderShifts(root, { range }) {
   }
 
   // Last, once every helper above exists: the first read and paint.
-  await load();
+  await load(null, { inboxRead: true });
 }
