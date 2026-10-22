@@ -104,7 +104,7 @@ const MOVED = {
 const PERIODS = ['day', 'week', 'month'];
 /** The Inbox's kinds, in the order the chips show them. */
 const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin'],
-  ['np', 'Nice Place'], ['proof', 'Proof asked'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
+  ['task', 'To-do'], ['np', 'Nice Place'], ['proof', 'Proof asked'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
 /** What Odoo calls the records activities sit on, in words. */
 const ODOO_MODELS = { 'purchase.order': 'Purchase order', 'account.move': 'Bill or invoice', 'res.partner': 'Contact', 'stock.picking': 'Transfer', 'hr.employee': 'Employee', 'crm.lead': 'Lead' };
 const odooWhat = (a) => `${ODOO_MODELS[a.model] || a.model}${a.resName ? ` ${a.resName}` : ''}`;
@@ -267,7 +267,7 @@ export async function renderShifts(root, { range }) {
   // approvals. Read in the background on opening, so the tab shows its count,
   // and again after anything in it is answered.
   let stays = null;
-  const sources = { todo: null, advances: null, till: null, refunds: null, odoo: null, np: null, proof: null, drawerPos: null };
+  const sources = { todo: null, tasks: null, advances: null, till: null, refunds: null, odoo: null, np: null, proof: null, drawerPos: null };
   let askOdoo = false;
   function readStays() {
     if (!can.stays) return Promise.resolve(null);
@@ -278,6 +278,7 @@ export async function renderShifts(root, { range }) {
     await Promise.all([
       can.stays ? quiet(readStays()) : null,
       can.todo ? quiet(api(`/todo${inbox.showDone ? '?closed=1' : ''}`).then((d) => { sources.todo = d; })) : null,
+      can.todo ? quiet(api(`/shifts/tasks${inbox.showDone ? '?done=1' : ''}`).then((d) => { sources.tasks = d; })) : null,
       can.advances ? quiet(api('/advances').then((d) => { sources.advances = d; })) : null,
       can.answers || can.approvals ? quiet(till.read(force).then((d) => { sources.till = d; })) : null,
       may('bank') ? quiet(api('/shifts/refunds').then((d) => { sources.refunds = d; })) : null,
@@ -2089,7 +2090,7 @@ export async function renderShifts(root, { range }) {
     const done = all.filter(settled);
     const seen = seenTwice(s);
     // Each with its notes and history underneath.
-    const withNotes = (x) => { const c = exceptionCard(x); c.append(notesBox(x)); return c; };
+    const withNotes = (x) => { const c = exceptionCard(x); c.append(taskBox(x), notesBox(x)); return c; };
     const blocks = [
       open.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
@@ -2192,7 +2193,7 @@ export async function renderShifts(root, { range }) {
         },
       }, 'Add note');
       mount(body,
-        d.items.length ? h('ul.sh-tl', d.items.map((it) => h(`li${it.type === 'note' ? '.note' : ''}`,
+        d.items.length ? h('ul.sh-hist', d.items.map((it) => h(`li${it.type === 'note' ? '.note' : ''}`,
           it.type === 'note'
             ? [h('b', it.by), ' (note)', it.tags?.length ? h('span.small.muted', ` · tagged ${it.tags.map((t) => t.name).join(', ')}`) : null, h('div.txt', it.text)]
             : [it.text, it.by ? h('span.small.muted', ` · ${it.by}`) : null],
@@ -2210,8 +2211,14 @@ export async function renderShifts(root, { range }) {
     return h('div.sh-notesbox', toggle, body);
   }
 
-  /** The counts on the notes toggles on screen, in one ask. */
+  /** The counts on the notes toggles on screen, and the open to-dos on each card, in one ask each. */
   function fillNoteCounts(root) {
+    const boxes = [...root.querySelectorAll('.sh-taskbox[data-task-key]')];
+    if (boxes.length) {
+      api('/shifts/tasks/for-keys', { method: 'POST', body: { keys: boxes.map((b) => b.dataset.taskKey) } }).then((d) => {
+        for (const b of boxes) b.fill?.(d.tasks?.[b.dataset.taskKey] || []);
+      }).catch(() => {});
+    }
     const els = [...root.querySelectorAll('.sh-notes-tog[data-notes-key]')];
     if (!els.length) return;
     api('/shifts/notes/counts', { method: 'POST', body: { keys: els.map((e) => e.dataset.notesKey) } }).then((d) => {
@@ -2220,6 +2227,107 @@ export async function renderShifts(root, { range }) {
         if (!notesOpen.has(e.dataset.notesKey)) e.textContent = `▸ Notes and history${n ? ` · ${n}` : ''}`;
       }
     }).catch(() => {});
+  }
+
+  /**
+   * To-dos made from a difference, for an Insight user, due on a day; the
+   * person is emailed when it is made and each morning until it is done.
+   * Separate from the difference: answering one does not close the other.
+   */
+  const loadPeople = async () => {
+    if (!notePeople) notePeople = (await api('/shifts/notes/people').catch(() => ({ people: [] }))).people;
+    return notePeople;
+  };
+  const aboutOf = (x) => `${(KIND[x.kind] || [x.kind])[0].toLowerCase()}${x.day ? `, ${dayText(x.day)}` : ''}${x.slot ? ` ${SLOT[x.slot].label.toLowerCase()}` : ''}`;
+  const today = () => new Date().toISOString().slice(0, 10);
+  const dueText = (t) => (t.due < today() ? `Overdue · was due ${dayText(t.due)}` : t.due === today() ? 'Due today' : `Due ${dayText(t.due)}`);
+
+  /** What to do, for whom, by when: making one, or changing it. */
+  async function taskForm({ task = null, onSave, onCancel }) {
+    const people = await loadPeople();
+    const what = h('textarea', { rows: 2, maxlength: 300, placeholder: 'What to do, e.g. count the night envelopes and find the difference' }, task?.what || '');
+    const forWho = h('select', { 'aria-label': 'For' }, h('option', { value: '' }, 'For…'),
+      people.map((p) => h('option', { value: p.id, selected: task ? p.id === task.forId : false }, p.me ? `${p.name} (me)` : p.name)));
+    const due = h('input', { type: 'date', value: task?.due || plusDays(today(), 2), 'aria-label': 'Due' });
+    const said = h('span.small');
+    const save = h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        if (!what.value.trim()) { said.textContent = 'Say what to do.'; what.focus(); return; }
+        if (!forWho.value) { said.textContent = 'Say who it is for.'; forWho.focus(); return; }
+        save.disabled = true; said.textContent = 'Saving…';
+        try { await onSave({ what: what.value, forId: Number(forWho.value), due: due.value }); } catch (err) { said.textContent = err.message; save.disabled = false; }
+      },
+    }, task ? 'Save' : 'Make the to-do');
+    return h('div.sh-taskform',
+      h('label', h('span.small.muted', 'What to do'), what),
+      h('div.sh-taskrow', h('label', h('span.small.muted', 'For'), forWho), h('label', h('span.small.muted', 'Due'), due)),
+      h('p.small.muted', 'Emailed to them now, and each morning until it is done.'),
+      h('div.sh-safeinline', save, h('button.btn', { type: 'button', onclick: onCancel }, 'Cancel'), said));
+  }
+
+  /** On a difference's card: its open to-dos, and ＋ To-do. */
+  function taskBox(x) {
+    const box = h('div.sh-taskbox', { dataset: { taskKey: x.key } });
+    const lines = h('div.sh-tasklines');
+    const formSlot = h('div');
+    let shown = [];
+    const add = h('button.sh-link', {
+      type: 'button',
+      onclick: async () => {
+        add.hidden = true;
+        mount(formSlot, await taskForm({
+          onSave: async (v) => {
+            const out = await api('/shifts/tasks', { method: 'POST', body: { ...v, key: x.key, about: aboutOf(x), day: x.day, slot: x.slot } });
+            mount(formSlot); add.hidden = false;
+            box.fill([...shown, out.task]);
+            mount(formSlot, h('p.small', `To-do made for ${out.task.forName}${out.told ? ', and emailed' : ''}.`));
+            readInbox(true).catch(() => {});
+          },
+          onCancel: () => { mount(formSlot); add.hidden = false; },
+        }));
+      },
+    }, '＋ To-do');
+    box.fill = (tasks) => {
+      shown = tasks;
+      mount(lines, tasks.map((t) => h(`p.sh-taskline${t.due < today() ? '.late' : ''}`,
+        h('b', 'To-do'), ` for ${t.forName}, ${t.due < today() ? `overdue (was due ${dayText(t.due)})` : t.due === today() ? 'due today' : `due ${dayText(t.due)}`}: `, h('span', t.what))));
+    };
+    mount(box, lines, add, formSlot);
+    return box;
+  }
+
+  /** A to-do in the Inbox: Done, Change, Remove; and the shift it came from. */
+  function taskCard(t, after) {
+    const said = h('span.small');
+    const slot = h('div');
+    const late = t.state === 'open' && t.due < today();
+    const act = (path, body, msg) => async (e) => {
+      e.target.disabled = true;
+      try { await api(path, { method: 'POST', body }); await after(msg); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    };
+    const row = (label, ...value) => h('tr', h('td', { style: 'width:7rem;color:var(--ink-2)' }, label), h('td', ...value));
+    return h(`article.sh-ex.${t.state === 'done' ? 'ok' : late ? 'bad' : 'warn'}`,
+      h('div.hd', h('span.sq', t.state === 'done' ? '✓' : '☐'), h('h3', t.what), h('span.amt', t.state === 'done' ? 'Done' : dueText(t))),
+      h('table.sh-otable', h('tbody',
+        row('From', t.about || 'a difference', t.day && t.slot ? [' · ', h('button.sh-link', { type: 'button', onclick: () => openShift(t.day, t.slot) }, 'Open the shift')] : null),
+        row('For', h('b', t.forName), t.mine ? ' (you)' : ''),
+        row('Made by', `${t.madeBy}, ${dayText(String(t.madeAt).slice(0, 10))}`),
+        t.state === 'done' ? row('Done', `${t.doneBy}, ${dayText(String(t.doneAt).slice(0, 10))}`) : row('Reminded', t.reminders ? `${t.reminders} time${t.reminders === 1 ? '' : 's'}, each morning until done` : 'Each morning from tomorrow, until done'))),
+      t.state === 'open' ? h('div.sh-labels',
+        t.canDone ? h('button.btn.primary', { type: 'button', onclick: act(`/shifts/tasks/${t.id}/done`, {}, 'To-do done.') }, '✓ Done') : null,
+        t.canChange ? h('button.btn', {
+          type: 'button',
+          onclick: async () => mount(slot, await taskForm({
+            task: t,
+            onSave: async (v) => { await api(`/shifts/tasks/${t.id}`, { method: 'POST', body: v }); await after('To-do changed.'); },
+            onCancel: () => mount(slot),
+          })),
+        }, 'Change') : null,
+        t.canChange ? h('button.btn', { type: 'button', onclick: act(`/shifts/tasks/${t.id}`, { remove: true }, 'To-do removed.') }, 'Remove') : null,
+        said) : null,
+      slot,
+      h('p.small.muted', 'Done here does not answer the difference, and answering the difference does not close this.'));
   }
 
   function exceptionCard(x) {
@@ -2741,7 +2849,8 @@ export async function renderShifts(root, { range }) {
           id: `ex:${x.key}`, kind: waitingAdmin ? 'admin' : x.group === 'nopo' ? 'po' : DRAWER_GROUPS.has(x.group) ? 'drawer' : 'bank',
           title: (KIND[x.kind] || [x.kind])[0], sub: exLabel(x), amount: x.amount == null ? '' : money(Math.abs(x.amount)),
           chip: done ? ['ok', 'Answered'] : waitingAdmin ? ['none', 'Waiting for admin'] : null, tone: sev, done,
-          age: daysAgo(x.day), counts: !done && !waitingAdmin, render: () => exceptionCard(x),
+          age: daysAgo(x.day), counts: !done && !waitingAdmin,
+          render: () => { const c = exceptionCard(x); c.append(taskBox(x), notesBox(x)); fillNoteCounts(c); return c; },
           bulk: !done && !waitingAdmin && actsOn(x) ? { type: 'answer', key: x.key } : null,
         });
       }
@@ -2832,6 +2941,17 @@ export async function renderShifts(root, { range }) {
           });
         }
       }
+    }
+    // To-dos made from a difference: one's own count; an admin sees them all.
+    for (const t of sources.tasks?.tasks || []) {
+      const done = t.state !== 'open';
+      if (done && !inbox.showDone) continue;
+      out.push({
+        id: `tk:${t.id}`, kind: 'task', title: t.what, sub: `${t.about ? `From ${t.about} · ` : ''}for ${t.mine ? 'you' : t.forName}`, amount: '',
+        chip: done ? ['ok', 'Done'] : t.due < today() ? ['short', 'Overdue'] : ['over', t.due === today() ? 'Due today' : `Due ${dayText(t.due)}`],
+        tone: t.due < today() ? 'short' : 'over', done, age: daysAgo(t.madeAt), counts: !done && t.mine,
+        render: () => taskCard(t, after),
+      });
     }
     // The money to-do: cash POs with no bill, paid ≠ PO, bills with no PO.
     if (can.todo && sources.todo) {

@@ -37,7 +37,7 @@ export async function people(env, account) {
       LEFT JOIN account_access g ON g.account_id = a.id AND g.system_id = 'insight'
      WHERE a.active = 1 AND (a.is_owner = 1 OR g.role IN ('admin', 'supervisor'))
      ORDER BY a.name, a.email`).catch(() => []);
-  return { people: rows.map((r) => ({ id: Number(r.id), name: r.name || r.email })) };
+  return { people: rows.map((r) => ({ id: Number(r.id), name: r.name || r.email, ...(Number(r.id) === Number(account?.id) ? { me: true } : {}) })) };
 }
 
 /** A difference's notes and what happened to it, oldest first. */

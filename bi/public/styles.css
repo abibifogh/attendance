@@ -1946,14 +1946,27 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-notesbox { border-top: 1px dashed var(--border); margin-top: .5rem; padding-top: .45rem; display: grid; gap: .5rem; }
 .sh-notes-tog { font-weight: 700; text-decoration: none; font-size: .86rem; justify-self: start; }
 .sh-notes { display: grid; gap: .6rem; }
-.sh-tl { list-style: none; margin: 0 0 0 .4rem; padding: 0; display: grid; gap: .55rem; border-left: 2px solid var(--border); }
-.sh-tl li { position: relative; padding-left: .9rem; font-size: .84rem; }
-.sh-tl li::before { content: ""; position: absolute; left: -6px; top: .35rem; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink-2); }
-.sh-tl li.note::before { border-color: var(--series-1); background: var(--series-1); }
-.sh-tl small { display: block; color: var(--ink-2); font-size: .74rem; }
-.sh-tl .txt { background: var(--surface-2); border-radius: 8px; padding: .35rem .55rem; margin-top: .2rem; white-space: pre-wrap; }
+.sh-hist { list-style: none; margin: 0 0 0 .4rem; padding: 0; display: grid; gap: .55rem; border-left: 2px solid var(--border); }
+.sh-hist li { position: relative; padding-left: .9rem; font-size: .84rem; }
+.sh-hist li::before { content: ""; position: absolute; left: -6px; top: .35rem; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink-2); }
+.sh-hist li.note::before { border-color: var(--series-1); background: var(--series-1); }
+.sh-hist small { display: block; color: var(--ink-2); font-size: .74rem; }
+.sh-hist .txt { background: var(--surface-2); border-radius: 8px; padding: .35rem .55rem; margin-top: .2rem; white-space: pre-wrap; }
 .sh-noteform { display: grid; gap: .4rem; }
 .sh-noteform textarea { padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; resize: vertical; }
 .sh-tags { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
 .sh-tag { border: 1px solid var(--border); border-radius: 999px; padding: .15rem .55rem; font: inherit; font-size: .78rem; background: var(--surface); color: var(--ink); cursor: pointer; }
 .sh-tag[aria-pressed="true"] { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+
+/* To-dos made from a difference. */
+.sh-taskbox { border-top: 1px dashed var(--border); margin-top: .5rem; padding-top: .45rem; display: grid; gap: .35rem; }
+.sh-taskbox > .sh-link { font-weight: 700; text-decoration: none; font-size: .86rem; justify-self: start; }
+.sh-tasklines { display: grid; gap: .25rem; }
+.sh-taskline { margin: 0; font-size: .84rem; background: var(--surface-2); border-radius: 8px; padding: .3rem .55rem; }
+.sh-taskline.late { box-shadow: inset 3px 0 0 var(--sh-bad); }
+.sh-taskform { display: grid; gap: .45rem; }
+.sh-taskform label { display: grid; gap: .15rem; }
+.sh-taskform textarea, .sh-taskform select, .sh-taskform input { padding: .4rem .5rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.sh-taskform textarea { resize: vertical; }
+.sh-taskrow { display: grid; grid-template-columns: 1fr 10rem; gap: .5rem; }
+@media (max-width: 480px) { .sh-taskrow { grid-template-columns: 1fr; } }
