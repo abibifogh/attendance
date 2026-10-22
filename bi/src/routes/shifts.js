@@ -628,6 +628,43 @@ export async function saveMovement(env, body, account, { pending = false, smallU
 }
 
 /**
+ * An admin decided these differences another way (answered, reconciled, put
+ * on a staff account, settled on a person's list): whatever a supervisor
+ * proposed for them and is still waiting for approval is done with. It
+ * leaves Waiting for admin, and its history says why.
+ */
+export async function setAside(env, keys, how, account) {
+  const wanted = new Set(keys.map(String));
+  if (!wanted.size) return 0;
+  let n = 0;
+  const by = who(account);
+  for (const key of wanted) {
+    // eslint-disable-next-line no-await-in-loop
+    const a = await first(env.DB, "SELECT * FROM shift_answer WHERE key = ?1 AND status = 'pending'", key).catch(() => null);
+    if (!a) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await run(env.DB, "DELETE FROM shift_answer WHERE key = ?1 AND status = 'pending'", key);
+    // eslint-disable-next-line no-await-in-loop
+    await logEvent(env, key, `${a.by_name || 'A supervisor'}’s answer “${a.answer}” set aside: ${how}`, by);
+    n += 1;
+  }
+  const links = await all(env.DB, "SELECT * FROM shift_link WHERE status = 'pending'").catch(() => []);
+  for (const l of links) {
+    let lk = [];
+    try { lk = JSON.parse(l.keys); } catch { lk = []; }
+    if (!lk.some((k) => wanted.has(k))) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await run(env.DB, "DELETE FROM shift_link WHERE id = ?1 AND status = 'pending'", l.id);
+    for (const k of lk) {
+      // eslint-disable-next-line no-await-in-loop
+      await logEvent(env, k, `${l.by_name || 'A supervisor'}’s “Reconciled together” set aside: ${how}`, by);
+    }
+    n += 1;
+  }
+  return n;
+}
+
+/**
  * Reconcile two or more exceptions together: one story that showed up as
  * several differences. Each of them counts as answered while the group stands.
  */
@@ -637,6 +674,8 @@ export async function saveLink(env, body, account, { pending = false } = {}) {
   if (keys.length > 30) throw badRequest('Thirty at most in one reconciliation.');
   if (keys.some((k) => k.length > 200)) throw badRequest('That is not an exception.');
   const note = str(body?.note, 'Note', { max: 600 });
+  // An admin's reconciliation decides instead of whatever waits for approval on them.
+  if (!pending) await setAside(env, keys, 'reconciled together by an admin instead', account);
   for (const row of await all(env.DB, "SELECT id, keys FROM shift_link WHERE COALESCE(status, 'applied') <> 'rejected'")) {
     let taken = [];
     try { taken = JSON.parse(row.keys); } catch { taken = []; }
@@ -668,11 +707,19 @@ export async function saveAnswer(env, body, account, { pending = false } = {}) {
   const key = str(body?.key, 'Exception', { required: true, max: 200 });
   const answer = str(body?.answer, 'Answer', { max: 60 });
   const note = str(body?.note, 'Note', { max: 600 });
-  const existing = await first(env.DB, 'SELECT * FROM shift_answer WHERE key = ?1', key);
+  let existing = await first(env.DB, 'SELECT * FROM shift_answer WHERE key = ?1', key);
   // What an admin settled is the admin's to change; a supervisor may change
   // or take back only their own answer, while it is still waiting.
   if (pending && existing && ((existing.status || 'applied') === 'applied' || existing.by_name !== who(account))) {
     throw badRequest('That has already been answered. Ask an admin to change it.');
+  }
+  // Put on a staff account by an admin: decided, so nothing more waits on it.
+  if (pending && answer && await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL', key).catch(() => null)) {
+    throw badRequest('An admin has put that on a staff account already.');
+  }
+  // An admin answering decides instead of whatever a supervisor proposed.
+  if (!pending && answer && await setAside(env, [key], 'answered by an admin instead', account)) {
+    existing = await first(env.DB, 'SELECT * FROM shift_answer WHERE key = ?1', key);
   }
   if (!answer) {
     await run(env.DB, 'DELETE FROM shift_answer WHERE key = ?1', key);

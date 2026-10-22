@@ -9,6 +9,7 @@ import { signLink, verifyLink, callLink } from '../src/lib/link.js';
 import { parseJournal } from '../src/shifts/assd.js';
 import * as safe from '../src/routes/safe.js';
 import * as envelopes from '../src/routes/envelopes.js';
+import * as notes from '../src/routes/notes.js';
 
 /**
  * Closing a shift in HIVE, as Insight sees it.
@@ -927,4 +928,33 @@ test('whose shift it was: chosen with a reason, its differences follow, both are
 
   await till.setOwner(env, { day, slot: 'afternoon', userId: null }, OWNER, { fetchImpl });
   assert.ok((await till.issuesBetween(env, day, day)).issues.filter((i) => i.slot === 'afternoon').every((i) => i.userId === 8), 'back to who closed it');
+});
+
+test('whatever an admin decides another way takes a supervisor’s waiting answer off Waiting for admin', async () => {
+  const { env } = await setUp();
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  const waiting = async () => (await till.overview(env, range, OWNER)).answerApprovals.map((a) => `${a.type}:${a.keys.join('+')}`);
+
+  // An admin answers it directly: the supervisor's answer, and a reconciliation waiting with it, are set aside.
+  await routes.saveAnswer(env, { key: 'a:1', answer: 'Explained', note: 'Counted again' }, SUPERVISOR, { pending: true });
+  await routes.saveLink(env, { keys: ['b:2', 'c:3'], note: 'Same money' }, SUPERVISOR, { pending: true });
+  assert.deepEqual(await waiting(), ['answer:a:1', 'link:b:2+c:3']);
+  await routes.saveAnswer(env, { key: 'a:1', answer: 'Not a problem' }, OWNER);
+  await routes.saveAnswer(env, { key: 'c:3', answer: 'Corrected in ASSD' }, OWNER);
+  assert.deepEqual(await waiting(), []);
+  const hist = async (key) => (await notes.history(env, { key }, OWNER)).items.map((i) => i.text);
+  assert.deepEqual((await hist('a:1')).slice(1), ['Sam Supervisor’s answer “Explained” set aside: answered by an admin instead', 'Answered “Not a problem”']);
+  assert.match((await hist('b:2'))[0], /“Reconciled together” set aside: answered by an admin instead/);
+
+  // An admin reconciles it with others: the same.
+  await routes.saveAnswer(env, { key: 'd:4', answer: 'Explained' }, SUPERVISOR, { pending: true });
+  await routes.saveLink(env, { keys: ['d:4', 'e:5'], note: 'One story' }, OWNER);
+  assert.deepEqual(await waiting(), []);
+
+  // Already on a staff account: a supervisor cannot answer it, and one left from before is swept off.
+  await env.DB.prepare("INSERT INTO till_move (key, kind, day, slot, amount, shares, reason, by_name, at) VALUES ('f:6', 'drawer-short', '2026-08-01', 'night', -500, '[]', 'Taken', 'Test Owner', '2026-08-02 08:00:00')").run();
+  await assert.rejects(routes.saveAnswer(env, { key: 'f:6', answer: 'Explained' }, SUPERVISOR, { pending: true }), /staff account already/);
+  await env.DB.prepare("INSERT INTO shift_answer (key, answer, by_name, at, status) VALUES ('f:6', 'Explained', 'Sam Supervisor', '2026-08-02 09:00:00', 'pending')").run();
+  assert.deepEqual(await waiting(), []);
+  assert.match((await hist('f:6'))[0], /set aside: put on a staff account/);
 });
