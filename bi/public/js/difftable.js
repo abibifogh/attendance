@@ -21,7 +21,7 @@ const BANK = new Set(['never-settled', 'reversal', 'bank-only']);
 const DRAWER_KINDS = new Set(['drawer-short', 'drawer-over', 'handover-gap', 'movement-unlabelled', 'movement-twice', 'movement-reversal', 'receipts-unclear', 'receipts-carried']);
 const NO_AMOUNT = new Set(['receipts-unclear', 'receipts-carried', 'movement-labelled', 'movement-matched', 'movement-twice', 'movement-reversal']);
 const MINUS = new Set(['failed', 'not-found', 'paid-less', 'duplicate', 'never-settled', 'reversal', 'movement-unlabelled', 'expense-no-po', 'expense-po-gap']);
-const PLUS = new Set(['not-recorded', 'paid-more', 'double-charge', 'laundry-card', 'bank-only']);
+const PLUS = new Set(['not-recorded', 'paid-more', 'double-charge', 'laundry-card', 'bank-only', 'refund']);
 
 /** Which column a difference goes in. */
 export function columnOf(x) {

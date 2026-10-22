@@ -21,6 +21,8 @@ test('each kind lands in its column, signed one way', () => {
     [ex('transposition', 900, { group: 'keying', paid: 12300, assd: 13200 }), 'card', -900],
     [ex('paid-more', 300, { group: 'paidmore', paid: 27900, assd: 27600 }), 'card', 300],
     [ex('never-settled', 5000, { group: 'settlement' }), 'bank', -5000],
+    // A card refund with no bank reversal: card money taken that ASSD keyed back out.
+    [ex('refund', -30000, { group: 'settlement' }), 'card', 30000],
     [ex('expense-no-po', 4000, { group: 'nopo' }), 'po', -4000],
     [ex('laundry-mismatch', 1500, { group: 'laundry' }), 'laundry', -1500],
   ];

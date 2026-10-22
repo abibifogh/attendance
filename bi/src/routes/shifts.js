@@ -1,12 +1,12 @@
 import { all, first, run, writeAll } from '../lib/db.js';
 import { rebuildAssdRevenue } from './revenue.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
-import { addDays, isDay, resolveRange, daysBetween } from '../lib/dates.js';
+import { addDays, isDay, resolveRange, daysBetween, todayIn } from '../lib/dates.js';
 import { toMinor } from '../lib/money.js';
 import { parseJournal, journalWindow, mergeEntry, segment, joinShared, DRAWER } from '../shifts/assd.js';
 import { parseStatement } from '../shifts/bank.js';
 import { parseTerminalCsv } from '../shifts/terminal.js';
-import { reconcile, settlement, placeShifts, sameLogin, slotIndex, GROUPS, SLOTS, minuteOf, slotAt, slotDay, slotName } from '../shifts/reconcile.js';
+import { reconcile, settlement, placeShifts, sameLogin, slotIndex, GROUPS, SLOTS, SETTLE_DAYS, dayNumber, minuteOf, slotAt, slotDay, slotName } from '../shifts/reconcile.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { logEvent } from './notes.js';
@@ -917,6 +917,20 @@ async function signers(env, entries) {
   };
 }
 
+/**
+ * A card refund keyed in ASSD with no bank reversal six days on is a
+ * difference, not a note: either no money went back to a card, and ASSD shows
+ * less card money than was taken, or the reversal is late.
+ */
+export function unbackedRefunds(exceptions, today) {
+  for (const x of exceptions.filter((r) => r.kind === 'refund' && !r.pairedWith)) {
+    if (!x.day || dayNumber(today) - dayNumber(x.day) < SETTLE_DAYS) continue;
+    x.unbacked = true;
+    x.severity = 'warning';
+  }
+  return exceptions;
+}
+
 export async function shifts(env, query, account) {
   let { from, to } = resolveRange(query, 'UTC', { days: 7 });
   if (daysBetween(from, to).length > MAX_DAYS) from = addDays(to, -(MAX_DAYS - 1));
@@ -1020,10 +1034,12 @@ export async function shifts(env, query, account) {
   // A card reversal that answers a refund keyed in ASSD is a refund, not a loss.
   const exceptions = [...result.exceptions.filter((x) => !x.day || inRange(x.day)),
     ...settled.exceptions.filter((x) => inRange(x.day))];
-  for (const rev of exceptions.filter((x) => x.kind === 'reversal')) {
+  // The reversal comes days after the refund, so look past the days shown.
+  for (const rev of settled.exceptions.filter((x) => x.kind === 'reversal')) {
     const refund = exceptions.find((x) => x.kind === 'refund' && x.amount === rev.amount && !x.pairedWith);
     if (refund) { refund.pairedWith = rev.key; rev.pairedWith = refund.key; rev.severity = 'info'; }
   }
+  unbackedRefunds(exceptions, todayIn('UTC'));
 
   // The laundry, shift by shift: what the laundry system took in each shift's
   // hours against the laundry line ASSD has in that shift. ASSD records the

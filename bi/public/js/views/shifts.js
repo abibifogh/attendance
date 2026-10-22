@@ -2177,7 +2177,9 @@ export async function renderShifts(root, { range }) {
       case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
       case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit six days on.`;
       case 'reversal': return `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)}).${x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD in these days.'}`;
-      case 'refund': return `A card refund keyed in ASSD.${x.pairedWith ? ' The bank reversal for it is on the statement.' : ' No matching reversal on the bank statement yet.'}`;
+      case 'refund': return x.pairedWith ? 'A card refund keyed in ASSD. The bank reversal for it is on the statement.'
+        : x.unbacked ? `A card refund of ${money(Math.abs(x.amount))} keyed in ASSD (ASSD ${x.seq}), and no reversal on the bank statement six days on. If no money went back to a guest’s card, ASSD shows ${money(Math.abs(x.amount))} less card money than was taken: say why it was keyed.`
+          : 'A card refund keyed in ASSD. No matching reversal on the bank statement yet.';
       case 'regrouped': return `The shift’s unmatched lines (${(x.lines || []).map((a) => money(a)).join(' + ')}) add up exactly to its unmatched payments (${(x.events || []).map((ev) => money(ev.amount)).join(' + ')}).`;
       case 'other-shift': return `Paid at ${when(e.at)}${x.otherShift ? ` on ${nameOf(x.otherShift.user)}’s ${SLOT[x.otherShift.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.otherShift.day)}` : ''}, and keyed on this one.`;
       case 'corrected': return `Keyed and reversed in the same shift (ASSD ${x.pair}). Nothing is owed.`;
@@ -2298,7 +2300,7 @@ export async function renderShifts(root, { range }) {
   function flowOf(x) {
     const a = Math.abs(x.amount ?? 0);
     if (x.amount == null) return null;
-    if (['not-recorded', 'bank-only', 'double-charge', 'paid-more'].includes(x.kind)) return a;
+    if (['not-recorded', 'bank-only', 'double-charge', 'paid-more', 'refund'].includes(x.kind)) return a;
     if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
     if (['drawer-over', 'drawer-short', 'handover-gap'].includes(x.kind)) return x.amount;
     if (x.kind === 'movement-twice') return a;
