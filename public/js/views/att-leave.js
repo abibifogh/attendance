@@ -1,6 +1,8 @@
 import { api } from '../api.js';
 import { can, navigate } from '../app.js';
-import { fmtDay, fmtNum, h, monthOf, mount, shiftMonth, toast, todayISO } from '../util.js';
+import {
+  fmtDay, fmtNum, fmtSince, fmtStamp, h, monthOf, mount, shiftMonth, toast, todayISO,
+} from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { field, formDialog, monthLabel, signOffDialog } from './att-shared.js';
 
@@ -300,6 +302,20 @@ export async function renderAttLeave(params = {}) {
     },
     { key: 'paid', label: 'Paid', format: (v) => (v ? h('span.pill.good', 'Paid') : h('span.pill', 'Unpaid')) },
     { key: 'reason', label: 'Reason', format: (v) => (v ? h('small', v) : h('span.muted', '—')) },
+    // When it came in, so the oldest request is not the one left waiting, and
+    // who put it in where that was somebody other than the person off.
+    {
+      key: 'requested_at',
+      label: kind === 'pending' ? 'Asked' : 'Recorded',
+      format: (v, r) => {
+        if (!v) return h('span.muted', '—');
+        const by = String(r.requested_by ?? '').replace(/\s*\([^)]*\)$/, '').trim();
+        const someoneElse = by && by.toLowerCase() !== String(r.staff_name ?? '').toLowerCase();
+        return h('div', { title: fmtStamp(v) },
+          h('div', fmtSince(v)),
+          someoneElse ? h('small.muted', `by ${by}`) : null);
+      },
+    },
     {
       key: 'status',
       label: kind === 'pending' ? '' : 'Status',
