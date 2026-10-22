@@ -8,6 +8,7 @@ import { advanceDetail, advanceStatus, advanceOpen, advanceWhen, elsewhereCard }
 import { state } from '../app.js';
 import { npReviewBox } from './np-review.js';
 import { proofBox, sendCard } from './proof.js';
+import { COLUMNS as DIFF_COLUMNS, monthLines, byPerson, toCsv } from '../difftable.js';
 
 /**
  * Shifts: the front desk's control sheet, done from the source records.
@@ -128,7 +129,7 @@ function periodOf(mode, anchor, dates = null) {
   if (mode === 'day') {
     return { from: anchor, to: anchor, label: new Date(`${anchor}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) };
   }
-  if (mode === 'month') {
+  if (mode === 'month' || mode === 'table') {
     return { from: monthStart(anchor), to: monthEnd(anchor), label: new Date(`${anchor}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) };
   }
   const from = plusDays(anchor, -weekdayOf(anchor));
@@ -217,7 +218,8 @@ export async function renderShifts(root, { range }) {
   // Or any days somebody chooses, From and To: as many as a month for whoever
   // may see a month, a week for whoever may see a week.
   const longest = may('month') ? 62 : may('week') ? 7 : 0;
-  const choices = longest ? [...periods, 'dates'] : periods;
+  // Table: the month's differences as a table, beside the calendar, for whoever may see a month.
+  const choices = [...(longest ? [...periods, 'dates'] : periods), ...(may('month') ? ['table'] : [])];
   let mode = store.get('mode', 'week');
   if (!choices.includes(mode)) mode = periods.includes('week') ? 'week' : periods[0] || 'week';
   let anchor = store.get('anchorFor', '') === range.to ? store.get('anchor', range.to) : range.to;
@@ -373,7 +375,7 @@ export async function renderShifts(root, { range }) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return paint();
     }
-    if (PERIODS.includes(next) || next === 'dates') {
+    if (PERIODS.includes(next) || next === 'dates' || next === 'table') {
       section = 'shifts';
       detail = false;
       store.set('section', section);
@@ -626,7 +628,7 @@ export async function renderShifts(root, { range }) {
     if (section === 'people') return peopleView(v);
     if (detail) return shiftView(v);
     // Chosen dates: side by side up to ten days, as a calendar beyond.
-    ({ day: dayView, week, month: monthView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
+    ({ day: dayView, week, month: monthView, table: tableView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
     return undefined;
   }
 
@@ -636,9 +638,9 @@ export async function renderShifts(root, { range }) {
     const away = latest && (latest < period.from || latest > period.to);
     if (mode === 'dates') return datesBar();
     return h('div.sh-period',
-      h('button.sh-arrow', { type: 'button', 'aria-label': `Previous ${mode}`, onclick: () => step(-1) }, '‹'),
+      h('button.sh-arrow', { type: 'button', 'aria-label': `Previous ${mode === 'table' ? 'month' : mode}`, onclick: () => step(-1) }, '‹'),
       h('strong.sh-plabel', period.label),
-      h('button.sh-arrow', { type: 'button', 'aria-label': `Next ${mode}`, onclick: () => step(1) }, '›'),
+      h('button.sh-arrow', { type: 'button', 'aria-label': `Next ${mode === 'table' ? 'month' : mode}`, onclick: () => step(1) }, '›'),
       away ? h('button.btn', { type: 'button', onclick: () => moveTo(latest) }, `Latest: ${shortDay(latest)}`) : null);
   }
 
@@ -670,7 +672,7 @@ export async function renderShifts(root, { range }) {
   function nothingYet() {
     const c = data.coverage || {};
     return h('div.card',
-      h('h2', mode === 'dates' ? 'No shifts on these days yet' : `No shifts in this ${mode} yet`),
+      h('h2', mode === 'dates' ? 'No shifts on these days yet' : `No shifts in this ${mode === 'table' ? 'month' : mode} yet`),
       h('p.sh-sub', c.journal
         ? `The ASSD journal loaded so far covers ${shortDay(c.journal.from)} to ${shortDay(c.journal.to)}. Choose days inside that, or load the journal for these.`
         : 'Load the ASSD detail journal to begin. The bank statement and the card terminal report make the card and MoMo checks possible; the journal alone already gives the cash.'),
@@ -985,6 +987,107 @@ export async function renderShifts(root, { range }) {
         ], weeks)) : null,
       cardBars([...data.days].sort((a, b) => (a.day < b.day ? -1 : 1))));
   }
+
+  // ------------------------------------------------------------- table --
+
+  /**
+   * The month's differences as a table: a row per day with its three shifts
+   * across, or a row per shift with a column per kind. Plus is money in that
+   * ASSD does not show, minus is money ASSD shows that is not there. A click
+   * opens the shift.
+   */
+  const tableOpts = { layout: store.get('tablelayout', 'days'), show: 'all', person: '' };
+  async function tableView(v) {
+    const names = await till.names().catch(() => new Map());
+    const who = (l) => names.get(`${l.day}|${l.slot}`)?.name || nameOf(l.user);
+    const days = monthLines(shifts, data.exceptions, period.from, period.to);
+    const all = days.flatMap((d) => d.slots.filter(Boolean));
+    const hide = Boolean(data.redacted);
+    const passes = (l) => Boolean(l) && (tableOpts.show === 'diff' ? l.count > 0 : tableOpts.show === 'open' ? l.open + l.waiting > 0 : true)
+      && (!tableOpts.person || who(l) === tableOpts.person);
+    const fig = (v_) => (v_ == null || hide ? '' : v_ === 0 ? '·' : `${v_ > 0 ? '+' : '−'}${(Math.abs(v_) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+    // A total of nothing says so; a single shift's nothing is a dot.
+    const total = (v_) => (v_ === 0 && !hide ? '0.00' : fig(v_));
+    const tone_ = (v_) => (hide || !v_ ? '' : v_ < 0 ? '.neg' : '.pos');
+    const chip = (l) => (!l ? h('span.sh-chip.none', '—')
+      : { agrees: () => h('span.sh-chip.ok', '✓ agrees'), answered: () => h('span.sh-chip.none', '✓ answered'), waiting: () => h('span.sh-chip.over', '⏳ waiting'),
+        open: () => h('span.sh-chip.short', `${l.open} open`), journal: () => h('span.sh-chip.none', 'journal ends') }[l.status]());
+    const sum = (ls, f) => ls.reduce((t, l) => t + (f(l) || 0), 0);
+    const opener = (l) => ({ role: 'button', tabindex: '0', title: `Open ${who(l)}, ${dayText(l.day)} ${SLOT[l.slot].label.toLowerCase()}`, onclick: () => go('shift', `${l.day}|${l.slot}`),
+      onkeydown: (e) => { if (e.key === 'Enter') go('shift', `${l.day}|${l.slot}`); } });
+    const redraw = () => tableView(v);
+
+    const pick = (key, value, label) => h('button', { type: 'button', 'aria-pressed': String(tableOpts[key] === value), onclick: () => { tableOpts[key] = value; if (key === 'layout') store.set('tablelayout', value); redraw(); } }, label);
+    const people = [...new Set(all.map(who))].sort();
+    const person = h('select', { 'aria-label': 'Person', onchange: (e) => { tableOpts.person = e.target.value; redraw(); } },
+      h('option', { value: '' }, 'Everyone'), people.map((p) => h('option', { value: p, selected: p === tableOpts.person }, p)));
+    const csv = () => {
+      const blob = new Blob([toCsv(all.filter(passes), who)], { type: 'text/csv' });
+      const a = h('a', { href: URL.createObjectURL(blob), download: `shift-differences-${period.from.slice(0, 7)}.csv` });
+      document.body.append(a); a.click(); a.remove();
+    };
+    const bar = h('div.sh-tbar',
+      h('div.sh-span', { role: 'group', 'aria-label': 'Layout' }, pick('layout', 'days', 'A row per day'), pick('layout', 'shifts', 'A row per shift')),
+      h('div.sh-span', { role: 'group', 'aria-label': 'Which shifts' }, pick('show', 'all', 'All shifts'), pick('show', 'diff', 'With differences'), pick('show', 'open', 'Still open')),
+      person,
+      h('span.sh-tgap'),
+      h('button.btn', { type: 'button', onclick: csv }, '⬇ CSV'),
+      h('button.btn', { type: 'button', onclick: () => window.print() }, '🖨 Print'));
+
+    let body;
+    if (tableOpts.layout === 'days') {
+      const shown = days.filter((d) => d.slots.some(passes));
+      const cells = (l) => (!l ? [h('td.sh-tsl', h('span.muted', '—')), h('td.n')]
+        : [h(`td.sh-tsl${passes(l) ? '' : '.faint'}`, opener(l), h('div.sh-tcell', h('b', who(l)), chip(l))),
+          h(`td.n${tone_(l.net)}${passes(l) ? '' : '.faint'}`, fig(l.net))]);
+      body = h('table.sh-dtable',
+        h('thead',
+          h('tr.grp', h('th'), SLOT_NAMES.map((n) => h('th.sh-tsl', { colspan: '2' }, n)), hide ? null : h('th.sh-tsl')),
+          h('tr', h('th', 'Day'), SLOT_NAMES.map(() => [h('th.sh-tsl', 'Who'), h('th.n', hide ? '' : 'Net')]), hide ? null : h('th.n.sh-tsl', 'Day'))),
+        h('tbody', shown.map((d) => {
+          const net = d.slots.some((l) => l?.hidden) ? null : sum(d.slots.filter(Boolean), (l) => l.net);
+          return h(`tr${weekdayOf(d.day) === 6 ? '.wk' : ''}`, h('td', h('b', dayText(d.day, { weekday: 'short', day: 'numeric' }))),
+            d.slots.map(cells), hide ? null : h(`td.n.sh-tsl${tone_(net)}`, h('b', fig(net))));
+        })),
+        hide ? null : h('tfoot', h('tr', h('td', period.label),
+          SLOT_ORDER_.map((sl) => { const t = sum(all.filter((l) => l.slot === sl && passes(l)), (l) => l.net); return [h('td.sh-tsl'), h(`td.n${tone_(t)}`, total(t))]; }),
+          (() => { const t = sum(all.filter(passes), (l) => l.net); return h(`td.n.sh-tsl${tone_(t)}`, total(t)); })())));
+      if (!shown.length) body = h('p.sh-sub', 'No shifts like that this month.');
+    } else {
+      const rows = all.filter(passes);
+      body = rows.length ? h('table.sh-dtable',
+        h('thead', h('tr', h('th', 'Day'), h('th', 'Shift'), h('th', 'Who'), hide ? null : DIFF_COLUMNS.map(([, l]) => h('th.n', l)), hide ? null : h('th.n', 'Net'),
+          h('th.n', 'Open'), h('th.n', 'Waiting'), h('th.n', 'Answered'), h('th', 'Status'))),
+        h('tbody', rows.map((l, i) => h(`tr.sh-trow${rows[i + 1]?.day !== l.day ? '.wk' : ''}`, opener(l),
+          h('td', rows[i - 1]?.day === l.day ? '' : h('b', dayText(l.day, { weekday: 'short', day: 'numeric' }))), h('td', SLOT[l.slot].label), h('td', who(l)),
+          hide ? null : DIFF_COLUMNS.map(([k]) => h(`td.n${tone_(l.kinds[k])}`, l.hidden ? '' : fig(l.kinds[k]))),
+          hide ? null : h(`td.n${tone_(l.net)}`, h('b', fig(l.net))),
+          h('td.n', l.open || '·'), h('td.n', l.waiting || '·'), h('td.n', l.answered || '·'), h('td', chip(l))))),
+        h('tfoot', h('tr', h('td', { colspan: '3' }, `${period.label} · ${rows.length} shift${rows.length === 1 ? '' : 's'}`),
+          hide ? null : DIFF_COLUMNS.map(([k]) => { const t = sum(rows, (l) => l.kinds[k]); return h(`td.n${tone_(t)}`, total(t)); }),
+          hide ? null : (() => { const t = sum(rows, (l) => l.net); return h(`td.n${tone_(t)}`, total(t)); })(),
+          h('td.n', String(sum(rows, (l) => l.open))), h('td.n', String(sum(rows, (l) => l.waiting))), h('td.n', String(sum(rows, (l) => l.answered))), h('td'))))
+        : h('p.sh-sub', 'No shifts like that this month.');
+    }
+
+    const ppl = byPerson(all, who);
+    mount(v,
+      h('section.card.sh-tablecard',
+        h('div.sh-cardhead', h('div', h('h2', `${period.label}: what does not agree, shift by shift`),
+          h('p.sh-sub', hide ? 'Where each shift stands. Amounts are not shown to you.'
+            : 'Plus is money in that ASSD does not show; minus is money ASSD shows that is not there. Every difference counts, answered or not; the rules’ own explanations do not. A click opens the shift.'))),
+        bar,
+        h('div.sh-tscroll', body)),
+      ppl.length ? h('section.card',
+        h('div.sh-cardhead', h('h2', 'The month by person')),
+        h('div.sh-tscroll', h('table.sh-dtable',
+          h('thead', h('tr', h('th', 'Who'), h('th.n', 'Shifts'), h('th.n', 'With differences'), hide ? null : h('th.n', 'Drawer'), hide ? null : h('th.n', 'Net, all kinds'), h('th.n', 'Still open'), h('th.n', 'Waiting'))),
+          h('tbody', ppl.map((p) => h('tr', h('td', h('b', p.who)), h('td.n', String(p.shifts)), h('td.n', String(p.withDiff)),
+            hide ? null : h(`td.n${tone_(p.drawer)}`, fig(p.drawer)), hide ? null : h(`td.n${tone_(p.net)}`, h('b', fig(p.net))),
+            h('td.n', p.open || '·'), h('td.n', p.waiting || '·'))))))) : null);
+  }
+  const SLOT_ORDER_ = ['morning', 'afternoon', 'night'];
+  const SLOT_NAMES = SLOT_ORDER_.map((sl) => SLOT[sl].label);
 
   // ------------------------------------------------------------- shift --
 

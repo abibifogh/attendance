@@ -11,7 +11,7 @@ the arrows step a day, a week (Monday to Sunday) or a month at a time, and
 **Latest** jumps to the newest shifts loaded. When the journal stops inside a
 shift, a small note at the end of the line says which; open it for what to do.
 
-- **Shifts**: Day, Week, Month or Dates, chosen with the switch beside the tabs
+- **Shifts**: Day, Week, Month, Dates or Table, chosen with the switch beside the tabs
   (it is in the Inbox too, and there it keeps you in the Inbox).
   - **Day**: the day's three shifts as large cards, each with the drawer in
     four lines, how it came out, how guests paid and what is open; the day's
@@ -21,6 +21,21 @@ shift, a small note at the end of the line says which; open it for what to do.
     against what arrived, day by day.
   - **Month**: a calendar, each day's three shifts as coloured bars; the month
     week by week below it.
+  - **Table**: the month's differences as a table, for whoever may see Month.
+    Choose **A row per day** (the three shifts across, each with who, where it
+    stands and what its differences come to, and the day's total) or **A row
+    per shift** (a column for each kind: drawer, card and MoMo, bank, POs and
+    expenses, laundry; then the net, and how many are open, waiting for an
+    admin and answered). The choice is remembered. Show all shifts, only those
+    with differences, or only those still open, for everyone or one person;
+    **CSV** downloads the rows shown, **Print** prints the table. Below it,
+    the month by person. Plus is money in that ASSD does not show (a payment
+    not keyed, a drawer over); minus is money ASSD shows that is not there (a
+    card that never paid, a drawer short, cash out with no label or no PO).
+    Every difference counts, answered or not; the rules' own explanations and
+    the questions about receipts in a count do not, so the drawer is not
+    counted twice. Without amounts, only where each shift stands is shown. A
+    click opens the shift. The sums are worked out in `public/js/difftable.js`.
   - **Dates**: From and To, for days that cross a week or a month, such as a
     surplus and the shortage it answers a few shifts later. Up to ten days
     show as tiles, longer as a calendar; ‹ › move by the same number of days.
