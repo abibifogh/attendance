@@ -38,10 +38,13 @@ test('only for Insight admins and supervisors, made by them', async () => {
 
 test('made: emailed to whoever it is for, kept apart from the answer, in the history', async () => {
   const { env, raw, sent, fetchImpl } = setUp();
-  const out = await tasks.make(env, body(), SUP, { fetchImpl });
+  const out = await tasks.make(env, body(), SUP, { fetchImpl, origin: 'https://insight.example.test' });
   assert.equal(out.told, true);
   assert.equal(sent[0].to, 'ama@example.test');
   assert.match(sent[0].subject, /Sup Kofi gave you a to-do/);
+  // A link straight to it, and where it lives: Insight, as which account.
+  assert.match(sent[0].text, new RegExp(`Open it: https://insight\\.example\\.test/#/shifts\\?todo=${out.task.id}`));
+  assert.match(sent[0].text, /in Insight \(not HIVE\).*signed in as ama@example\.test/);
   // For oneself: nobody emailed.
   assert.equal((await tasks.make(env, body({ forId: 21 }), SUP, { fetchImpl })).told, false);
   assert.equal(sent.length, 1);
@@ -93,6 +96,7 @@ test('reminded each morning until done, once a day', async () => {
   assert.equal((await tasks.remindDue(env, { fetchImpl, at: new Date('2026-10-21T07:45:00Z') })).sent, 0);
   assert.equal((await tasks.remindDue(env, { fetchImpl, at: new Date('2026-10-23T06:45:00Z') })).sent, 1);
   assert.match(sent[0].subject, /^To-do due Thu 22 Oct/);
+  assert.doesNotMatch(sent[0].text, /Open it:/, 'no address kept yet, so no link rather than a wrong one');
   assert.match(sent[1].subject, /^To-do overdue/);
   await tasks.done(env, task.id, OWNER);
   assert.equal((await tasks.remindDue(env, { fetchImpl, at: new Date('2026-10-24T06:45:00Z') })).sent, 0);

@@ -1,4 +1,4 @@
-import { all, first, run } from '../lib/db.js';
+import { all, first, getSettings, run, setSetting } from '../lib/db.js';
 import { badRequest, forbidden, notFound, str } from '../lib/http.js';
 import { callLink } from '../lib/link.js';
 import { logEvent, people } from './notes.js';
@@ -59,10 +59,26 @@ async function forWhom(env, account, id) {
 const fmt = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+/**
+ * Insight's own address, kept when a to-do is made so the morning's
+ * reminders (which no visitor asks for) can link to it too.
+ */
+const ORIGIN = 'app_origin';
+async function originOf(env, origin) {
+  if (/^https?:\/\/[\w.:-]+$/.test(origin || '')) {
+    await setSetting(env.DB, ORIGIN, origin).catch(() => {});
+    return origin;
+  }
+  return (await getSettings(env.DB).catch(() => ({})))[ORIGIN] || '';
+}
+
 /** Email whoever it is for. Never throws: the to-do is kept either way. */
-async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0, 10) } = {}) {
+async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0, 10), origin = '' } = {}) {
   const to = await first(env.DB, 'SELECT email FROM accounts WHERE id = ?1 AND active = 1', t.for_id).catch(() => null);
   if (!to?.email) return false;
+  const base = await originOf(env, origin);
+  // A link that opens this to-do in Insight, signed in as the account it is for.
+  const link = base ? `${base}/#/shifts?todo=${t.id}` : '';
   const late = t.due < today;
   const when = late ? `was due ${fmt(t.due)}` : t.due === today ? 'is due today' : `is due ${fmt(t.due)}`;
   const subject = reminder ? `To-do ${late ? 'overdue' : t.due === today ? 'due today' : `due ${fmt(t.due)}`}: ${t.what.slice(0, 80)}` : `${t.made_by} gave you a to-do`;
@@ -72,8 +88,8 @@ async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to: to.email, subject, kind: 'insight_todo', senderName: 'Insight',
-        text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\nOpen Insight › Shifts › Inbox › To-do, and press Done when it is done. You are reminded each morning until then.`,
-        html: `<p><b>${esc(t.what)}</b>${esc(from)}.</p><p>It ${esc(when)}. Made by ${esc(t.made_by)}.</p><p>Open Insight › Shifts › Inbox › <b>To-do</b>, and press Done when it is done. You are reminded each morning until then.</p>`,
+        text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\n${link ? `Open it: ${link}\n\n` : ''}It is in Insight (not HIVE): Shifts › Inbox › To-do, signed in as ${to.email}. Press Done when it is done. You are reminded each morning until then.`,
+        html: `<p><b>${esc(t.what)}</b>${esc(from)}.</p><p>It ${esc(when)}. Made by ${esc(t.made_by)}.</p>${link ? `<p><a href="${esc(link)}"><b>Open the to-do in Insight</b></a></p>` : ''}<p>It is in Insight (not HIVE): Shifts › Inbox › <b>To-do</b>, signed in as ${esc(to.email)}. Press Done when it is done. You are reminded each morning until then.</p>`,
       },
     });
     return true;
@@ -81,7 +97,7 @@ async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0
 }
 
 /** Make a to-do from a difference. */
-export async function make(env, body, account, { fetchImpl } = {}) {
+export async function make(env, body, account, { fetchImpl, origin = '' } = {}) {
   mayMake(account);
   const key = String(body?.key || '');
   if (!KEY.test(key)) throw badRequest('Which difference?');
@@ -96,7 +112,7 @@ export async function make(env, body, account, { fetchImpl } = {}) {
   const t = await first(env.DB, `INSERT INTO shift_task (key, about, day, slot, what, for_id, for_name, due, made_by_id, made_by, made_at, reminded_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11) RETURNING *`,
   key, about, day, slot, what, p.id, p.name, due, account?.id ?? null, who(account), at);
-  const told = mine(t, account) ? false : await tell(env, t, { fetchImpl });
+  const told = mine(t, account) ? false : await tell(env, t, { fetchImpl, origin });
   await logEvent(env, key, `To-do for ${p.name}, due ${fmt(due)}: “${what}”`, who(account));
   return { ok: true, task: view(t, account), told };
 }
@@ -135,7 +151,7 @@ export async function done(env, id, account) {
 }
 
 /** Change what it says, whom it is for, or when it is due; or remove it. */
-export async function change(env, id, body, account, { fetchImpl } = {}) {
+export async function change(env, id, body, account, { fetchImpl, origin = '' } = {}) {
   mayMake(account);
   const t = await taskFor(env, id);
   if (!view(t, account).canChange) throw forbidden('Only whoever made it, or an admin, can change it.');
@@ -154,7 +170,7 @@ export async function change(env, id, body, account, { fetchImpl } = {}) {
   if (said.length) await logEvent(env, t.key, `To-do changed: ${said.join(', ')}`, who(account));
   const after = await first(env.DB, 'SELECT * FROM shift_task WHERE id = ?1', t.id);
   // Given to somebody else: they are told now, as when it was made.
-  const told = moved && Number(p.id) !== Number(account?.id) ? await tell(env, after, { fetchImpl }) : false;
+  const told = moved && Number(p.id) !== Number(account?.id) ? await tell(env, after, { fetchImpl, origin }) : false;
   return { ok: true, task: view(after, account), told };
 }
 

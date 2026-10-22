@@ -249,6 +249,11 @@ export async function renderShifts(root, { range }) {
 
   // The Inbox: which kind is shown, which item is open, whether done ones show.
   const inbox = { kind: 'all', open: null, at: 0, showDone: false, ticked: new Set(), elsewhere: {} };
+  // Opened from a to-do's email: that to-do, once the to-dos are read; or
+  // why it is not here (another account's, or done).
+  // Kept until used: the screen is drawn twice on arriving by a link.
+  let wantTodo = store.get('opentodo', '') || null;
+  let todoMissing = null;
   // The Inbox by keyboard: J and K move, 1 to 8 answer an exception that is open.
   document.addEventListener('keydown', (e) => {
     if (section !== 'inbox' || !view.isConnected || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -3223,6 +3228,11 @@ export async function renderShifts(root, { range }) {
 
   function inboxView(v) {
     const all = inboxItems();
+    if (wantTodo && sources.tasks) {
+      if (all.some((x) => x.id === `tk:${wantTodo}`)) { inbox.kind = 'task'; inbox.open = `tk:${wantTodo}`; inbox.showDone = false; } else todoMissing = wantTodo;
+      wantTodo = null;
+      store.set('opentodo', '');
+    }
     // POs is always there for an admin: it holds the expense form's matching too.
     const kinds = INBOX_KINDS.filter(([k]) => all.some((x) => x.kind === k) || (k === 'po' && admin));
     if (inbox.kind !== 'all' && !kinds.some(([k]) => k === inbox.kind)) inbox.kind = 'all';
@@ -3294,7 +3304,11 @@ export async function renderShifts(root, { range }) {
         }, 'Give'), gave);
     })() : null;
 
+    const missing = todoMissing ? banner('warning', h('strong', 'That to-do is not on your list. '),
+      `You are signed in as ${state.me?.account?.name || ''}${state.me?.account?.email ? ` (${state.me.account.email})` : ''}. It may be for another account, or done already: tick Show done to see done ones.`) : null;
+    todoMissing = null;
     mount(v,
+      missing,
       h('div.ib-bar',
         h('div.td-pills', { role: 'group', 'aria-label': 'Kinds' },
           [['all', 'All'], ...kinds].map(([k, label]) => h('button', {
