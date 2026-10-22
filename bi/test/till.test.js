@@ -958,3 +958,25 @@ test('whatever an admin decides another way takes a supervisor’s waiting answe
   assert.deepEqual(await waiting(), []);
   assert.match((await hist('f:6'))[0], /set aside: put on a staff account/);
 });
+
+test('a payment moved to another shift says so in its own field, apart from one put on staff accounts', async () => {
+  const { env, hive } = await setUp();
+  hive.raw.exec("INSERT INTO users (id, name, role, active) VALUES (9, 'Yaw Test', 'staff', 1)");
+  await env.DB.prepare(`INSERT INTO terminal_txn (rrn, at, day, kind, amount, last4, approval, approved, status, loaded_at)
+    VALUES ('777001', '2026-08-01 14:20:00', '2026-08-01', 'card', 12300, '4242', 'A1', 1, 'approved', '2026-08-02 06:00:00')`).run();
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  const find = async () => (await routes.shifts(env, range, OWNER)).exceptions.find((e) => e.event?.id === 't:777001');
+  const x = await find();
+  assert.equal(x.kind, 'not-recorded');
+  const to = x.slot === 'morning' ? 'afternoon' : 'morning';
+  await routes.movePayment(env, { eventId: 't:777001', key: x.key, day: '2026-08-01', slot: to, why: 'Taken just after the hand-over', fromDay: x.day, fromSlot: x.slot }, OWNER);
+  const y = await find();
+  assert.equal(y.slot, to);
+  assert.deepEqual([y.home.fromSlot, y.home.why], [x.slot, 'Taken just after the hand-over']);
+  assert.equal(y.moved, undefined, '`moved` is only for staff accounts: the shift page reads its shares');
+  // Put on a staff account as well: both say so, each in its own field.
+  await till.moveToStaff(env, { key: y.key, day: y.day, direction: 'surplus', reason: 'Kept the change', shares: [{ userId: 9, amount: 12300 }] }, OWNER, { fetchImpl: async () => Response.json({ ok: true }) });
+  const z = await find();
+  assert.equal(z.home.fromSlot, x.slot);
+  assert.deepEqual(z.moved.shares.map((s) => s.name), ['Yaw Test']);
+});

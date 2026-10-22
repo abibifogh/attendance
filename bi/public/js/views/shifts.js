@@ -2129,8 +2129,9 @@ export async function renderShifts(root, { range }) {
         await load(banner('good', 'Put back on the shift its time falls in.'));
       } catch (err) { alert(err.message); }
     };
-    if (x.moved) {
-      return h('p.small.sh-payhome', `Moved here from the ${SLOT[x.moved.fromSlot]?.label.toLowerCase() || 'other shift'}${x.moved.fromDay ? ` of ${dayText(x.moved.fromDay)}` : ''} by ${x.moved.by}: “${x.moved.why}”. `,
+    // `home`: moved here by an admin (`moved` is a difference put on staff accounts).
+    if (x.home) {
+      return h('p.small.sh-payhome', `Moved here from the ${SLOT[x.home.fromSlot]?.label.toLowerCase() || 'other shift'}${x.home.fromDay ? ` of ${dayText(x.home.fromDay)}` : ''} by ${x.home.by}: “${x.home.why}”. `,
         admin ? h('button.sh-link', { type: 'button', onclick: back }, 'Put it back') : null);
     }
     if (!admin) return null;
