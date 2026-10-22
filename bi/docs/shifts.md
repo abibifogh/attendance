@@ -354,7 +354,7 @@ code and card, to check each one arrived.
 
 | Group | What it means |
 | --- | --- |
-| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. |
+| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. Also here: **Keyed as cash, but the drawer did not move**: cash sales, returns or Items Corrections keyed between two Money Counts that found the same notes (to within GH₵1), with no movement and no change in receipts between them, and coming to more than GH₵1. By the drawer's own counts that money never came in or went out: stock put right through the till, or a count copied from the last one. It lists every stretch and line, and the drawer difference says how much of the cash it counts was keyed that way. It explains the drawer's difference, so it carries no amount of its own in the month table. |
 | Recorded as paid, but the payment failed | The terminal declined the amount and never approved it afterwards, yet ASSD has it as paid by card. |
 | Recorded as card or MoMo, no payment found | Nothing of that amount arrived near the shift. |
 | The same card charged twice | Two approved charges to one card, same amount, within 30 minutes, and ASSD has one. |

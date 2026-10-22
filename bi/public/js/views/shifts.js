@@ -76,6 +76,7 @@ const KIND = {
   'bank-only': ['In the bank, not on the terminal', '?'],
   'laundry-mismatch': ['The laundry did not agree', 'L'],
   'movement-unlabelled': ['Cash moved out with no label', '?'],
+  'keyed-no-cash': ['Keyed as cash, but the drawer did not move', '≡'],
   'expense-no-po': ['Expenses with no PO', '#'],
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
   'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
@@ -142,6 +143,15 @@ const dayText = (day, opts = { weekday: 'short', day: 'numeric', month: 'short' 
   .toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
 const time = (at) => (at ? String(at).slice(11, 16) : '');
 const when = (at, day) => (at ? `${shortDay(String(at).slice(0, 10))} ${time(at)}` : (day ? shortDay(day) : ''));
+/** Stretches of still counts, joined where one ends at the count the next starts from: "571 from ASSD 217106 to 217138". */
+function stillRuns(spans) {
+  const runs = [];
+  for (const p of spans) {
+    const last = runs[runs.length - 1];
+    if (last && last.to === p.from) { last.to = p.to; last.notes.add(p.notesAfter); } else runs.push({ from: p.from, to: p.to, notes: new Set([p.notesBefore, p.notesAfter]) });
+  }
+  return runs.map((r) => `${[...r.notes].map((n) => money(n)).join(' / ')} from ASSD ${r.from} to ${r.to}`);
+}
 const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`);
 const whole = (minor) => (minor == null ? '—' : `${minor < 0 ? '−' : ''}${num(Math.abs(minor) / 100)}`);
 const cedis = (minor) => (minor == null ? '' : (minor / 100).toFixed(2));
@@ -2184,7 +2194,11 @@ export async function renderShifts(root, { range }) {
       case 'other-shift': return `Paid at ${when(e.at)}${x.otherShift ? ` on ${nameOf(x.otherShift.user)}’s ${SLOT[x.otherShift.slot]?.label.toLowerCase() || ''} shift of ${shortDay(x.otherShift.day)}` : ''}, and keyed on this one.`;
       case 'corrected': return `Keyed and reversed in the same shift (ASSD ${x.pair}). Nothing is owed.`;
       case 'drawer-short':
-      case 'drawer-over': return `It should have held ${money(x.expected)}. ${x.closingFrom === 'typed' ? 'The recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`;
+      case 'drawer-over': return `It should have held ${money(x.expected)}. ${x.closingFrom === 'typed' ? 'The recount' : 'ASSD’s closing count'} found ${money(x.closing)}.`
+        + (x.still ? ` ${money(Math.abs(x.still))} of the cash ASSD ${x.still > 0 ? 'counts as taken' : 'counts as paid out'} was keyed while the drawer’s counts did not move: see “Keyed as cash, but the drawer did not move”.` : '');
+      case 'keyed-no-cash': return `The counts held ${stillRuns(x.spans || []).join('; ')}. Yet ASSD has cash keyed in between: `
+        + `${(x.spans || []).flatMap((p) => p.lines).map((l) => `ASSD ${l.seq} ${signed(l.amount)}`).join(', ')}, ${signed(x.amount)} in all.`
+        + ` By the drawer’s own counts that money ${x.amount > 0 ? 'never came in' : 'never went out'}: stock put right through the till, or counts copied from the last one. Say which.`;
       case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
       case 'movement-matched': return `${x.reason === 'duplicate'
         ? `ASSD ${x.seq} (${money(x.amount)}) was matched as a duplicate of ASSD ${x.pair} and is left out of the drawer.`

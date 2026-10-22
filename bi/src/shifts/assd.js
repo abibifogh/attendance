@@ -383,6 +383,10 @@ export function summarise(shift, corrections = new Map()) {
     receiptsSwaps: [],
     // Counts that can be read two ways (see the ledger below).
     receiptsAsk: [],
+    // Cash keyed between two counts that found the same notes: by the
+    // counts, it never moved (see stillSpans).
+    stillKeyed: [],
+    stillAmount: 0,
     // Movements that seem to carry receipts the counts after still show.
     carriedAsk: [],
     directExpenses: 0,
@@ -410,6 +414,7 @@ export function summarise(shift, corrections = new Map()) {
       if (p.method === 'card') s.cards.push({ seq: e.seq, date: p.date, amount: p.amount, user: e.user });
       if (p.method === 'cash') s.cashLines.push({ seq: e.seq, kind: e.kind, user: e.user, label: p.label, amount: p.amount });
     }
+    if (paidCash) order.push({ cash: paidCash, seq: e.seq, kind: e.kind });
     const laundry = e.laundry.reduce((sum, l) => sum + l.amount, 0);
     for (const l of e.laundry) {
       s.laundryLines.push({ seq: e.seq, user: e.user, date: l.date, amount: l.amount, paid: paidCash && !paidOther ? 'cash' : paidOther && !paidCash ? 'card or MoMo' : paidCash ? 'mixed' : 'not paid on this entry' });
@@ -620,6 +625,8 @@ export function summarise(shift, corrections = new Map()) {
   // taken, less the receipts that appeared and the cash moved out. It differs
   // from ASSD's own balance (which counts receipts as if they were cash) only
   // by receipts that left the drawer with no movement.
+  s.stillKeyed = stillSpans(order, counts);
+  s.stillAmount = s.stillKeyed.reduce((t, x) => t + x.amount, 0);
   if (s.opening && s.closing) {
     s.expected = s.opening.notes + s.cash - s.receiptsIn - (s.drawerOut - s.receiptsMoved);
     s.countVariance = s.closing.notes - s.expected;
@@ -631,6 +638,40 @@ export function summarise(shift, corrections = new Map()) {
 }
 
 const manualOf = (c) => ({ by: c.by || null, at: c.at || null, note: c.note || null });
+
+/** A count may move by a coin or two with no sale: GH₵1 either way is "the same". */
+export const STILL_TOLERANCE = 100;
+
+/**
+ * Cash keyed in ASSD while the drawer did not move. Between two counts with
+ * no movement, no change in receipts and the same notes (to within a cedi),
+ * any cash sales, returns or item corrections keyed in between that come to
+ * more than a cedi took no money in or out, by the drawer's own counts:
+ * stock put right through the till, say. Each such stretch, with its lines.
+ */
+export function stillSpans(order, counts) {
+  const out = [];
+  let lines = [];
+  let from = null;
+  let moved = false;
+  for (const step of order) {
+    if (step.move) { moved = true; continue; }
+    if (step.cash) { lines.push({ seq: step.seq, kind: step.kind, amount: step.cash }); continue; }
+    if (step.count == null) continue;
+    const c = counts[step.count];
+    if (from) {
+      const net = lines.reduce((t, l) => t + l.amount, 0);
+      if (!moved && c.receipts === from.receipts && Math.abs(c.notes - from.notes) <= STILL_TOLERANCE
+        && Math.abs(net) > STILL_TOLERANCE) {
+        out.push({ from: from.seq, to: c.seq, notesBefore: from.notes, notesAfter: c.notes, amount: net, lines });
+      }
+    }
+    from = c;
+    lines = [];
+    moved = false;
+  }
+  return out;
+}
 
 /**
  * What each Cash Movement out of the drawer was.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { freshDb } from './helpers.js';
 import {
-  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements, summarise, joinShared,
+  assdMoney, assdDate, journalWindow, mergeEntry, parseJournal, segment, methodOf, labelMovements, summarise, joinShared, stillSpans,
 } from '../src/shifts/assd.js';
 import { parseTerminalCsv, csvRow, unwrap } from '../src/shifts/terminal.js';
 import { parseStatement, classify, sheetTime } from '../src/shifts/bank.js';
@@ -1055,6 +1055,50 @@ test('a guest who paid more: refund owed until paid back, or kept apart as two',
   const line = after.find((e) => e.seq === x.seq && e.amount === 27600);
   assert.equal(line.kind, 'keying');
   assert.equal(line.split.key, x.key);
+});
+
+test('cash keyed while the drawer’s counts did not move is told apart, stretch by stretch', () => {
+  let seq = 700;
+  const base = { register: '001', user: 'K', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const move = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Movement', movement: -amount * 100 });
+  const cash = (amount, kind = 'Cash Register') => ({ ...base, seq: seq += 1, kind, payments: [{ method: 'cash', label: 'Cash', amount: amount * 100, date: '2026-08-01' }] });
+  const s = summarise({ user: 'K', startSeq: 700, entries: [
+    count(100, 20), // 701
+    cash(40), // 702: a real sale, the count goes up
+    count(140, 20), // 703
+    cash(50), cash(-20), // 704, 705: keyed, the count stays
+    count(141, 20), // 706: a coin either way is the same
+    cash(-27, 'Items Correction'), // 707
+    count(141, 20), // 708
+    cash(1), // 709: a cedi is not worth asking about
+    count(141, 20), // 710
+    cash(30), move(30), // 711, 712: a movement in between: the counts cannot say
+    count(141, 20), // 713
+    cash(60), // 714: the receipts changed: expenses paid out of the sale
+    count(141, 80), // 715
+  ] });
+  assert.deepEqual(s.stillKeyed.map((x) => [x.from, x.to, x.notesBefore, x.notesAfter, x.amount, x.lines.map((l) => [l.seq, l.amount])]), [
+    [703, 706, 14000, 14100, 3000, [[704, 5000], [705, -2000]]],
+    [706, 708, 14100, 14100, -2700, [[707, -2700]]],
+  ]);
+  assert.equal(s.stillAmount, 300);
+  assert.equal(stillSpans([], []).length, 0);
+});
+
+test('the screen: cash keyed while the counts did not move is a drawer difference with its lines', async () => {
+  const counted = (seq) => block('Money Count', 'ALPHA', seq, '02.08.26', '001', ['. .   00002   100 GHS   2   100,00   200,00 GHS', '200,00 GHS']);
+  const water = (seq, qty, amount) => block('Cash Register', 'ALPHA', seq, '02.08.26', '001', [
+    `02.08.26   718   Water Bottle   ${qty}   10,00   ${amount} GHS   19`, cash('02.08.26', amount), `${amount} GHS`]);
+  const { db } = freshDb();
+  const env = { DB: db };
+  await routes.uploadJournal(env, { lines: redactJournalLines([...journal(), ...counted(300542), ...water(300543, '5', '50,00'),
+    ...water(300544, '-2', '-20,00'), ...counted(300545)]), name: 'journal.pdf' }, OWNER);
+  const out = await routes.shifts(env, { from: '2026-08-02', to: '2026-08-02' }, OWNER);
+  const x = out.exceptions.find((e) => e.kind === 'keyed-no-cash');
+  assert.deepEqual([x.key, x.group, x.severity, x.amount, x.seqs], ['nocash:2026-08-02:morning', 'drawer', 'warning', 3000, [300543, 300544]]);
+  assert.equal(routes.isCashKey(x.key), true);
+  assert.equal(await routes.dayOfKey(env, x.key), '2026-08-02');
 });
 
 test('a card refund keyed in ASSD: paired with the bank’s reversal, or a difference six days on', async () => {

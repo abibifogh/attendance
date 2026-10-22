@@ -16,6 +16,7 @@ test('each kind lands in its column, signed one way', () => {
     [ex('drawer-over', 500, { group: 'drawer' }), 'drawer', 500],
     [ex('movement-unlabelled', 20000, { group: 'unlabelled' }), 'drawer', -20000],
     [ex('receipts-unclear', 3000, { group: 'drawer' }), 'drawer', 0],
+    [ex('keyed-no-cash', 3000, { group: 'drawer' }), 'drawer', 0],
     [ex('not-found', 30000, { group: 'missing' }), 'card', -30000],
     [ex('not-recorded', 233600, { group: 'unrecorded' }), 'card', 233600],
     [ex('transposition', 900, { group: 'keying', paid: 12300, assd: 13200 }), 'card', -900],
