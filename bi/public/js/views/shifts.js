@@ -1218,7 +1218,13 @@ export async function renderShifts(root, { range }) {
       let at = (r.opening ?? 0) + s.cash;
       steps.push({ lab: '+ Cash taken', sm: s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '', from: r.opening ?? 0, to: at, c: 'var(--sh-cash)', amt: money(s.cash), detail: () => cashDetail(s) });
       if (r.putBack) { steps.push({ lab: '+ Put back', sm: 'a movement the other way', from: at, to: at + r.putBack, c: 'var(--sh-cash)', amt: money(r.putBack) }); at += r.putBack; }
-      if (rc.reconciled?.amount) { steps.push({ lab: '+ Cash for receipts', sm: 'receipts swapped for cash, reconciled', from: at, to: at + rc.reconciled.amount, c: 'var(--sh-cash)', amt: money(rc.reconciled.amount) }); at += rc.reconciled.amount; }
+      if (rc.reconciled?.amount) {
+        steps.push({
+          lab: '+ Cash for receipts', sm: `receipts swapped for cash, reconciled${rc.reconciled.by ? ` by ${rc.reconciled.by}` : ''}`,
+          from: at, to: at + rc.reconciled.amount, c: 'var(--sh-cash)', amt: money(rc.reconciled.amount), detail: () => swapWhy(s),
+        });
+        at += rc.reconciled.amount;
+      }
       if (n.expenses) {
         const words = [rc.in ? 'new receipts in the counts' : '', rc.direct ? 'paid straight out' : '', r.fromSheet ? 'from the closing report' : ''].filter(Boolean).join(', ');
         steps.push({ lab: '− Expenses', sm: words || 'receipts in the counts', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses), detail: () => expenseDetail(s, n) }); at -= n.expenses;
@@ -1267,7 +1273,7 @@ export async function renderShifts(root, { range }) {
         settled ? h('p', h('b', `✓ ${settledWords(settled).charAt(0).toUpperCase()}${settledWords(settled).slice(1)}`), settled.note ? `: ${settled.note}` : '', settled.by ? ` (${settled.by})` : '') : null,
         r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null),
-        receiptsPanel(r));
+        receiptsPanel(r, s));
 
       mount(checksList, checks(s, n).map(([cls_, mark, text, detail]) => (detail
         ? h('li.sh-hasdetail', h('details',
@@ -1278,17 +1284,48 @@ export async function renderShifts(root, { range }) {
   }
 
   /** The receipts in the counts: at hand-over, at the end, out, and what is new. */
-  function receiptsPanel(r) {
+  function receiptsPanel(r, s) {
     const rc = r.receipts || {};
     if (!rc.open && !rc.close && !rc.in && !rc.out) return null;
+    const seqs = (list) => (list.length ? ` (ASSD ${list.join(', ')})` : '');
     const row = (label, value, strong = false) => h(`div.sh-rrow${strong ? '.strong' : ''}`, h('span', label), h('b.num', money(value)));
+    const carriedOut = (s.moves || []).filter((m) => m.receipts > 0).map((m) => m.seq);
     return h('div.sh-receipts',
-      row('Receipts in the drawer at hand-over', rc.open ?? 0),
-      row('Receipts in the drawer at the end', rc.close ?? 0),
-      rc.moved ? row('Receipts taken out with a cash movement', rc.moved) : null,
+      row(`Receipts in the drawer at hand-over${s.opening?.seq ? ` (count ASSD ${s.opening.seq})` : ''}`, rc.open ?? 0),
+      row(`Receipts in the drawer at the end${s.closing?.seq ? ` (count ASSD ${s.closing.seq})` : ''}`, rc.close ?? 0),
+      rc.moved ? row(`Receipts taken out with a cash movement${seqs(carriedOut)}`, rc.moved) : null,
       rc.swapped > 0 ? row('Receipts taken out with no cash movement', rc.swapped) : null,
-      row('New receipts: this shift’s expenses', rc.in ?? 0, true),
+      row(`New receipts: this shift’s expenses${seqs((rc.list || []).map((x) => x.seq))}`, rc.in ?? 0, true),
+      (rc.list || []).filter((x) => x.leg).map((x) => h('div.sh-rhow', receiptsSum(x, s))),
       leftWords(rc.trail).map((x) => h(`div.sh-rleft.${x.tone}`, h('span', x.mark), h('span', x.text))));
+  }
+
+  /** How new receipts were worked out: this count's receipts less the count before's, with both ASSD numbers. */
+  function receiptsSum(x, s) {
+    const l = x.leg;
+    const before = l.prev === s.opening?.seq ? `count ASSD ${l.prev}, the hand-over count` : `count ASSD ${l.prev}, the count before`;
+    return `${money(l.receiptsAfter)} of receipts in count ASSD ${x.seq} − ${money(l.receiptsBefore)} in ${before} = ${money(x.amount)} new.`;
+  }
+
+  /** Why a movement counts as expenses: how much carried receipts out, how much was cash, and why. */
+  function moveSum(m, s) {
+    const rec = s.register?.receipts?.reconciled;
+    return [
+      `Cash Movement ASSD ${m.seq} took ${money(m.amount)} out of the drawer.`,
+      m.receipts > 0 ? ` ${money(m.receipts)} of it carried receipts out: those are counted where they first appeared in a count, not again here.` : '',
+      m.direct > 0 ? ` ${money(m.direct)} of it was cash paid straight out${m.manual ? `, labelled expenses by hand${m.manual.by ? ` by ${m.manual.by}` : ''}` : ''}.` : '',
+      m.direct > 0 && rec?.amount ? ` The receipts before it were reconciled as swapped for cash${rec.by ? ` (${rec.by})` : ''}, so it took cash, not receipts.` : '',
+    ].join('');
+  }
+
+  /** Receipts swapped for cash, reconciled: what it means for the drawer, and who said so. */
+  function swapWhy(s) {
+    const rec = s.register?.receipts?.reconciled || {};
+    return h('div.sh-detail', h('p.small',
+      `${money(rec.amount)} of receipts left the drawer with no cash movement, and ${money(rec.amount)} of cash was put in for them. `,
+      'So the drawer should hold that much more cash, and a movement that later took it out counts as cash paid straight out. ',
+      `Reconciled${rec.by ? ` by ${rec.by}` : ''}${rec.at ? `, ${String(rec.at).slice(0, 16)}` : ''}${rec.note ? `: “${rec.note}”` : ''}. `,
+      'If that is not what happened, undo it under “Matched and explained” below.'));
   }
 
   /**
@@ -1591,16 +1628,24 @@ export async function renderShifts(root, { range }) {
     // The expenses: receipts as they appeared in the counts, and cash a
     // movement paid straight out.
     const moves = [
-      ...((s.register?.receipts?.list) || []).map((x) => ({ label: h('span', `New receipts in the count ASSD ${x.seq}`), amount: x.amount })),
+      ...((s.register?.receipts?.list) || []).map((x) => ({
+        label: h('span', `New receipts in count ASSD ${x.seq}`, x.leg ? h('small', receiptsSum(x, s)) : null), amount: x.amount,
+      })),
       ...(s.moves || []).filter((m) => m.direct > 0).map((m) => ({
-        label: h('span', `ASSD ${m.seq}, paid straight out`,
+        label: h('span', `ASSD ${m.seq}, cash paid straight out`, h('small', moveSum(m, s)),
           twinOf(m.seq) ? h('small', `✓ ASSD ${twinOf(m.seq).seq} matched as its duplicate, left out`) : null),
         amount: m.direct,
       })),
     ];
     // What the typed expense sheet settled on top of what the counts labelled.
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
-    if (fromSheet > 0) moves.push({ label: exp.sheetFrom === 'report' ? 'From the closing report (unlabelled cash)' : 'From the expense sheet (unlabelled cash)', amount: fromSheet });
+    if (fromSheet > 0) {
+      moves.push({
+        label: h('span', exp.sheetFrom === 'report' ? 'From the closing report (unlabelled cash)' : 'From the expense sheet (unlabelled cash)',
+          h('small', `Cash moved out with no label: the ${exp.sheetFrom === 'report' ? 'closing report' : 'expense sheet'} says ${money(exp.sheetTotal)} was spent, ${money(fromSheet)} more than the counts and movements above show.`)),
+        amount: fromSheet,
+      });
+    }
     const confirmed = (o) => o.state === 'purchase' || o.state === 'done';
     const formWord = (o) => (o.kind || !data.formLive ? '' : o.reported ? ' · on the form ✓' : ' · not on the form');
     const po = (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'approved' : o.state}${formWord(o)}`;

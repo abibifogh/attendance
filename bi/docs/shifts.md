@@ -505,7 +505,13 @@ behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
   **Details**: every cash payment ASSD has on the shift (its line, what it
   was, who keyed it, the amount; money given back as minus), and every
   expense (new receipts in a count, cash paid straight out, what the closing
-  report adds) beside the Odoo PO it was matched to.
+  report adds) beside the Odoo PO it was matched to. Each expense says how it
+  was worked out, with ASSD numbers: new receipts are the receipts in one count
+  less those in the count before ("GH₵200 in count ASSD 400116 − GH₵125 in
+  count ASSD 400111, the hand-over count = GH₵75 new"); a movement says how
+  much of it carried receipts out and how much was cash, labelled by whom;
+  cash for receipts swapped says who reconciled it and what it changes. The
+  receipts box under the drawer names its counts and movements the same way.
 - **Card and MoMo**: each card line in ASSD and the terminal or MoMo payment it
   was matched to (time, card, approval code, amount), lines with nothing found,
   and payments that arrived but are not in ASSD. A line keyed and reversed in
