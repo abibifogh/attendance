@@ -2004,3 +2004,7 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 /* The drawer's figures open to what they are made of. */
 .sh-frow .lab .sh-fmore { display: block; font-size: .76rem; margin-top: .1rem; text-decoration: none; }
 .sh-fdetail { margin: .1rem 0 .5rem; }
+
+/* Water and padlocks: the closing report's rentals against ASSD. */
+.sh-rentcheck { margin-top: .8rem; display: grid; gap: .4rem; }
+.sh-rentcheck h3 { margin: 0; font-size: .92rem; }

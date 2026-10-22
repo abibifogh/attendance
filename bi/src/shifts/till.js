@@ -98,6 +98,7 @@ export function compare(shift, report, { pos = [], rentals = [] } = {}) {
     const expected = start == null ? null : start - net;
     return {
       id: rental.id,
+      article: rental.article,
       label: rental.label,
       unit: rental.unit,
       start,

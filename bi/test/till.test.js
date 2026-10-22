@@ -90,8 +90,8 @@ test('rentals and ASSD’s own item counts are read from the journal, refunds in
   const entries = parseJournal(journal());
   const deposit = entries.find((e) => e.seq === 400104);
   const refund = entries.find((e) => e.seq === 400112);
-  assert.deepEqual(deposit.items.find((i) => i.code === '405'), { date: '2026-08-01', code: '405', qty: 1 });
-  assert.deepEqual(refund.items, [{ date: '2026-08-01', code: '405', qty: -1 }], 'a refund prints no date of its own');
+  assert.deepEqual(deposit.items.find((i) => i.code === '405'), { date: '2026-08-01', code: '405', qty: 1, name: 'Padlock Deposit', amount: 3000 });
+  assert.deepEqual(refund.items, [{ date: '2026-08-01', code: '405', qty: -1, name: 'Padlock Deposit', amount: -3000 }], 'a refund prints no date of its own');
   assert.deepEqual(entries.find((e) => e.seq === 400109).stock, { 405: 5 });
 });
 
@@ -1000,4 +1000,22 @@ test('an answer waiting for an admin whose difference is gone leaves Waiting for
   assert.equal(await routes.dayOfKey(env, 'stay:70001-50001'), null);
   const h = (await notes.history(env, { key: 'not-found:2026-08-01:999:0' }, OWNER)).items.map((i) => i.text);
   assert.match(h.at(-1), /set aside: the difference is no longer on its shift/);
+});
+
+test('water and padlocks on each shift: the counts, what went out and came back, and the money, line by line', async () => {
+  const { env } = await setUp();
+  const view = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);
+  const all = view.days.flatMap((d) => d.shifts);
+  const alpha = all.find((s) => s.user === 'ALPHA');
+  const bravo = all.find((s) => s.user === 'BRAVO');
+  // ALPHA took one padlock deposit; ASSD counted the padlocks at the start and the end.
+  assert.equal(alpha.stockNames['405'], 'Padlock Deposit');
+  assert.ok(alpha.stockStartSeq && alpha.stockEndSeq && alpha.stockStartSeq < alpha.stockEndSeq);
+  assert.deepEqual([alpha.goods['405'].out, alpha.goods['405'].back, alpha.goods['405'].amount], [1, 0, 3000]);
+  assert.deepEqual(alpha.goods['405'].lines.map((l) => [l.seq, l.qty]), [[400104, 1]]);
+  // BRAVO gave one back.
+  assert.deepEqual([bravo.goods['405'].out, bravo.goods['405'].back, bravo.goods['405'].amount], [0, 1, -3000]);
+  // The closing report's rentals carry the article, to be set against ASSD's.
+  const rep = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'morning');
+  assert.equal(rep.compare.rentals.find((x) => x.id === 'padlock').article, '405');
 });

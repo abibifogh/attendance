@@ -514,6 +514,15 @@ behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
   much of it carried receipts out and how much was cash, labelled by whom;
   cash for receipts swapped says who reconciled it and what it changes. The
   receipts box under the drawer names its counts and movements the same way.
+- **Water and padlocks**: a card of its own on each shift, for whatever the
+  desk counts in ASSD's Items Count (water, padlocks): the count at the start
+  (its ASSD number), how many were sold or went out and came back, what should
+  be left, the count at the end (its ASSD number), the difference, and the
+  money; each opens to its ASSD lines. A shift with no count of its own still
+  shows what moved. Below it, each rental the closing report in HIVE counts
+  (padlocks) against ASSD: at the start, at the end, and how many went out net
+  (the report's start less its end, against ASSD's deposits taken less those
+  given back), each marked ✓ or with the difference.
 - **Card and MoMo**: each card line in ASSD and the terminal or MoMo payment it
   was matched to (time, card, approval code, amount), lines with nothing found,
   and payments that arrived but are not in ASSD. A line keyed and reversed in
