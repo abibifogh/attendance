@@ -2013,6 +2013,15 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-safepos { margin-top: .6rem; padding: .6rem .7rem; border: 1px dashed var(--border); border-radius: 10px; display: grid; gap: .4rem; }
 .sh-safepo { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; font-size: .84rem; }
 .sh-safepo small { display: block; color: var(--ink-2); }
-.sh-safeform { display: grid; gap: .4rem; }
-.sh-safeform select, .sh-safeform input { padding: .35rem .5rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
-.sh-safeform input[type=number] { width: 7rem; }
+.sf-form { display: grid; gap: .55rem; max-width: 34rem; padding-top: .3rem; border-top: 1px solid var(--border); }
+.sf-tabs { justify-self: start; }
+.sf-field { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: .6rem; align-items: center; font-size: .84rem; color: var(--ink-2); }
+.sf-field[hidden] { display: none; }
+.sf-in { width: 100%; box-sizing: border-box; padding: .4rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.sf-cur { display: inline-flex; align-items: center; gap: .35rem; color: var(--ink); }
+.sf-in.sf-amt { width: 8rem; }
+.sf-go { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; padding-left: 10.1rem; }
+@media (max-width: 560px) {
+  .sf-field { grid-template-columns: 1fr; gap: .2rem; }
+  .sf-go { padding-left: 0; }
+}
