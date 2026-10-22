@@ -5,7 +5,7 @@ import { callLink } from '../lib/link.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shifts/till.js';
-import { shifts as shiftsFor, setAside } from './shifts.js';
+import { shifts as shiftsFor, setAside, dayOfKey } from './shifts.js';
 import { formLive, poExtras } from './advances.js';
 import { openForHive } from './proof.js';
 import { madeHere } from './newpo.js';
@@ -190,6 +190,9 @@ async function resolutions(env) {
 /** Shifts as the Shifts screen has them, flattened, for a window of days. */
 async function shiftList(env, from, to) {
   const out = [];
+  // Every difference found in these days, by key, answered or not: what a
+  // supervisor's answer still waiting is about must still be among them.
+  out.keys = new Set();
   // The Shifts screen reads at most two months at a time.
   let start = from;
   while (start <= to) {
@@ -197,6 +200,7 @@ async function shiftList(env, from, to) {
     // eslint-disable-next-line no-await-in-loop
     const data = await shiftsFor(env, { from: start, to: end }, { isOwner: true });
     for (const d of data.days || []) out.push(...d.shifts);
+    for (const x of data.exceptions || []) out.keys.add(x.key);
     start = addDays(end, 1);
   }
   return out;
@@ -219,7 +223,7 @@ export async function issuesBetween(env, from, to) {
     ...moved.filter((m) => m.day >= from && m.day <= to).flatMap(movedIssues),
   ];
   return {
-    shifts: list, reports, pos, rentals: active, checks, owners: chosen, people: map,
+    shifts: list, reports, pos, rentals: active, checks, owners: chosen, people: map, present: { keys: list.keys || new Set(), from, to },
     issues: withStatus(issues, { answers, resolutions: decided }).map((i) => withCheck(i, checks)),
   };
 }
@@ -432,7 +436,7 @@ export async function overview(env, query, account) {
   const from = /^\d{4}-\d\d-\d\d$/.test(query?.from || '') ? query.from : addDays(to, -6);
   if (daysBetween(from, to).length > 62) throw badRequest('Two months at a time at most.');
 
-  const { shifts, reports, pos, rentals: active, issues, checks, owners: chosen } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
+  const { shifts, reports, pos, rentals: active, issues, checks, owners: chosen, present } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
   const users = await hiveUsers(env);
   const nameOf = new Map(users.map((u) => [Number(u.id), u.name]));
   const money = access.money > 0;
@@ -536,7 +540,7 @@ export async function overview(env, query, account) {
   };
   if (role === 'admin') {
     out.approvals = await pendingMovements(env);
-    out.answerApprovals = await pendingAnswers(env);
+    out.answerApprovals = await pendingAnswers(env, present);
     out.settings = await settingsView(env, users, shifts);
   }
   return out;
@@ -560,7 +564,8 @@ function netByPerson(issues, nameOf) {
 }
 
 /** A supervisor's answers and reconciliations, waiting for an admin. */
-export async function pendingAnswers(env) {
+export async function pendingAnswers(env, present = null) {
+  if (present) await setAsideGone(env, present).catch((err) => console.error('Waiting answers', err));
   // Anything decided another way meanwhile (put on a staff account, or in a
   // reconciliation an admin made) is done with, not waiting.
   const decided = await all(env.DB, `SELECT a.key FROM shift_answer a WHERE a.status = 'pending'
@@ -582,6 +587,33 @@ export async function pendingAnswers(env) {
       return { type: 'link', id: l.id, keys, answer: 'Reconciled together', note: l.note, by: l.by_name, at: l.at };
     }),
   ].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+
+/**
+ * Answers and reconciliations waiting for an admin whose difference is no
+ * longer there (a payment found since, a recount, a later file): nothing is
+ * left to approve. Judged only for days well inside those just read, so a
+ * difference on a day not read is never taken for gone.
+ */
+async function setAsideGone(env, { keys, from, to }) {
+  const inside = (d) => Boolean(d) && d >= addDays(from, 2) && d <= addDays(to, -1);
+  const gone = async (key) => !keys.has(key) && inside(await dayOfKey(env, key));
+  const how = 'the difference is no longer on its shift (it agrees now)';
+  const answers = await all(env.DB, "SELECT key FROM shift_answer WHERE status = 'pending'").catch(() => []);
+  const away = [];
+  // eslint-disable-next-line no-await-in-loop
+  for (const a of answers) if (await gone(a.key)) away.push(a.key);
+  if (away.length) await setAside(env, away, how, { name: 'Insight' });
+  const links = await all(env.DB, "SELECT keys FROM shift_link WHERE status = 'pending'").catch(() => []);
+  for (const l of links) {
+    let lk = [];
+    try { lk = JSON.parse(l.keys); } catch { lk = []; }
+    let allGone = lk.length > 0;
+    // eslint-disable-next-line no-await-in-loop
+    for (const k of lk) if (!(await gone(k))) { allGone = false; break; }
+    // eslint-disable-next-line no-await-in-loop
+    if (allGone) await setAside(env, lk, how, { name: 'Insight' });
+  }
 }
 
 export async function pendingMovements(env) {
