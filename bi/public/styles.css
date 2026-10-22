@@ -1970,3 +1970,32 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-taskform textarea { resize: vertical; }
 .sh-taskrow { display: grid; grid-template-columns: 1fr 10rem; gap: .5rem; }
 @media (max-width: 480px) { .sh-taskrow { grid-template-columns: 1fr; } }
+
+/* Shifts › Table: the month's differences, a row per day or a row per shift. */
+.sh-tbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .6rem; }
+.sh-tbar select { padding: .3rem .5rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.sh-tbar .sh-span { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.sh-tbar .sh-span button { border: 0; background: var(--surface); color: var(--ink); font: inherit; font-size: .84rem; padding: .3rem .65rem; cursor: pointer; }
+.sh-tbar .sh-span button + button { border-left: 1px solid var(--border); }
+.sh-tbar .sh-span button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.sh-tgap { flex: 1; }
+.sh-tscroll { overflow-x: auto; }
+.sh-dtable { border-collapse: collapse; width: 100%; font-size: .84rem; }
+.sh-dtable th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); font-weight: 700; text-align: left; padding: .35rem .45rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.sh-dtable tr.grp th { border-bottom: 0; text-align: center; color: var(--ink); font-size: .74rem; }
+.sh-dtable td { padding: .32rem .45rem; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); vertical-align: top; }
+.sh-dtable .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sh-dtable .neg { color: var(--sh-bad-ink); }
+.sh-dtable .pos { color: var(--sh-good-ink); }
+.sh-dtable .faint { opacity: .35; }
+.sh-dtable .sh-tsl { border-left: 1px solid var(--border); }
+.sh-dtable td.sh-tsl[role="button"], .sh-dtable tr.sh-trow { cursor: pointer; }
+.sh-dtable td.sh-tsl[role="button"]:hover, .sh-dtable tr.sh-trow:hover td { background: var(--surface-2); }
+.sh-dtable tr.wk td { border-bottom: 2px solid var(--border); }
+.sh-dtable tfoot td { font-weight: 700; border-top: 2px solid var(--ink-2); border-bottom: 0; }
+.sh-tcell { display: grid; gap: .15rem; justify-items: start; min-width: 7.5rem; }
+@media print {
+  .sh-tbar, .sh-nav .sh-groups, .sh-kpis { display: none !important; }
+  .sh-tablecard { box-shadow: none; border: 0; }
+  .sh-dtable { font-size: 9pt; }
+}

@@ -932,7 +932,7 @@ export async function shifts(env, query, account) {
   const result = reconcile(raw, events, declines, { open, notSame: notSame.map((a) => a.key), places, homes });
   for (const x of result.exceptions) {
     const m = x.event?.id && homeRows.find((r) => r.event_id === x.event.id);
-    if (m) x.moved = { fromDay: m.from_day, fromSlot: m.from_slot, why: m.why, by: m.by_name, at: m.at };
+    if (m) x.home = { fromDay: m.from_day, fromSlot: m.from_slot, why: m.why, by: m.by_name, at: m.at };
   }
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
