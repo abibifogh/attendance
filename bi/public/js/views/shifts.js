@@ -2167,7 +2167,7 @@ export async function renderShifts(root, { range }) {
     const f = flowOf(x);
     if (f == null || !f || x.answer) return [];
     const near = (d) => !x.day || !d || Math.abs((Date.parse(d) - Date.parse(x.day)) / 86400000) <= 7;
-    return data.exceptions.filter((o) => o !== x && !o.answer && !o.proposed && o.severity !== 'info' && flowOf(o) === -f && near(o.day)).slice(0, 3);
+    return data.exceptions.filter((o) => o !== x && !o.answer && (!o.proposed || admin) && o.severity !== 'info' && flowOf(o) === -f && near(o.day)).slice(0, 3);
   }
 
   async function reconcile(keys, note) {
@@ -2535,7 +2535,8 @@ export async function renderShifts(root, { range }) {
         await load();
       } catch (err) { said.textContent = err.message; }
     };
-    const canLink = actsOn(x) && !x.answer && !x.proposed && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
+    // An admin may reconcile it even with a supervisor's answer waiting: that sets the answer aside.
+    const canLink = actsOn(x) && !x.answer && (!x.proposed || admin) && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
     const decide = async (ok) => {
       said.textContent = 'Saving…';
       try {
@@ -2550,7 +2551,7 @@ export async function renderShifts(root, { range }) {
       h('div.hd', h('span.sq', mark), h('h3', title), h('span.amt.num', money(Math.abs(x.amount ?? 0))),
         canLink ? h('label.sh-pick', { title: 'Tick to reconcile with others' },
           h('input', { type: 'checkbox', checked: picked.has(x.key), onchange: (e) => { if (e.target.checked) { picked.add(x.key); pickedAs.set(x.key, x); } else { picked.delete(x.key); pickedAs.delete(x.key); } paint(); } }),
-          h('span', 'Reconcile with others')) : null),
+          h('span', 'Reconcile with others'), x.proposed ? h('small', `sets aside ${x.proposed.by ? `${x.proposed.by}’s` : 'the waiting'} answer`) : null) : null),
       h('div.sh-meta',
         x.user ? [avatar(x.user), h('b', nameOf(x.user))] : null,
         x.day ? h('span', dayText(x.day)) : null,

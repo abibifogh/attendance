@@ -96,7 +96,9 @@ together**; the bar shows what the ticked ones net to, and a note is required
 when they do not net to nothing. Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same
-money** with a one-tap reconcile. **Undo** opens them all again.
+money** with a one-tap reconcile. **Undo** opens them all again. An admin can
+tick one even while a supervisor's answer to it waits for approval (the tick
+says so): reconciling sets that answer aside, and its history records it.
 
 A drawer short or over that is reconciled (once an admin approves it) is
 settled on its shift: the drawer box turns green and says so, the shift no
