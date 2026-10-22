@@ -1786,48 +1786,52 @@ export async function renderShifts(root, { range }) {
         h('small', `${x.by || 'An admin'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''}: “${x.why || ''}” · in the safe book${x.noPo ? ', waiting for its PO' : ''}`)),
       admin ? h('button.sh-link', { type: 'button', onclick: () => post({ po: x.po, back: true }, `${x.noPo ? x.what || 'That expense' : x.po} is the drawer’s again, and its line is off the safe book.`) }, 'Undo') : null));
     const choices = orders.filter((o) => o.name && !done.some((x) => x.po === String(o.name).toUpperCase()));
+    // One form: a PO on this shift, or an expense with no PO; then how much and why.
     let form = null;
-    // An expense with no PO (receipts in a count, cash paid out) that the safe paid.
-    let noPoForm = null;
     if (admin) {
-      const amount = h('input', { type: 'number', step: '0.01', min: '0', 'aria-label': 'Amount paid from the safe', placeholder: '0.00' });
-      const what = h('input', { type: 'text', maxlength: '200', placeholder: 'What it was for, e.g. gas refill' });
-      const why = h('input', { type: 'text', maxlength: '300', placeholder: 'Why, e.g. the manager paid it from the big safe' });
-      noPoForm = h('div.sh-safeform',
-        h('b.small', 'An expense with no PO'),
-        h('div.sh-safeinline', h('label', 'GH₵', amount), what,
-          h('button.btn', {
+      let mode = choices.length ? 'po' : 'nopo';
+      const pick = h('select.sf-in', { 'aria-label': 'PO' }, choices.map((o) => h('option', { value: o.name }, `${o.name} · ${o.vendor || ''} · ${money(o.total)}`)));
+      const what = h('input.sf-in', { type: 'text', maxlength: '200', placeholder: 'e.g. gas refill', 'aria-label': 'What it was for' });
+      const amount = h('input.sf-in.sf-amt', { type: 'number', step: '0.01', min: '0', placeholder: '0.00', 'aria-label': 'Amount paid from the safe' });
+      const why = h('input.sf-in', { type: 'text', maxlength: '300', placeholder: 'e.g. the manager paid it from the big safe', 'aria-label': 'Why' });
+      const fill = () => { const o = choices.find((c) => c.name === pick.value); amount.value = o ? (o.total / 100).toFixed(2) : ''; };
+      pick.addEventListener('change', fill);
+      const field = (label, ...input) => h('label.sf-field', h('span', label), ...input);
+      const poField = field('PO', pick);
+      const whatField = field('What it was for', what);
+      const tabs = h('div.sh-span.sf-tabs', { role: 'group', 'aria-label': 'What the safe paid' });
+      const show = () => {
+        poField.hidden = mode !== 'po'; whatField.hidden = mode !== 'nopo';
+        mount(tabs,
+          choices.length ? h('button', { type: 'button', 'aria-pressed': String(mode === 'po'), onclick: () => { mode = 'po'; fill(); show(); } }, 'A PO on this shift') : null,
+          h('button', { type: 'button', 'aria-pressed': String(mode === 'nopo'), onclick: () => { mode = 'nopo'; amount.value = ''; show(); } }, 'An expense with no PO'));
+      };
+      if (choices.length) fill();
+      show();
+      form = h('div.sf-form', tabs, poField, whatField,
+        field('Amount the safe paid', h('span.sf-cur', 'GH₵', amount)),
+        field('Why', why),
+        h('div.sf-go',
+          h('button.btn.primary', {
             type: 'button',
             onclick: () => {
               if (!(Number(amount.value) > 0)) { said.textContent = 'How much did the safe pay?'; amount.focus(); return; }
-              if (!what.value.trim()) { said.textContent = 'Say what it was for.'; what.focus(); return; }
+              if (mode === 'nopo' && !what.value.trim()) { said.textContent = 'Say what it was for.'; what.focus(); return; }
               if (!why.value.trim()) { said.textContent = 'Say why.'; why.focus(); return; }
-              post({ noPo: true, amount: amount.value, what: what.value, why: why.value }, `GH₵${amount.value} for ${what.value}: taken off this drawer and put on the safe book, waiting for its PO.`);
+              if (mode === 'po') {
+                post({ po: pick.value, amount: amount.value, why: why.value, vendor: choices.find((c) => c.name === pick.value)?.vendor || '' },
+                  `${pick.value}: GH₵${amount.value} put on the safe book and taken off this drawer.`);
+              } else {
+                post({ noPo: true, amount: amount.value, what: what.value, why: why.value }, `GH₵${amount.value} for ${what.value}: taken off this drawer and put on the safe book, waiting for its PO.`);
+              }
             },
-          }, 'Paid from the big safe')),
-        why);
-    }
-    if (admin && choices.length) {
-      const pick = h('select', { 'aria-label': 'PO' }, choices.map((o) => h('option', { value: o.name }, `${o.name} · ${o.vendor || ''} · ${money(o.total)}`)));
-      const amount = h('input', { type: 'number', step: '0.01', min: '0', 'aria-label': 'Amount paid from the safe', value: (choices[0].total / 100).toFixed(2) });
-      pick.addEventListener('change', () => { const o = choices.find((c) => c.name === pick.value); if (o) amount.value = (o.total / 100).toFixed(2); });
-      const why = h('input', { type: 'text', maxlength: '300', placeholder: 'Why, e.g. paid from the big safe by the manager' });
-      form = h('div.sh-safeform',
-        h('div.sh-safeinline', pick, h('label', 'GH₵', amount),
-          h('button.btn', {
-            type: 'button',
-            onclick: () => {
-              if (!why.value.trim()) { said.textContent = 'Say why.'; why.focus(); return; }
-              post({ po: pick.value, amount: amount.value, why: why.value, vendor: choices.find((c) => c.name === pick.value)?.vendor || '' },
-                `${pick.value}: GH₵${amount.value} put on the safe book and taken off this drawer.`);
-            },
-          }, 'Paid from the big safe')),
-        why);
+          }, 'Paid from the big safe'),
+          said));
     }
     return h('div.sh-safepos',
       h('b', 'Paid from the big safe'),
-      h('p.small.muted', 'A PO reported as paid from the drawer that the big safe paid, whole or part: that much comes off what this drawer accounts for, and goes in the safe book as a PO paid from the safe that day. An expense with no PO the same: it comes off the drawer’s expenses, and goes in the safe book as a payment waiting for its PO.'),
-      list, form, noPoForm, said);
+      h('p.small.muted', 'Money this drawer is shown paying that the big safe paid, all or part. It comes off this drawer and goes in the safe book.'),
+      list, form, admin ? null : said);
   }
 
   /**
