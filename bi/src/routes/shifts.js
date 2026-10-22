@@ -643,8 +643,14 @@ const poOf = (raw) => {
 export async function poFromSafe(env, body, account) {
   const day = dayOf(body?.day);
   const slot = slotOf(body?.slot);
-  const po = poOf(body?.po);
-  if (!/^P\d{3,}$/.test(po)) throw badRequest('Which PO?');
+  // An expense with no PO: a placeholder of its own, NOPO-1, NOPO-2 …
+  const noPo = Boolean(body?.noPo) && !body?.back;
+  let po = noPo ? null : poOf(body?.po);
+  if (noPo) {
+    const taken = await all(env.DB, "SELECT po FROM shift_po_safe WHERE day = ?1 AND slot = ?2 AND po LIKE 'NOPO-%'", day, slot);
+    po = `NOPO-${taken.reduce((m, r) => Math.max(m, Number(r.po.slice(5)) || 0), 0) + 1}`;
+  }
+  if (!/^(P\d{3,}|NOPO-\d+)$/.test(po)) throw badRequest('Which PO?');
   const had = await first(env.DB, 'SELECT * FROM shift_po_safe WHERE day = ?1 AND slot = ?2 AND po = ?3', day, slot, po);
   if (body?.back) {
     if (!had) throw badRequest('That is not marked as paid from the safe.');
@@ -656,19 +662,26 @@ export async function poFromSafe(env, body, account) {
   if (!amount || amount <= 0) throw badRequest('How much of it was paid from the safe?');
   const why = str(body?.why, 'Why', { required: true, max: 300 });
   const vendor = str(body?.vendor, 'Vendor', { max: 120 }) || null;
-  const note = `Reported on the ${slot} closing report of ${day} as paid from the drawer; paid from the big safe: ${why}`;
+  const what = noPo ? str(body?.what, 'What it was for', { required: true, max: 200 }) : null;
+  const note = noPo
+    ? `An expense with no PO in the ${slot} drawer of ${day}; paid from the big safe: ${why}`
+    : `Reported on the ${slot} closing report of ${day} as paid from the drawer; paid from the big safe: ${why}`;
   const at = now();
   let entryId = had?.entry_id || null;
   if (entryId && await first(env.DB, 'SELECT id FROM safe_entry WHERE id = ?1', entryId)) {
     await run(env.DB, 'UPDATE safe_entry SET amount = ?2, note = ?3, by_name = ?4, at = ?5 WHERE id = ?1', entryId, amount, note, who(account), at);
+  } else if (noPo) {
+    // In the safe book as a payment waiting for its PO, given one there later.
+    entryId = (await first(env.DB, `INSERT INTO safe_entry (kind, day, amount, description, note, by_name, at)
+      VALUES ('pending', ?1, ?2, ?3, ?4, ?5, ?6) RETURNING id`, day, amount, what, note, who(account), at)).id;
   } else {
     entryId = (await first(env.DB, `INSERT INTO safe_entry (kind, day, amount, po, vendor, note, by_name, at)
       VALUES ('po', ?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING id`, day, amount, po, vendor, note, who(account), at)).id;
   }
-  await run(env.DB, `INSERT INTO shift_po_safe (day, slot, po, amount, why, entry_id, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-    ON CONFLICT (day, slot, po) DO UPDATE SET amount = ?4, why = ?5, entry_id = ?6, by_name = ?7, at = ?8`,
-  day, slot, po, amount, why, entryId, who(account), at);
-  return { ok: true, entryId };
+  await run(env.DB, `INSERT INTO shift_po_safe (day, slot, po, amount, why, what, entry_id, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+    ON CONFLICT (day, slot, po) DO UPDATE SET amount = ?4, why = ?5, what = COALESCE(?6, what), entry_id = ?7, by_name = ?8, at = ?9`,
+  day, slot, po, amount, why, what, entryId, who(account), at);
+  return { ok: true, entryId, po };
 }
 
 /**
@@ -1177,7 +1190,9 @@ export async function shifts(env, query, account) {
     const openingFrom = typed?.opening != null ? 'typed' : assdOpening != null ? 'assd' : previousClosing ? 'carried' : null;
     const out = s.drawerOut;
     const swapped = swap?.amount || 0;
-    const expected = opening == null ? null : opening + s.cash - s.receiptsIn - (out - s.receiptsMoved) + swapped;
+    // Expenses with no PO that the big safe paid: cash the drawer kept.
+    const fromSafe = safeRows.filter((x) => x.day === s.day && x.slot === s.slotName && String(x.po).startsWith('NOPO-')).reduce((t, x) => t + x.amount, 0);
+    const expected = opening == null ? null : opening + s.cash - s.receiptsIn - (out - s.receiptsMoved) + swapped + fromSafe;
     const closing = typed?.closing ?? s.closing?.notes ?? null;
     const closingFrom = typed?.closing != null ? 'typed' : s.closing ? 'assd' : null;
     // Expenses: what each movement was, as the count before it labelled it
@@ -1187,12 +1202,12 @@ export async function shifts(env, query, account) {
     // movements disagree, the gap is shown rather than written over.
     const sheet = expense?.sheet_total ?? reportPaid.get(`${s.day}|${s.slotName}`) ?? null;
     const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expenses)) : 0;
-    const expenses = s.expenses + fromSheet;
+    const expenses = s.expenses + fromSheet - fromSafe;
     const toSafe = s.safeMoved + (sheet != null ? s.unlabelledMoved - fromSheet : 0);
     const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
     register.set(s.index, {
       opening, openingFrom, cashIn: s.cash, laundryCash: s.laundryCash, out,
-      expenses, toSafe, unlabelled, expensesFrom: fromSheet ? 'sheet' : 'assd', fromSheet,
+      expenses, toSafe, unlabelled, expensesFrom: fromSheet ? 'sheet' : 'assd', fromSheet, fromSafe,
       // Money put back into the drawer by a movement the other way.
       putBack: -s.moves.filter((m) => m.kind === 'returned').reduce((t, m) => t + m.amount, 0),
       receipts: {
@@ -1522,7 +1537,7 @@ export async function shifts(env, query, account) {
       };
     }
     const fromSafe = safeRows.filter((x) => `${x.day}|${x.slot}` === shiftKey)
-      .map((x) => ({ po: x.po, amount: x.amount, why: x.why, by: x.by_name, at: x.at }));
+      .map((x) => ({ po: x.po, noPo: String(x.po).startsWith('NOPO-'), what: x.what || null, amount: x.amount, why: x.why, by: x.by_name, at: x.at }));
     // A line keyed and reversed in the same shift took no money: it is not a
     // payment to find. A line whose difference has been answered is
     // accounted for.

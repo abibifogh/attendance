@@ -543,7 +543,8 @@ export async function renderShifts(root, { range }) {
     // The same rule as the server: labelled movements decide; the sheet only
     // settles what nothing labelled, and a disagreement is shown, not hidden.
     const fromSheet = sheet != null ? Math.min(s.unlabelledMoved, Math.max(0, sheet - s.expensesMoved)) : 0;
-    const expenses = s.expensesMoved + fromSheet;
+    // Expenses with no PO the big safe paid are not the drawer's.
+    const expenses = s.expensesMoved + fromSheet - (r.fromSafe || 0);
     const toSafe = s.safeMoved + (sheet != null ? s.unlabelledMoved - fromSheet : 0);
     const unlabelled = sheet != null ? 0 : s.unlabelledMoved;
     const sheetGap = sheet != null && sheet !== expenses ? sheet - expenses : null;
@@ -1231,7 +1232,8 @@ export async function renderShifts(root, { range }) {
         });
         at += rc.reconciled.amount;
       }
-      if (n.expenses) {
+      // Shown while anything was marked paid from the safe, even at nothing, so it can be undone.
+      if (n.expenses || r.fromSafe) {
         const words = [rc.in ? 'new receipts in the counts' : '', rc.direct ? 'paid straight out' : '', r.fromSheet ? 'from the closing report' : ''].filter(Boolean).join(', ');
         steps.push({ lab: '− Expenses', sm: words || 'receipts in the counts', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses), detail: () => expenseDetail(s, n) }); at -= n.expenses;
       }
@@ -1729,6 +1731,10 @@ export async function renderShifts(root, { range }) {
         amount: m.direct,
       })),
     ];
+    // Expenses with no PO the big safe paid: off the drawer's.
+    for (const x of (exp.fromSafe || []).filter((y) => y.noPo)) {
+      moves.push({ label: h('span', `Paid from the big safe, not the drawer: ${x.what || 'an expense with no PO'}`, h('small', `${x.by || 'An admin'}: “${x.why || ''}”`)), amount: -x.amount });
+    }
     // What the typed expense sheet settled on top of what the counts labelled.
     const fromSheet = (n.expenses || 0) - moves.reduce((t, m) => t + m.amount, 0);
     if (fromSheet > 0) {
@@ -1776,10 +1782,31 @@ export async function renderShifts(root, { range }) {
       try { await api('/shifts/po-safe', { method: 'POST', body: { day: s.day, slot: s.slot, ...body } }); await load(banner('good', msg)); } catch (err) { said.textContent = err.message; }
     };
     const list = done.map((x) => h('div.sh-safepo',
-      h('span', h('b', x.po), ` · ${money(x.amount)} paid from the big safe, not the drawer`, h('small', `${x.by || 'An admin'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''}: “${x.why || ''}” · in the safe book`)),
-      admin ? h('button.sh-link', { type: 'button', onclick: () => post({ po: x.po, back: true }, `${x.po} is the drawer’s again, and its line is off the safe book.`) }, 'Undo') : null));
+      h('span', h('b', x.noPo ? x.what || 'An expense with no PO' : x.po), ` · ${money(x.amount)} paid from the big safe, not the drawer`,
+        h('small', `${x.by || 'An admin'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''}: “${x.why || ''}” · in the safe book${x.noPo ? ', waiting for its PO' : ''}`)),
+      admin ? h('button.sh-link', { type: 'button', onclick: () => post({ po: x.po, back: true }, `${x.noPo ? x.what || 'That expense' : x.po} is the drawer’s again, and its line is off the safe book.`) }, 'Undo') : null));
     const choices = orders.filter((o) => o.name && !done.some((x) => x.po === String(o.name).toUpperCase()));
     let form = null;
+    // An expense with no PO (receipts in a count, cash paid out) that the safe paid.
+    let noPoForm = null;
+    if (admin) {
+      const amount = h('input', { type: 'number', step: '0.01', min: '0', 'aria-label': 'Amount paid from the safe', placeholder: '0.00' });
+      const what = h('input', { type: 'text', maxlength: '200', placeholder: 'What it was for, e.g. gas refill' });
+      const why = h('input', { type: 'text', maxlength: '300', placeholder: 'Why, e.g. the manager paid it from the big safe' });
+      noPoForm = h('div.sh-safeform',
+        h('b.small', 'An expense with no PO'),
+        h('div.sh-safeinline', h('label', 'GH₵', amount), what,
+          h('button.btn', {
+            type: 'button',
+            onclick: () => {
+              if (!(Number(amount.value) > 0)) { said.textContent = 'How much did the safe pay?'; amount.focus(); return; }
+              if (!what.value.trim()) { said.textContent = 'Say what it was for.'; what.focus(); return; }
+              if (!why.value.trim()) { said.textContent = 'Say why.'; why.focus(); return; }
+              post({ noPo: true, amount: amount.value, what: what.value, why: why.value }, `GH₵${amount.value} for ${what.value}: taken off this drawer and put on the safe book, waiting for its PO.`);
+            },
+          }, 'Paid from the big safe')),
+        why);
+    }
     if (admin && choices.length) {
       const pick = h('select', { 'aria-label': 'PO' }, choices.map((o) => h('option', { value: o.name }, `${o.name} · ${o.vendor || ''} · ${money(o.total)}`)));
       const amount = h('input', { type: 'number', step: '0.01', min: '0', 'aria-label': 'Amount paid from the safe', value: (choices[0].total / 100).toFixed(2) });
@@ -1799,8 +1826,8 @@ export async function renderShifts(root, { range }) {
     }
     return h('div.sh-safepos',
       h('b', 'Paid from the big safe'),
-      h('p.small.muted', 'A PO reported as paid from the drawer that the big safe paid, whole or part: that much comes off what this drawer accounts for, and goes in the safe book as a PO paid from the safe that day.'),
-      list, form, said);
+      h('p.small.muted', 'A PO reported as paid from the drawer that the big safe paid, whole or part: that much comes off what this drawer accounts for, and goes in the safe book as a PO paid from the safe that day. An expense with no PO the same: it comes off the drawer’s expenses, and goes in the safe book as a payment waiting for its PO.'),
+      list, form, noPoForm, said);
   }
 
   /**
