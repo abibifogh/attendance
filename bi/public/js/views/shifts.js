@@ -1050,7 +1050,7 @@ export async function renderShifts(root, { range }) {
       const cells = (l) => (!l ? [h('td.sh-tsl', h('span.muted', '—')), h('td.n')]
         : [h(`td.sh-tsl${passes(l) ? '' : '.faint'}`, opener(l), h('div.sh-tcell', h('b', who(l)), chip(l))),
           h(`td.n${tone_(l.net)}${passes(l) ? '' : '.faint'}`, fig(l.net))]);
-      body = h('table.sh-dtable',
+      body = h('table.sh-mtable',
         h('thead',
           h('tr.grp', h('th'), SLOT_NAMES.map((n) => h('th.sh-tsl', { colspan: '2' }, n)), hide ? null : h('th.sh-tsl')),
           h('tr', h('th', 'Day'), SLOT_NAMES.map(() => [h('th.sh-tsl', 'Who'), h('th.n', hide ? '' : 'Net')]), hide ? null : h('th.n.sh-tsl', 'Day'))),
@@ -1065,7 +1065,7 @@ export async function renderShifts(root, { range }) {
       if (!shown.length) body = h('p.sh-sub', 'No shifts like that this month.');
     } else {
       const rows = all.filter(passes);
-      body = rows.length ? h('table.sh-dtable',
+      body = rows.length ? h('table.sh-mtable',
         h('thead', h('tr', h('th', 'Day'), h('th', 'Shift'), h('th', 'Who'), hide ? null : DIFF_COLUMNS.map(([, l]) => h('th.n', l)), hide ? null : h('th.n', 'Net'),
           h('th.n', 'Open'), h('th.n', 'Waiting'), h('th.n', 'Answered'), h('th', 'Status'))),
         h('tbody', rows.map((l, i) => h(`tr.sh-trow${rows[i + 1]?.day !== l.day ? '.wk' : ''}`, opener(l),
@@ -1090,7 +1090,7 @@ export async function renderShifts(root, { range }) {
         h('div.sh-tscroll', body)),
       ppl.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'The month by person')),
-        h('div.sh-tscroll', h('table.sh-dtable',
+        h('div.sh-tscroll', h('table.sh-mtable',
           h('thead', h('tr', h('th', 'Who'), h('th.n', 'Shifts'), h('th.n', 'With differences'), hide ? null : h('th.n', 'Drawer'), hide ? null : h('th.n', 'Net, all kinds'), h('th.n', 'Still open'), h('th.n', 'Waiting'))),
           h('tbody', ppl.map((p) => h('tr', h('td', h('b', p.who)), h('td.n', String(p.shifts)), h('td.n', String(p.withDiff)),
             hide ? null : h(`td.n${tone_(p.drawer)}`, fig(p.drawer)), hide ? null : h(`td.n${tone_(p.net)}`, h('b', fig(p.net))),
@@ -1135,6 +1135,7 @@ export async function renderShifts(root, { range }) {
     }
     const status = h('span');
     const fall = h('div.sh-fall');
+    const fallOpen = new Set();
     const vbox = h('div');
     const checksList = h('ul.sh-checks');
     const unsaved = h('span.sh-unsaved');
@@ -1215,12 +1216,12 @@ export async function renderShifts(root, { range }) {
       const rc = r.receipts || {};
       const steps = [{ lab: 'Opening notes and coins', sm: r.openingFrom === 'typed' ? 'typed' : r.openingFrom === 'carried' ? 'last shift’s closing' : 'ASSD, at hand-over', from: 0, to: r.opening ?? 0, c: 'var(--muted)', amt: money(r.opening) }];
       let at = (r.opening ?? 0) + s.cash;
-      steps.push({ lab: '+ Cash taken', sm: s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '', from: r.opening ?? 0, to: at, c: 'var(--sh-cash)', amt: money(s.cash) });
+      steps.push({ lab: '+ Cash taken', sm: s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '', from: r.opening ?? 0, to: at, c: 'var(--sh-cash)', amt: money(s.cash), detail: () => cashDetail(s) });
       if (r.putBack) { steps.push({ lab: '+ Put back', sm: 'a movement the other way', from: at, to: at + r.putBack, c: 'var(--sh-cash)', amt: money(r.putBack) }); at += r.putBack; }
       if (rc.reconciled?.amount) { steps.push({ lab: '+ Cash for receipts', sm: 'receipts swapped for cash, reconciled', from: at, to: at + rc.reconciled.amount, c: 'var(--sh-cash)', amt: money(rc.reconciled.amount) }); at += rc.reconciled.amount; }
       if (n.expenses) {
         const words = [rc.in ? 'new receipts in the counts' : '', rc.direct ? 'paid straight out' : '', r.fromSheet ? 'from the closing report' : ''].filter(Boolean).join(', ');
-        steps.push({ lab: '− Expenses', sm: words || 'receipts in the counts', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses) }); at -= n.expenses;
+        steps.push({ lab: '− Expenses', sm: words || 'receipts in the counts', from: at - n.expenses, to: at, c: 'var(--sh-expense)', amt: money(n.expenses), detail: () => expenseDetail(s, n) }); at -= n.expenses;
       }
       if (n.toSafe) { steps.push({ lab: '− Cash to the safe', sm: s.corrected ? 'notes, as corrected' : 'notes only', from: at - n.toSafe, to: at, c: 'var(--sh-safe)', amt: money(n.toSafe) }); at -= n.toSafe; }
       if (n.unlabelled) { steps.push({ lab: '− Not labelled', sm: 'say what it was below', from: at - n.unlabelled, to: at, c: 'var(--muted)', hatch: true, amt: money(n.unlabelled) }); at -= n.unlabelled; }
@@ -1239,14 +1240,20 @@ export async function renderShifts(root, { range }) {
       const low = Math.min(0, ...steps.map((x) => Math.min(x.from, x.to)));
       const span = top - low;
       const pos = (value) => ((value - low) / span) * 100;
-      mount(fall, steps.map((x) => h(`div.sh-frow${x.total ? '.total' : ''}`,
-        h('span.lab', x.lab, x.sm ? h('small', x.sm) : null),
+      // Cash taken and the expenses open to what they are made of, line by line.
+      mount(fall, steps.map((x) => [h(`div.sh-frow${x.total ? '.total' : ''}`,
+        h('span.lab', x.lab, x.sm ? h('small', x.sm) : null,
+          x.detail ? h('button.sh-link.sh-fmore', {
+            type: 'button', 'aria-expanded': String(fallOpen.has(x.lab)),
+            onclick: () => { if (fallOpen.has(x.lab)) fallOpen.delete(x.lab); else fallOpen.add(x.lab); redraw(); },
+          }, fallOpen.has(x.lab) ? 'Hide details ▴' : 'Details ▾') : null),
         h('span.sh-track',
           low < 0 ? h('i.sh-zero', { style: `left:${pos(0)}%`, title: 'Nothing' }) : null,
           h(`b.sh-seg${x.hatch ? '.hatch' : ''}`, {
             style: `left:${pos(Math.min(x.from, x.to))}%;width:${(Math.abs(x.to - x.from) / span) * 100}%;background:${x.c}`,
           })),
-        h('span.amt.num', x.amt))));
+        h('span.amt.num', x.amt)),
+      x.detail && fallOpen.has(x.lab) ? h('div.sh-fdetail', x.detail()) : null]));
 
       // Answered or reconciled: still the size it was, no longer anything to do.
       const settled = n.variance && !n.recounted ? drawerSettled(s) : null;
@@ -1562,6 +1569,19 @@ export async function renderShifts(root, { range }) {
     const extra = exceptionsOf(s).filter((x) => ['not-recorded', 'bank-only', 'double-charge', 'laundry-card'].includes(x.kind) && x.event);
     for (const x of extra) rows.push({ state: 'bad', cells: ['Not in ASSD', '—', h('span', h('div', `${event(x.event)} · ${money(x.event.amount)}`), h('small', (KIND[x.kind] || [x.kind])[0]))] });
     return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'ASSD', num: true }, { label: 'Matched to' }], rows));
+  }
+
+  /** What makes "Cash taken": every cash payment ASSD has on the shift, money given back as minus. */
+  function cashDetail(s) {
+    const lines = s.cashLines || [];
+    if (!lines.length) return h('p.small.muted', 'No cash payments in ASSD on this shift.');
+    const rows = lines.map((c) => ({
+      state: c.amount < 0 ? 'none' : 'ok',
+      cells: [`ASSD ${c.seq}`, h('span', c.kind, c.amount < 0 ? h('small', 'money given back') : null), nameOf(c.user), money(c.amount)],
+    }));
+    const laundry = s.laundryCash ? `incl. ${money(s.laundryCash)} laundry` : '';
+    return h('div.sh-detail', lineTable([{ label: 'ASSD line' }, { label: 'What' }, { label: 'Keyed by' }, { label: 'Cash', num: true }], rows,
+      ['Total', `${lines.length} payment${lines.length === 1 ? '' : 's'}`, laundry, money(lines.reduce((t, c) => t + c.amount, 0))]));
   }
 
   function expenseDetail(s, n) {

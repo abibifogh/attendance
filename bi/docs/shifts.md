@@ -501,6 +501,11 @@ behind it, each marked ✓ (agrees), ✗ (does not) or · (nothing to match):
 
 - **The drawer**: the opening count, every cash payment, every cash movement
   and how it was labelled, what the drawer should hold, and the closing count.
+  On the drawer card itself, **Cash taken** and **Expenses** each have
+  **Details**: every cash payment ASSD has on the shift (its line, what it
+  was, who keyed it, the amount; money given back as minus), and every
+  expense (new receipts in a count, cash paid straight out, what the closing
+  report adds) beside the Odoo PO it was matched to.
 - **Card and MoMo**: each card line in ASSD and the terminal or MoMo payment it
   was matched to (time, card, approval code, amount), lines with nothing found,
   and payments that arrived but are not in ASSD. A line keyed and reversed in
