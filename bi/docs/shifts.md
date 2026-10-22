@@ -32,9 +32,13 @@ shift, a small note at the end of the line says which; open it for what to do.
     the month by person. Plus is money in that ASSD does not show (a payment
     not keyed, a drawer over); minus is money ASSD shows that is not there (a
     card that never paid, a drawer short, cash out with no label or no PO).
-    Every difference counts, answered or not; the rules' own explanations and
-    the questions about receipts in a count do not, so the drawer is not
-    counted twice. Without amounts, only where each shift stands is shown. A
+    Every difference counts, answered or not; the rules' own explanations do
+    not. Notes that explain a drawer count (receipts in a count, a cash
+    movement labelled by hand or matched as a duplicate or reversal, and the
+    suggestions that one was moved out twice or put back on another shift)
+    are counted but carry no amount, since the drawer's own difference
+    already holds every movement: a drawer short of 78 with a movement of 50
+    labelled as expenses is −78, not −28. Without amounts, only where each shift stands is shown. A
     click opens the shift. The sums are worked out in `public/js/difftable.js`.
   - **Dates**: From and To, for days that cross a week or a month, such as a
     surplus and the shortage it answers a few shifts later. Up to ten days

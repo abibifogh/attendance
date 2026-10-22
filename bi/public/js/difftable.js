@@ -6,9 +6,12 @@
  * money that came in which ASSD does not show (a payment not keyed, a drawer
  * over), minus is money ASSD shows which is not there (a card that never
  * paid, a drawer short, cash out with no label or no PO). Explanations of a
- * drawer count (receipts read one way or another) are counted but carry no
- * amount, so the drawer is not counted twice. Differences the rules
- * explained by themselves (info) are left out.
+ * drawer count are counted but carry no amount, so the drawer is not counted
+ * twice: receipts read one way or another, a cash movement labelled by hand
+ * or matched as a duplicate or a reversal, and the suggestions that one was
+ * moved out twice or put back on another shift. The drawer's own difference
+ * already holds every movement. Differences the rules explained by
+ * themselves (info) are left out.
  */
 
 export const COLUMNS = [['drawer', 'Drawer'], ['card', 'Card & MoMo'], ['bank', 'Bank'], ['po', 'POs & expenses'], ['laundry', 'Laundry']];
@@ -16,8 +19,8 @@ export const SLOT_ORDER = ['morning', 'afternoon', 'night'];
 
 const BANK = new Set(['never-settled', 'reversal', 'bank-only']);
 const DRAWER_KINDS = new Set(['drawer-short', 'drawer-over', 'handover-gap', 'movement-unlabelled', 'movement-twice', 'movement-reversal', 'receipts-unclear', 'receipts-carried']);
-const NO_AMOUNT = new Set(['receipts-unclear', 'receipts-carried']);
-const MINUS = new Set(['failed', 'not-found', 'paid-less', 'duplicate', 'never-settled', 'reversal', 'movement-unlabelled', 'movement-twice', 'expense-no-po', 'expense-po-gap']);
+const NO_AMOUNT = new Set(['receipts-unclear', 'receipts-carried', 'movement-labelled', 'movement-matched', 'movement-twice', 'movement-reversal']);
+const MINUS = new Set(['failed', 'not-found', 'paid-less', 'duplicate', 'never-settled', 'reversal', 'movement-unlabelled', 'expense-no-po', 'expense-po-gap']);
 const PLUS = new Set(['not-recorded', 'paid-more', 'double-charge', 'laundry-card', 'bank-only']);
 
 /** Which column a difference goes in. */
