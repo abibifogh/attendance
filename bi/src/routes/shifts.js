@@ -628,6 +628,49 @@ export async function saveMovement(env, body, account, { pending = false, smallU
   return { ok: true, pending: status === 'pending', small, filled, seq: rowSeq, kind };
 }
 
+/** A PO number as Odoo names it: `2540` and `p2540` are `P02540`. */
+const poOf = (raw) => {
+  const t = String(raw || '').trim().toUpperCase();
+  return /^\d+$/.test(t) ? `P${t.padStart(5, '0')}` : /^P\d+$/.test(t) ? `P${t.slice(1).padStart(5, '0')}` : t;
+};
+
+/**
+ * A PO a shift reported as paid from the drawer that was really paid, whole
+ * or part, from the big safe. The amount comes off what the shift's drawer
+ * has to account for, and goes in the safe book as a PO paid from the safe
+ * that day. `back` undoes both.
+ */
+export async function poFromSafe(env, body, account) {
+  const day = dayOf(body?.day);
+  const slot = slotOf(body?.slot);
+  const po = poOf(body?.po);
+  if (!/^P\d{3,}$/.test(po)) throw badRequest('Which PO?');
+  const had = await first(env.DB, 'SELECT * FROM shift_po_safe WHERE day = ?1 AND slot = ?2 AND po = ?3', day, slot, po);
+  if (body?.back) {
+    if (!had) throw badRequest('That is not marked as paid from the safe.');
+    if (had.entry_id) await run(env.DB, 'DELETE FROM safe_entry WHERE id = ?1', had.entry_id);
+    await run(env.DB, 'DELETE FROM shift_po_safe WHERE id = ?1', had.id);
+    return { ok: true, back: true };
+  }
+  const amount = cedis(body?.amount, 'The amount');
+  if (!amount || amount <= 0) throw badRequest('How much of it was paid from the safe?');
+  const why = str(body?.why, 'Why', { required: true, max: 300 });
+  const vendor = str(body?.vendor, 'Vendor', { max: 120 }) || null;
+  const note = `Reported on the ${slot} closing report of ${day} as paid from the drawer; paid from the big safe: ${why}`;
+  const at = now();
+  let entryId = had?.entry_id || null;
+  if (entryId && await first(env.DB, 'SELECT id FROM safe_entry WHERE id = ?1', entryId)) {
+    await run(env.DB, 'UPDATE safe_entry SET amount = ?2, note = ?3, by_name = ?4, at = ?5 WHERE id = ?1', entryId, amount, note, who(account), at);
+  } else {
+    entryId = (await first(env.DB, `INSERT INTO safe_entry (kind, day, amount, po, vendor, note, by_name, at)
+      VALUES ('po', ?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING id`, day, amount, po, vendor, note, who(account), at)).id;
+  }
+  await run(env.DB, `INSERT INTO shift_po_safe (day, slot, po, amount, why, entry_id, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    ON CONFLICT (day, slot, po) DO UPDATE SET amount = ?4, why = ?5, entry_id = ?6, by_name = ?7, at = ?8`,
+  day, slot, po, amount, why, entryId, who(account), at);
+  return { ok: true, entryId };
+}
+
 /**
  * An admin decided these differences another way (answered, reconciled, put
  * on a staff account, settled on a person's list): whatever a supervisor
@@ -1052,6 +1095,10 @@ export async function shifts(env, query, account) {
   // typed here.
   const reported = new Set();
   const poRows = env.ATT_DB ? await all(env.ATT_DB, 'SELECT * FROM till_po WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []) : [];
+  // POs a shift reported that were paid, whole or part, from the big safe:
+  // that much is not the drawer's to account for.
+  const safeRows = await all(env.DB, 'SELECT * FROM shift_po_safe WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  const safeOf = (key, name) => safeRows.find((x) => `${x.day}|${x.slot}` === key && x.po === poOf(name))?.amount || 0;
   const typedPos = expenses.flatMap((e) => { try { return (JSON.parse(e.odoo || 'null')?.orders || []).map((o) => o.name); } catch { return []; } });
   const names = [...new Set([...poRows.map((r) => r.po), ...typedPos].map((x) => String(x).toUpperCase()))];
   for (let i = 0; i < names.length; i += 90) {
@@ -1063,24 +1110,28 @@ export async function shifts(env, query, account) {
   // and the POs linked here (their Odoo total).
   const poPaid = new Map();
   const paidOn = (key, name, paid) => { if (!poPaid.has(key)) poPaid.set(key, []); poPaid.get(key).push({ name: String(name).toUpperCase(), paid: Math.round(paid) }); };
-  for (const r of poRows) paidOn(`${r.day}|${r.slot}`, r.po, Number(r.paid) || 0);
+  for (const r of poRows) paidOn(`${r.day}|${r.slot}`, r.po, Math.max(0, (Number(r.paid) || 0) - safeOf(`${r.day}|${r.slot}`, r.po)));
   for (const e of expenses) {
     let orders = [];
     try { orders = JSON.parse(e.odoo || 'null')?.orders || []; } catch { orders = []; }
     for (const o of orders) {
       const key = `${e.day}|${e.slot}`;
-      if (!(poPaid.get(key) || []).some((p) => p.name === String(o.name).toUpperCase())) paidOn(key, o.name, Number(o.total) || 0);
+      if (!(poPaid.get(key) || []).some((p) => p.name === String(o.name).toUpperCase())) paidOn(key, o.name, Math.max(0, (Number(o.total) || 0) - safeOf(key, o.name)));
     }
   }
   for (const r of poRows) {
     const key = `${r.day}|${r.slot}`;
     if (!reportPos.has(key)) reportPos.set(key, []);
-    reportPaid.set(key, (reportPaid.get(key) || 0) + (Number(r.paid) || 0));
+    const safe = safeOf(key, r.po);
+    reportPaid.set(key, (reportPaid.get(key) || 0) + Math.max(0, (Number(r.paid) || 0) - safe));
     // A top-up or change back on a later shift is the difference that moved
     // through that drawer, not the PO's whole total again.
     const kind = r.kind || 'claim';
+    const total = (kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0) - safe;
+    // Paid wholly from the safe: not the drawer's at all.
+    if (total <= 0 && safe) continue;
     reportPos.get(key).push({
-      name: r.po, vendor: r.vendor || '', total: kind === 'claim' ? Number(r.total) || 0 : Number(r.paid) || 0,
+      name: r.po, vendor: r.vendor || '', total, ...(safe ? { fromSafe: safe } : {}),
       // HIVE saves an approved PO as "confirmed"; Odoo's own word for it is "purchase".
       state: !r.state || r.state === 'confirmed' ? 'purchase' : r.state, fromReport: true, ...(kind !== 'claim' ? { kind } : {}),
       reported: reported.has(String(r.po).toUpperCase()), advance: Number(r.advance) === 1,
@@ -1257,7 +1308,8 @@ export async function shifts(env, query, account) {
       } else if (pulled.length || fromReport.length) {
         // The POs, as Odoo has them, against what left the drawer as
         // expenses. Typed POs not read from Odoo yet are not judged.
-        const poTotal = Math.round([...pulled, ...fromReport].reduce((t, o) => t + (Number(o.total) || 0), 0));
+        // What the big safe paid of a PO is not the drawer's (the report's own are already less it).
+        const poTotal = Math.round([...pulled, ...fromReport].reduce((t, o) => t + (Number(o.total) || 0) - (o.fromReport ? 0 : safeOf(key, o.name)), 0));
         const gap = r.expenses - poTotal;
         if (gap !== 0) {
           exceptions.push({
@@ -1458,6 +1510,19 @@ export async function shifts(env, query, account) {
       .filter((o) => !(odoo?.orders || []).some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
     if (fromReport.length) odoo = { ...(odoo || {}), orders: [...(odoo?.orders || []), ...fromReport] };
     if (odoo?.orders) odoo = { ...odoo, orders: odoo.orders.map((o) => ({ ...o, reported: reported.has(String(o.name).toUpperCase()) })) };
+    // POs linked here that the big safe paid, whole or part: the drawer's share only.
+    const shiftKey = `${s.day}|${s.slotName}`;
+    if (odoo?.orders) {
+      odoo = {
+        ...odoo,
+        orders: odoo.orders.map((o) => {
+          const safe = o.fromReport ? 0 : safeOf(shiftKey, o.name);
+          return safe ? { ...o, total: (Number(o.total) || 0) - safe, fromSafe: safe } : o;
+        }).filter((o) => !(o.fromSafe && o.total <= 0)),
+      };
+    }
+    const fromSafe = safeRows.filter((x) => `${x.day}|${x.slot}` === shiftKey)
+      .map((x) => ({ po: x.po, amount: x.amount, why: x.why, by: x.by_name, at: x.at }));
     // A line keyed and reversed in the same shift took no money: it is not a
     // payment to find. A line whose difference has been answered is
     // accounted for.
@@ -1482,13 +1547,15 @@ export async function shifts(env, query, account) {
       cardFound: found.length, cardAnswered: answered.length, cardLines: cardLines.length,
       cardFoundAmount: found.reduce((t, l) => t + l.amount, 0),
       register: register.get(s.index),
-      expense: expense || fromReport.length ? {
+      expense: expense || fromReport.length || fromSafe.length ? {
         sheetTotal: expense?.sheet_total ?? reportPaid.get(`${s.day}|${s.slotName}`) ?? null,
         sheetFrom: expense?.sheet_total != null ? 'typed' : reportPaid.has(`${s.day}|${s.slotName}`) ? 'report' : null,
         poNumbers: expense?.po_numbers ?? null, odoo, pulledAt: expense?.pulled_at ?? null,
         odooTotal: odoo?.orders?.reduce((t, o) => t + o.total, 0) ?? null,
         // Which of the POs came with the closing report rather than typed here.
         fromReport: fromReport.map((o) => o.name),
+        // POs (or parts) the big safe paid instead of the drawer.
+        fromSafe,
       } : null,
       exceptions: exceptions.filter((x) => x.day === s.day && x.slot === s.slotName).length,
     });

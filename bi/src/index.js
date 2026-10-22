@@ -150,6 +150,8 @@ const ROUTES = [
   // `shifts` lets both in, and each handler checks what this one may do.
   ['GET', '/api/shifts', 'shifts', shiftsRead],
   ['POST', '/api/shifts/count', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account))],
+  // A PO a shift reported as paid from the drawer, paid (whole or part) from the big safe.
+  ['POST', '/api/shifts/po-safe', 'shifts', adminOnly((env, ctx) => shiftRoutes.poFromSafe(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveExpense(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/expense/pull', 'shifts', adminOnly((env, ctx) => shiftRoutes.pullOrders(env, ctx.body))],
   ['POST', '/api/shifts/expense/link', 'shifts', linkPos],

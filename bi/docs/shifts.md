@@ -456,6 +456,17 @@ takes it off, or answer why. An answer holds while the amounts stay the
 same. Shifts before the first closing report are history and are not
 flagged.
 
+### Paid from the big safe
+
+A closing report can say a PO was paid from the drawer when the big safe
+paid it, in whole or in part. Under a shift's Expenses details an admin
+picks the PO, the amount the safe paid (all of it, or part) and why, and
+presses **Paid from the big safe**. That amount comes off what the shift's
+drawer accounts for (the closing report's expenses and the POs set against
+the expenses), and a line goes in the safe book (Money › Safe) as a PO paid
+from the safe that day, so each side holds only what it paid. **Undo** takes
+both back (`shift_po_safe`, migration 0046).
+
 ## Cash moved out with no label
 
 A Cash Movement out of the front drawer that no count labelled as expenses or

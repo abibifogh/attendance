@@ -2008,3 +2008,11 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 /* Water and padlocks: the closing report's rentals against ASSD. */
 .sh-rentcheck { margin-top: .8rem; display: grid; gap: .4rem; }
 .sh-rentcheck h3 { margin: 0; font-size: .92rem; }
+
+/* A PO the big safe paid instead of the drawer. */
+.sh-safepos { margin-top: .6rem; padding: .6rem .7rem; border: 1px dashed var(--border); border-radius: 10px; display: grid; gap: .4rem; }
+.sh-safepo { display: flex; justify-content: space-between; gap: .6rem; align-items: baseline; font-size: .84rem; }
+.sh-safepo small { display: block; color: var(--ink-2); }
+.sh-safeform { display: grid; gap: .4rem; }
+.sh-safeform select, .sh-safeform input { padding: .35rem .5rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.sh-safeform input[type=number] { width: 7rem; }

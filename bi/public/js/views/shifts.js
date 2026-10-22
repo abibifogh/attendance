@@ -1740,7 +1740,7 @@ export async function renderShifts(root, { range }) {
     }
     const confirmed = (o) => o.state === 'purchase' || o.state === 'done';
     const formWord = (o) => (o.kind || !data.formLive ? '' : o.reported ? ' · on the form ✓' : ' · not on the form');
-    const po = (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'approved' : o.state}${formWord(o)}`;
+    const po = (o) => `${o.name}${o.kind === 'topup' ? ' (deficit)' : o.kind === 'change' ? ' (refund)' : o.advance ? ' (advance)' : ''} · ${o.vendor || ''} · ${confirmed(o) ? 'approved' : o.state}${formWord(o)}${o.fromSafe ? ` · ${money(o.fromSafe)} of it paid from the big safe; this is the drawer’s part` : ''}`;
     const orders = (exp.odoo?.orders || []).map((o) => ({ ...o, amount: o.total }));
     const { pairs, spare } = pairUp(moves, orders);
     const rows = [
@@ -1758,7 +1758,49 @@ export async function renderShifts(root, { range }) {
       lineTable([{ label: 'Expenses' }, { label: 'Amount', num: true }, { label: 'Odoo PO' }, { label: 'PO total', num: true }], rows,
         ['Total', money(n.expenses), exp.sheetTotal != null ? `${exp.sheetFrom === 'report' ? 'Closing report' : 'Expense sheet'} ${money(exp.sheetTotal)}` : '', exp.odooTotal != null ? money(exp.odooTotal) : '—']),
       unknown.length ? h('p.small', `✗ Not in Odoo: ${unknown.join(', ')}`) : null,
+      safeBox(s, orders),
       n.expenses > 0 ? poLinker(s) : null);
+  }
+
+  /**
+   * A PO the closing report says the drawer paid that the big safe paid,
+   * whole or part (an admin's call): that much comes off what the drawer
+   * accounts for, and goes in the safe book as a PO paid from the safe.
+   */
+  function safeBox(s, orders) {
+    const done = s.expense?.fromSafe || [];
+    if (!admin && !done.length) return null;
+    const said = h('span.small');
+    const post = async (body, msg) => {
+      said.textContent = 'Saving…';
+      try { await api('/shifts/po-safe', { method: 'POST', body: { day: s.day, slot: s.slot, ...body } }); await load(banner('good', msg)); } catch (err) { said.textContent = err.message; }
+    };
+    const list = done.map((x) => h('div.sh-safepo',
+      h('span', h('b', x.po), ` · ${money(x.amount)} paid from the big safe, not the drawer`, h('small', `${x.by || 'An admin'}${x.at ? `, ${String(x.at).slice(0, 16)}` : ''}: “${x.why || ''}” · in the safe book`)),
+      admin ? h('button.sh-link', { type: 'button', onclick: () => post({ po: x.po, back: true }, `${x.po} is the drawer’s again, and its line is off the safe book.`) }, 'Undo') : null));
+    const choices = orders.filter((o) => o.name && !done.some((x) => x.po === String(o.name).toUpperCase()));
+    let form = null;
+    if (admin && choices.length) {
+      const pick = h('select', { 'aria-label': 'PO' }, choices.map((o) => h('option', { value: o.name }, `${o.name} · ${o.vendor || ''} · ${money(o.total)}`)));
+      const amount = h('input', { type: 'number', step: '0.01', min: '0', 'aria-label': 'Amount paid from the safe', value: (choices[0].total / 100).toFixed(2) });
+      pick.addEventListener('change', () => { const o = choices.find((c) => c.name === pick.value); if (o) amount.value = (o.total / 100).toFixed(2); });
+      const why = h('input', { type: 'text', maxlength: '300', placeholder: 'Why, e.g. paid from the big safe by the manager' });
+      form = h('div.sh-safeform',
+        h('div.sh-safeinline', pick, h('label', 'GH₵', amount),
+          h('button.btn', {
+            type: 'button',
+            onclick: () => {
+              if (!why.value.trim()) { said.textContent = 'Say why.'; why.focus(); return; }
+              post({ po: pick.value, amount: amount.value, why: why.value, vendor: choices.find((c) => c.name === pick.value)?.vendor || '' },
+                `${pick.value}: GH₵${amount.value} put on the safe book and taken off this drawer.`);
+            },
+          }, 'Paid from the big safe')),
+        why);
+    }
+    return h('div.sh-safepos',
+      h('b', 'Paid from the big safe'),
+      h('p.small.muted', 'A PO reported as paid from the drawer that the big safe paid, whole or part: that much comes off what this drawer accounts for, and goes in the safe book as a PO paid from the safe that day.'),
+      list, form, said);
   }
 
   /**
