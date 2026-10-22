@@ -44,6 +44,15 @@ test('a shift’s line: the net of each kind, and where it stands', () => {
   assert.deepEqual(l.kinds, { drawer: -16500, card: -20000, bank: 0, po: 0, laundry: 0 });
   assert.deepEqual([l.net, l.open, l.waiting, l.answered, l.count, l.status], [-36500, 1, 1, 1, 3, 'open']);
   assert.equal(shiftLine(s, list.slice(0, 2)).status, 'waiting');
+  // A drawer short of 78 with a movement of 50 labelled by hand: still 78. The
+  // drawer's difference already holds the movement; the label only explains it.
+  const notes = [ex('drawer-short', -7800, { group: 'drawer', key: 'drawer:x' }),
+    ex('movement-labelled', 5000, { group: 'drawer', key: 'labelled:1', answer: { answer: 'Labelled by hand: it was expenses' } }),
+    ex('movement-matched', 2000, { group: 'drawer', key: 'matched:2', answer: { answer: 'Matched as a duplicate' } }),
+    ex('movement-twice', 2000, { group: 'drawer', key: 'twice:3' }),
+    ex('movement-reversal', 1500, { group: 'drawer', key: 'rev:4' })];
+  const d = shiftLine(s, notes);
+  assert.deepEqual([d.kinds.drawer, d.net, d.count, d.answered], [-7800, -7800, 5, 2]);
   assert.equal(shiftLine(s, list.slice(0, 1)).status, 'answered');
   assert.equal(shiftLine(s, []).status, 'agrees');
   assert.equal(shiftLine({ ...s, open: true }, []).status, 'journal');
