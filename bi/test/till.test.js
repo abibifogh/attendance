@@ -1051,3 +1051,26 @@ test('a PO the closing report says the drawer paid, paid from the big safe inste
   assert.equal(s.expense.sheetTotal, 3000);
   assert.deepEqual(await safeBook(), []);
 });
+
+test('an expense with no PO the big safe paid: off the drawer, which kept the cash, and in the safe book waiting for its PO', async () => {
+  const { env } = await setUp();
+  const range = { from: '2026-08-01', to: '2026-08-01' };
+  const shiftWith = async () => (await routes.shifts(env, range, OWNER)).days.flatMap((d) => d.shifts).find((s) => s.register?.expenses > 0);
+  const before = await shiftWith();
+  const r0 = before.register;
+  await assert.rejects(routes.poFromSafe(env, { day: before.day, slot: before.slot, noPo: true, amount: '10', why: 'Paid from the safe' }, OWNER), /What it was for/);
+  const out = await routes.poFromSafe(env, { day: before.day, slot: before.slot, noPo: true, amount: '10', what: 'Gas refill', why: 'The manager paid it from the safe' }, OWNER);
+  assert.equal(out.po, 'NOPO-1');
+  const after = (await routes.shifts(env, range, OWNER)).days.flatMap((d) => d.shifts).find((s) => s.day === before.day && s.slot === before.slot);
+  assert.equal(after.register.expenses, r0.expenses - 1000, 'the drawer’s expenses are less what the safe paid');
+  assert.equal(after.register.expected, r0.expected + 1000, 'so the drawer should hold that much more');
+  assert.deepEqual(after.expense.fromSafe.map((x) => [x.po, x.noPo, x.what, x.amount]), [['NOPO-1', true, 'Gas refill', 1000]]);
+  const book = (await env.DB.prepare("SELECT kind, amount, description, po FROM safe_entry WHERE kind = 'pending'").all()).results.map((x) => ({ ...x }));
+  assert.deepEqual(book, [{ kind: 'pending', amount: 1000, description: 'Gas refill', po: null }]);
+  // A second is its own; undoing one leaves the other.
+  assert.equal((await routes.poFromSafe(env, { day: before.day, slot: before.slot, noPo: true, amount: '5', what: 'Bulbs', why: 'Safe' }, OWNER)).po, 'NOPO-2');
+  await routes.poFromSafe(env, { day: before.day, slot: before.slot, po: 'NOPO-1', back: true }, OWNER);
+  const last = (await routes.shifts(env, range, OWNER)).days.flatMap((d) => d.shifts).find((s) => s.day === before.day && s.slot === before.slot);
+  assert.equal(last.register.expenses, r0.expenses - 500);
+  assert.deepEqual((await env.DB.prepare("SELECT description FROM safe_entry WHERE kind = 'pending'").all()).results.map((x) => x.description), ['Bulbs']);
+});

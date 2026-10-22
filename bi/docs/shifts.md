@@ -467,6 +467,12 @@ the expenses), and a line goes in the safe book (Money › Safe) as a PO paid
 from the safe that day, so each side holds only what it paid. **Undo** takes
 both back (`shift_po_safe`, migration 0046).
 
+An expense with **no PO** (receipts in a count, cash paid out) can be marked
+the same way: the amount, what it was for and why. It comes off the drawer's
+expenses, so the drawer should hold that much more (the cash it kept), and it
+goes in the safe book as a payment waiting for its PO, given one there later.
+Each is its own line (`NOPO-1`, `NOPO-2` …, migration 0047).
+
 ## Cash moved out with no label
 
 A Cash Movement out of the front drawer that no count labelled as expenses or
