@@ -1057,6 +1057,28 @@ test('a guest who paid more: refund owed until paid back, or kept apart as two',
   assert.equal(line.split.key, x.key);
 });
 
+test('a card refund keyed in ASSD: paired with the bank’s reversal, or a difference six days on', async () => {
+  const back = (seq, amount) => block('Cash Register', 'ALPHA', seq, '02.08.26', '001', [
+    `02.08.26   718   Water Bottle   -1   ${amount}   -${amount} GHS   19`, card('02.08.26', `-${amount}`), `-${amount} GHS`]);
+  const { db } = freshDb();
+  const env = { DB: db };
+  await routes.uploadJournal(env, { lines: redactJournalLines([...journal(), ...back(300542, '60,00'), ...back(300543, '30,00')]), name: 'journal.pdf' }, OWNER);
+  await routes.uploadTerminal(env, { text: terminalCsv(), name: 'tams.csv' }, OWNER);
+  await routes.uploadBank(env, { rows: statement(), name: 'bank.xlsx' }, OWNER);
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const refunds = out.exceptions.filter((x) => x.kind === 'refund').sort((a, b) => a.seq - b.seq);
+  assert.deepEqual(refunds.map((x) => [x.seq, x.amount, x.severity, Boolean(x.pairedWith), Boolean(x.unbacked)]), [
+    [300542, -6000, 'info', true, false],
+    [300543, -3000, 'warning', false, true],
+  ], 'the 60 has its reversal on the statement; the 30 has none, weeks on');
+
+  // Inside six days it is still a note: the reversal may be on its way.
+  const fresh = () => [{ kind: 'refund', day: '2026-08-02', severity: 'info' }];
+  assert.equal(routes.unbackedRefunds(fresh(), '2026-08-07')[0].severity, 'info');
+  assert.deepEqual(routes.unbackedRefunds(fresh(), '2026-08-08').map((x) => [x.severity, x.unbacked]), [['warning', true]]);
+  assert.equal(routes.unbackedRefunds([{ kind: 'refund', day: '2026-08-02', severity: 'info', pairedWith: 'reversal:T6' }], '2026-09-01')[0].severity, 'info');
+});
+
 test('the day an ASSD line is on, so an approval can open its shift', async () => {
   const env = await loaded();
   const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER);

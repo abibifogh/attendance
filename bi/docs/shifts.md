@@ -363,7 +363,7 @@ code and card, to check each one arrived.
 | Keying slips | Transposed digits, one digit different, or out by a factor of ten against a payment in the same shift. A payment one digit larger or smaller than its line is read as the guest paying more or less instead. |
 | Keyed twice in ASSD | The same amount twice in one shift, paid once. |
 | Money received that ASSD does not show | Approved on the terminal or received by MoMo during the shift, and not in ASSD. |
-| Did not reach the bank, or went back out | No bank credit six days after approval, a card reversal, or a refund keyed in ASSD. |
+| Did not reach the bank, or went back out | No bank credit six days after approval, a card reversal, or a refund keyed in ASSD. A refund pairs itself with a bank reversal of the same amount, even one on a later day. A refund with no reversal six days on is a difference to answer, not a note: if no money went back to a guest's card (stock put right as a card return, say), ASSD shows that much less card money than was taken. It counts as + in the month table. |
 | Explained by the matcher | The same money split differently, paid on one shift and keyed on another within a day, a line and its reversal, a cash movement keyed wrong and put back, or a bank credit with no terminal record. Shown so the explanation can be checked. |
 
 The last shift in a journal is shown as far as the journal goes. Money taken
