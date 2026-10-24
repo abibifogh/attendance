@@ -40,7 +40,7 @@ const KEY_WORDS = {
   labelled: 'A cash movement labelled', matched: 'A cash movement', stay: 'An unpaid stay', t: 'A card or MoMo payment', b: 'A bank payment',
   'not-recorded': 'A payment not in ASSD', 'not-found': 'A card or MoMo payment that never arrived', failed: 'A declined card payment',
   'double-charge': 'A card charged twice', 'paid-more': 'A guest who paid more than ASSD shows', 'paid-less': 'A guest who paid less than ASSD shows',
-  'laundry-card': 'A laundry card payment not in ASSD', 'never-settled': 'A payment that never reached the bank', reversal: 'A payment the bank took back', refund: 'A card refund keyed in ASSD',
+  'laundry-card': 'A laundry card payment not in ASSD', 'never-settled': 'A payment that never reached the bank', reversal: 'A payment the bank took back', refund: 'A card refund keyed in ASSD', nocash: 'Cash keyed while the drawer did not move',
   duplicate: 'A payment keyed twice in ASSD', zero: 'A card payment of nothing',
 };
 const dayWords = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });

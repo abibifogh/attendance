@@ -1277,6 +1277,15 @@ export async function shifts(env, query, account) {
         swapped: r.receipts.swapped - (r.receipts.reconciled?.amount || 0) > 0 ? r.receipts.swapped - (r.receipts.reconciled?.amount || 0) : null,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
         swapFrom: swapFromOf(r),
+        still: s.stillAmount || null,
+      });
+    }
+    // Cash keyed while the drawer's counts did not move: part of the story
+    // of the drawer's difference, told line by line.
+    if (s.stillKeyed?.length) {
+      exceptions.push({
+        ...base, key: `nocash:${s.day}:${s.slotName}`, kind: 'keyed-no-cash', group: 'drawer', severity: 'warning',
+        amount: s.stillAmount, spans: s.stillKeyed, seqs: s.stillKeyed.flatMap((x) => x.lines.map((l) => l.seq)),
       });
     }
     for (const ask of s.receiptsAsk || []) {
@@ -1767,7 +1776,7 @@ export function withoutMoney(value) {
 // The drawer's own exceptions (cash, receipts, POs, laundry): acted on with
 // "Correct cash movements" as well as with the bank. Card and bank lines need the bank.
 const CASH_KEYS = ['drawer:', 'handover:', 'unlabelled:', 'receipts:', 'receipts-read:', 'receipts-carried:', 'nopo:', 'pogap:',
-  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:'];
+  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:', 'nocash:'];
 export const isCashKey = (key) => {
   const k = String(key || '');
   // "Not related" names the two it keeps apart.
