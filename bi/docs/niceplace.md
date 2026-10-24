@@ -79,6 +79,16 @@ A wrong number can be sent again, with a new picture, within an hour of the firs
 that an admin fixes it in Insight. The picture is made smaller on the phone
 before it is sent and kept with the reading.
 
+**A reading sent for the wrong day or shift** (the day shift's picture sent as
+the night's, or on the wrong date): open the shift and press **Wrong day or
+shift? Move it**, choose the right day and shift, and **Move**. The reading
+goes there with its picture, and both shifts are worked out again. If the
+shift chosen has a reading of its own, nothing moves until you press **Swap
+the two** (each was probably sent for the other). The reading then says where
+it was moved from and by whom. Admins can move any reading. A supervisor given
+Nice Place can move one waiting to be read, from the Inbox. An answer given on
+a shift stays with that shift.
+
 ## The income workbook
 
 Upload it as it is kept: a sheet per month named like `SEP 26`, with Toilet and

@@ -564,6 +564,7 @@ export function analyse({ readings, revenue, settings, from, to }) {
         day, shift, key,
         reading: reading ? { name: reading.name, gb: reading.gb, gt: reading.gt, lb: reading.lb, lt: reading.lt, photoId: reading.photo_id || null,
           sentAt: reading.sent_at, at: reading.at, editedBy: reading.edited_by || null, checkedBy: reading.checked_by || null, checkedAt: reading.checked_at || null,
+          movedFrom: reading.moved_from || null, movedBy: reading.moved_by || null, movedAt: reading.moved_at || null,
           // What the picture was read as, and where the typed numbers differ or it could not be read.
           ...readCompare(reading) } : null,
         before: prev ? { day: prev.day, shift: prev.shift, gb: prev.gb, gt: prev.gt, lb: prev.lb, lt: prev.lt } : null,
@@ -629,7 +630,7 @@ export async function npView(env, query, account, { admin = false } = {}) {
     // eslint-disable-next-line no-await-in-loop
     const pic = w.photo_id ? await first(env.DB, 'SELECT data FROM np_photo WHERE id = ?1', w.photo_id) : null;
     r.pending = {
-      name: w.name, sentAt: w.sent_at, photoId: w.photo_id || null,
+      name: w.name, sentAt: w.sent_at, photoId: w.photo_id || null, movedFrom: w.moved_from || null, movedBy: w.moved_by || null,
       values: Object.fromEntries(COUNTERS.map((c) => [c, w[c] ?? null])), pending: COUNTERS.filter((c) => w[c] == null),
       // eslint-disable-next-line no-await-in-loop
       problem: pic ? await problemOf(env, pic.data) : '',
@@ -739,6 +740,39 @@ export async function editReading(env, body, account) {
     ON CONFLICT (day, shift) DO UPDATE SET gb = ?4, gt = ?5, lb = ?6, lt = ?7, at = ?8, edited_by = ?9`,
   day, shift, str(body?.name, 'Name', { max: 80 }), v.gb, v.gt, v.lb, v.lt, at, who(account));
   return { ok: true };
+}
+
+/**
+ * A reading, with its picture, sent for the wrong day or shift: moved to the
+ * right one. When that shift has a reading of its own, the two are swapped,
+ * and only when asked to (each was probably sent for the other). Each keeps
+ * where it came from, who moved it and when. An answer stays with its shift.
+ */
+export async function moveReading(env, body, account) {
+  const was = await pendingOne(env, body);
+  const day = String(body?.toDay || '');
+  const shift = String(body?.toShift || '');
+  if (!isDay(day) || !SHIFTS.includes(shift)) throw badRequest('Move it to which day and shift?');
+  if (day > todayIn('UTC')) throw badRequest('That shift has not happened yet.');
+  if (day === was.day && shift === was.shift) throw badRequest('It is on that shift already.');
+  const there = await first(env.DB, 'SELECT * FROM np_reading WHERE day = ?1 AND shift = ?2', day, shift);
+  if (there && !body?.swap) {
+    throw new HttpError(409, 'That shift has a reading of its own. Swap the two, or move that one first.');
+  }
+  const at = now();
+  const by = who(account);
+  const from = (r) => `${r.day}|${r.shift}`;
+  const put = (r, d, sh) => env.DB.prepare('UPDATE np_reading SET day = ?3, shift = ?4, moved_from = ?5, moved_by = ?6, moved_at = ?7 WHERE day = ?1 AND shift = ?2')
+    .bind(r.day, r.shift, d, sh, from(r), by, at);
+  // A swap goes through a day no shift has, so neither shift is ever two readings.
+  const statements = there
+    ? [env.DB.prepare("UPDATE np_reading SET day = '0000-00-00' WHERE day = ?1 AND shift = ?2").bind(there.day, there.shift),
+      put(was, day, shift),
+      env.DB.prepare('UPDATE np_reading SET day = ?2, shift = ?3, moved_from = ?4, moved_by = ?5, moved_at = ?6 WHERE day = ?7 AND shift = ?1')
+        .bind(there.shift, was.day, was.shift, from(there), by, at, '0000-00-00')]
+    : [put(was, day, shift)];
+  await env.DB.batch(statements);
+  return { ok: true, swapped: Boolean(there), to: { day, shift } };
 }
 
 /** Somebody looked: the numbers typed match the picture (or take that back). */

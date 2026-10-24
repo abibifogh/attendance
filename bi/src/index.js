@@ -322,6 +322,7 @@ const ROUTES = [
   ['GET', '/api/np/pending', 'shifts', area('niceplace', 1, (env) => np.pendingReadings(env))],
   ['POST', '/api/np/review', 'shifts', area('niceplace', 2, (env, ctx) => np.reviewReading(env, ctx.body, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' }))],
   ['POST', '/api/np/reread', 'shifts', area('niceplace', 2, (env, ctx) => np.rereadReading(env, ctx.body))],
+  ['POST', '/api/np/move', 'shifts', area('niceplace', 2, (env, ctx) => np.moveReading(env, ctx.body, ctx.account))],
   ['POST', '/api/np/income', 'insight', adminOnly((env, ctx) => np.saveIncome(env, ctx.body, ctx.account))],
   ['POST', '/api/np/settings', 'insight', adminOnly((env, ctx) => np.saveSettings(env, ctx.body))],
   ['POST', '/api/np/reading', 'insight', adminOnly((env, ctx) => np.editReading(env, ctx.body, ctx.account))],

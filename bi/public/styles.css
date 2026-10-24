@@ -2025,3 +2025,10 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
   .sf-field { grid-template-columns: 1fr; gap: .2rem; }
   .sf-go { padding-left: 0; }
 }
+
+/* Nice Place: move a reading to the right day or shift */
+.np-movewrap { margin-top: .6rem; }
+.np-move { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .5rem; padding: .6rem; border: 1px solid var(--line, #e5e5e5); border-radius: 8px; }
+.np-move[hidden] { display: none; }
+.np-move input, .np-move select { width: auto; }
+.np-move small { flex-basis: 100%; }
