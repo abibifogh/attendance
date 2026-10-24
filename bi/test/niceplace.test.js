@@ -349,3 +349,36 @@ test('a picture added in Insight for a shift with none: read like one from the l
   assert.deepEqual([row.gt, Boolean(row.photo_id), row.edited_by], [230, true, 'Test Owner']);
   await assert.rejects(np.uploadPhoto(env, { day, shift: 'day', photo: 'x' }, OWNER), /Choose a picture/);
 });
+
+test('a reading sent for the wrong day or shift is moved, with its picture, or swapped with the one there', async () => {
+  const { db } = freshDb();
+  const env = { DB: db };
+  const at = '2026-09-03 18:00:00';
+  const add = (day, shift, gb, photo) => db.prepare(`INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at) VALUES (?1, ?2, 'Abena', ?3, ?3, ?3, ?3, ?4, ?5, ?5)`)
+    .bind(day, shift, gb, photo, at).run();
+  await add('2026-09-03', 'day', 500, 7);
+  const row = async (day, shift) => ({ ...(await db.prepare('SELECT gb, photo_id, moved_from, moved_by FROM np_reading WHERE day = ?1 AND shift = ?2').bind(day, shift).first()) });
+
+  // Sent as the day shift, it was the night before's.
+  let out = await np.moveReading(env, { day: '2026-09-03', shift: 'day', toDay: '2026-09-02', toShift: 'night' }, OWNER);
+  assert.deepEqual(out, { ok: true, swapped: false, to: { day: '2026-09-02', shift: 'night' } });
+  assert.deepEqual(await row('2026-09-02', 'night'), { gb: 500, photo_id: 7, moved_from: '2026-09-03|day', moved_by: 'Test Owner' });
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM np_reading WHERE day = '2026-09-03'").first()).n, 0);
+
+  // Onto a shift with its own reading: refused, unless the two are swapped.
+  await add('2026-09-03', 'night', 640, 8);
+  await assert.rejects(np.moveReading(env, { day: '2026-09-02', shift: 'night', toDay: '2026-09-03', toShift: 'night' }, OWNER), /reading of its own/);
+  out = await np.moveReading(env, { day: '2026-09-02', shift: 'night', toDay: '2026-09-03', toShift: 'night', swap: true }, OWNER);
+  assert.equal(out.swapped, true);
+  assert.deepEqual([(await row('2026-09-03', 'night')).photo_id, (await row('2026-09-02', 'night')).photo_id], [7, 8]);
+  assert.equal((await row('2026-09-02', 'night')).moved_from, '2026-09-03|night');
+
+  await assert.rejects(np.moveReading(env, { day: '2026-09-03', shift: 'night', toDay: '2026-09-03', toShift: 'night' }, OWNER), /on that shift already/);
+  await assert.rejects(np.moveReading(env, { day: '2026-09-03', shift: 'night', toDay: '2999-01-01', toShift: 'day' }, OWNER), /not happened yet/);
+  await assert.rejects(np.moveReading(env, { day: '2026-09-09', shift: 'day', toDay: '2026-09-08', toShift: 'day' }, OWNER), /No reading/);
+
+  // The page says where it came from.
+  const view = await np.npView(env, { from: '2026-09-02', to: '2026-09-03' }, OWNER, { admin: true });
+  const r = view.rows.find((x) => x.key === '2026-09-02|night');
+  assert.deepEqual([r.reading.movedFrom, r.reading.movedBy], ['2026-09-03|night', 'Test Owner']);
+});
