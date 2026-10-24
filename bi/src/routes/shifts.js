@@ -1515,6 +1515,17 @@ export async function shifts(env, query, account) {
   }
   for (let i = exceptions.length - 1; i >= 0; i -= 1) if (gone.has(exceptions[i].key)) exceptions.splice(i, 1);
 
+  // Cash keyed while the drawer did not move explains the drawer's
+  // difference; it asks for nothing of its own. While the drawer difference
+  // waits for an answer it is shown beside it; once that is answered, or when
+  // the drawer agrees, it is an explanation and leaves the shift as it was.
+  for (const x of exceptions.filter((e) => e.kind === 'keyed-no-cash')) {
+    const drawer = exceptions.find((e) => e.key === `drawer:${x.day}:${x.slot}`);
+    if (drawer && !drawer.answer) continue;
+    x.severity = 'info';
+    x.group = 'explained';
+  }
+
   // What people settled by correcting a movement leaves a record, answered,
   // so it can be found again under "Show answered" and undone. Without it a
   // duplicate matched away took its exception, and the drawer difference it

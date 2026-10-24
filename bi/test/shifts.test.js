@@ -1093,12 +1093,22 @@ test('the screen: cash keyed while the counts did not move is a drawer differenc
   const { db } = freshDb();
   const env = { DB: db };
   await routes.uploadJournal(env, { lines: redactJournalLines([...journal(), ...counted(300542), ...water(300543, '5', '50,00'),
-    ...water(300544, '-2', '-20,00'), ...counted(300545)]), name: 'journal.pdf' }, OWNER);
-  const out = await routes.shifts(env, { from: '2026-08-02', to: '2026-08-02' }, OWNER);
-  const x = out.exceptions.find((e) => e.kind === 'keyed-no-cash');
+    ...water(300544, '-2', '-20,00'), ...counted(300545), ...marker('BRAVO', 300550, '02.08.26'), ...sale('BRAVO', 300551, '02.08.26', [card('02.08.26', '10,00')])]),
+  name: 'journal.pdf' }, OWNER);
+  const read = async () => (await routes.shifts(env, { from: '2026-08-02', to: '2026-08-02' }, OWNER)).exceptions;
+  let list = await read();
+  const drawer = list.find((e) => e.key === 'drawer:2026-08-02:morning');
+  assert.deepEqual([drawer.amount, drawer.still], [-3000, 3000], 'the 30 keyed while the counts held 200 is the drawer short');
+  let x = list.find((e) => e.kind === 'keyed-no-cash');
   assert.deepEqual([x.key, x.group, x.severity, x.amount, x.seqs], ['nocash:2026-08-02:morning', 'drawer', 'warning', 3000, [300543, 300544]]);
   assert.equal(routes.isCashKey(x.key), true);
   assert.equal(await routes.dayOfKey(env, x.key), '2026-08-02');
+
+  // Once the drawer is answered it is an explanation: it reopens nothing.
+  await routes.saveAnswer(env, { key: drawer.key, answer: 'Explained', note: 'Water stock put right through the till' }, OWNER);
+  list = await read();
+  x = list.find((e) => e.kind === 'keyed-no-cash');
+  assert.deepEqual([x.severity, x.group], ['info', 'explained']);
 });
 
 test('a card refund keyed in ASSD: paired with the bank’s reversal, or a difference six days on', async () => {
