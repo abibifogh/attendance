@@ -58,5 +58,40 @@ export function npReviewBox(p, { after, canAct = true }) {
       canAct ? h('div.np-inline',
         h('button.btn.primary', { type: 'button', onclick: save }, 'Save the four numbers'),
         src ? h('button.btn', { type: 'button', onclick: again }, 'Try reading again') : null,
-        said) : null));
+        said) : null,
+      canAct ? npMoveBox(p, { after }) : null));
+}
+
+/**
+ * A reading sent for the wrong day or shift, with its picture, moved to the
+ * right one. When that shift has a reading of its own, the two can be
+ * swapped. `p` has the reading's day and shift; `after(words)` runs once moved.
+ */
+export function npMoveBox(p, { after }) {
+  const said = h('span.small');
+  const today = new Date().toISOString().slice(0, 10);
+  const day = h('input', { type: 'date', value: p.day, max: today, 'aria-label': 'Day' });
+  const shift = h('select', { 'aria-label': 'Shift' }, Object.keys(SHIFT).map((x) => h('option', { value: x, selected: x === p.shift }, x === 'day' ? 'Day' : 'Night')));
+  const swap = h('button.btn', { type: 'button', hidden: true }, 'Swap the two');
+  const move = async (andSwap) => {
+    said.textContent = 'Moving…';
+    try {
+      const out = await api('/np/move', { method: 'POST', body: { day: p.day, shift: p.shift, toDay: day.value, toShift: shift.value, swap: andSwap } });
+      await after(out.swapped
+        ? `Swapped: this reading is now ${dayText(out.to.day)} ${SHIFT[out.to.shift]}, and that shift’s is ${dayText(p.day)} ${SHIFT[p.shift]}.`
+        : `Moved to ${dayText(out.to.day)} ${SHIFT[out.to.shift]}${p.photoId ? ', with its picture' : ''}.`);
+    } catch (err) {
+      said.textContent = err.message;
+      swap.hidden = !/of its own/.test(err.message);
+    }
+  };
+  swap.addEventListener('click', () => move(true));
+  const box = h('div.np-move', { hidden: true },
+    h('small', p.photoId ? 'Move this reading, with its picture, to' : 'Move this reading to'), day, shift,
+    h('button.btn', { type: 'button', onclick: () => move(false) }, 'Move'), swap, said);
+  return h('div.np-movewrap',
+    h('button.sh-link', { type: 'button', onclick: () => { box.hidden = !box.hidden; } }, p.movedFrom
+      ? `Moved here from ${dayText(p.movedFrom.split('|')[0])} ${SHIFT[p.movedFrom.split('|')[1]]}${p.movedBy ? ` by ${p.movedBy}` : ''} · move again`
+      : 'Wrong day or shift? Move it'),
+    box);
 }

@@ -1,7 +1,7 @@
 import { h, mount, money } from '../util.js';
 import { api } from '../api.js';
 import { state } from '../app.js';
-import { npReviewBox } from './np-review.js';
+import { npReviewBox, npMoveBox } from './np-review.js';
 
 /**
  * Nice Place, the public washroom: the counters each shift against the money
@@ -252,6 +252,8 @@ export async function renderNicePlace(root) {
             h('tbody', Object.entries(COUNTER).map(([c, label]) => h('tr',
               h('td', label), h('td.n.num', whole(r.before ? r.before[c] : 0)), h('td.n.num', whole(r.reading[c])), h('td.n.num', whole(r.moved[c])), h('td.n.num', whole(Math.floor(r.moved[c] / 2))))))) : null,
           notes.length ? h('ul.np-notes', notes.map((n) => h('li', n))) : null,
+          r.reading && isAdmin ? npMoveBox({ day: r.day, shift: r.shift, photoId: r.reading.photoId, movedFrom: r.reading.movedFrom, movedBy: r.reading.movedBy }, { after: (words) => { open = null; return load(['good', words]); } }) : null,
+          !isAdmin && r.reading?.movedFrom ? h('p.small.muted', `Moved here from ${dayText(r.reading.movedFrom.split('|')[0])} ${SHIFT[r.reading.movedFrom.split('|')[1]].toLowerCase()}${r.reading.movedBy ? ` by ${r.reading.movedBy}` : ''}.`) : null,
           fix),
         h('div', facility('toilet'), facility('shower'),
           ['bad', 'warn', 'over'].includes(r.status) || r.answer ? h('div.np-answer',
