@@ -79,6 +79,7 @@ export function resultWords(r) {
   if (r.status === 'complete') return `✓ ${r.po.name} · ${r.vendorName} · ${money(r.amount)}`;
   if (r.status === 'check') return `⚠ ${r.po.name} · ${money(r.amount)} · ${r.vendorOk === false ? 'vendor to confirm' : 'item to check'}`;
   if (r.status === 'duplicate') return `= Seen before${r.po?.name ? `: ${r.po.name}` : ''}`;
+  if (r.status === 'dismissed') return '= The same one: set aside';
   if (r.status === 'filled') return `✓ ${r.po?.name || 'PO made'}`;
   return `✕ No PO. ${r.problem || 'It could not be read.'}`;
 }
@@ -280,11 +281,24 @@ export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
     const go = h('button.btn.primary', { type: 'button', disabled: true }, 'Make the draft POs');
     const show = () => {
       mount(list, files.map((f, i) => h('div.po-mfile', f.thumb ? h('img', { src: f.thumb, alt: '' }) : h('span', '📄'),
-        h('small', f.name), f.result ? h(`span.po-mres.${f.result.status}`, resultWords(f.result)) : f.busy ? h('span.po-mres', 'Reading…')
+        h('small', f.name), f.result ? h(`span.po-mres.${f.result.status}`, resultWords(f.result),
+          // Looked like one seen before: made only if the person says so.
+          f.result.status === 'duplicate' && f.result.id ? [h('small.po-mwhy', f.result.problem), h('span.po-macts',
+            h('button.btn', { type: 'button', onclick: () => anyway(f) }, 'Make it anyway'),
+            h('button.sh-link', { type: 'button', onclick: () => same(f) }, 'It is the same'))] : null) : f.busy ? h('span.po-mres', 'Reading…')
           : h('button.sh-link', { type: 'button', onclick: () => { files.splice(i, 1); show(); } }, 'Remove'))));
       const waiting = files.filter((f) => !f.result).length;
       go.disabled = !waiting;
       go.textContent = waiting ? `Make ${waiting} draft PO${waiting === 1 ? '' : 's'}` : 'Make the draft POs';
+    };
+    const anyway = async (f) => {
+      f.busy = true; f.result = null; show();
+      try { f.result = (await api('/receipts/retry', { method: 'POST', body: { id: f.id, anyway: true } })).receipt; } catch (err) { f.result = { status: 'failed', problem: err.message }; }
+      f.busy = false; show();
+      if (after) after();
+    };
+    const same = async (f) => {
+      try { await api('/receipts/dismiss', { method: 'POST', body: { id: f.id } }); f.result = { status: 'dismissed', id: f.id }; show(); } catch (err) { said.className = 'po-said err'; said.textContent = err.message; }
     };
     pick.addEventListener('change', async () => {
       said.className = 'po-said'; said.textContent = 'Getting them ready…';
@@ -309,11 +323,14 @@ export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
         try {
           // eslint-disable-next-line no-await-in-loop
           f.result = (await api('/receipts/upload', { method: 'POST', body: { file: f.file, name: f.name, thumb: f.thumb, hint: hint.value } })).receipt;
+          f.id = f.result.id;
         } catch (err) { f.result = { status: 'failed', problem: err.message }; }
         f.busy = false; show();
       }
       const made = files.filter((f) => f.result?.po && ['complete', 'check'].includes(f.result.status)).length;
-      said.textContent = `${made} draft PO${made === 1 ? '' : 's'} made. Each is kept in Money › Receipts, with what to check.`;
+      const seen = files.filter((f) => f.result?.status === 'duplicate').length;
+      said.textContent = `${made} draft PO${made === 1 ? '' : 's'} made. Each is kept in Money › Receipts, with what to check.`
+        + (seen ? ` ${seen} looked like ${seen === 1 ? 'one' : 'ones'} seen before: make ${seen === 1 ? 'it' : 'each'} anyway, or say it is the same.` : '');
       if (after) after();
     });
     mount(inner,

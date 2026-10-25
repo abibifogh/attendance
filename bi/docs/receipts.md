@@ -37,7 +37,11 @@ one before it goes to Odoo.
   gets a **To-Do in Odoo** on that PO saying exactly what to change. Complete
   ones get no To-Do.
 - **Seen before:** the same file sent twice, or a PO already in Odoo for the
-  same vendor, day and amount, is said and not made again.
+  same vendor, day and amount, is said, with the PO it looks like and the date
+  read off the receipt, and no PO is made yet. You decide: **Make it anyway**
+  (a different receipt: another day misread, two of the same bought) makes the
+  draft PO from the receipt kept here; **It is the same** sets it aside and
+  lets its file go. Both are on the upload form and in Money › Receipts.
 - **Could not be read** (too dark, cut off, an iPhone HEIC picture), or Odoo
   refused it: no PO is made. The receipt is kept, and **Fill it in** opens the
   usual ＋ PO form with the receipt already there. **Try again** reads it

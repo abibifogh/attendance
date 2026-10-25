@@ -2032,3 +2032,9 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .np-move[hidden] { display: none; }
 .np-move input, .np-move select { width: auto; }
 .np-move small { flex-basis: 100%; }
+
+/* A receipt that looked like one seen before: why, and the choice */
+.po-mres.duplicate { display: grid; gap: .3rem; justify-items: end; }
+.po-mres .po-mwhy { white-space: normal; color: var(--ink-2); font-size: .74rem; text-align: right; }
+.po-macts { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; align-items: center; }
+.po-macts .btn { padding: .3rem .6rem; font-size: .8rem; }

@@ -100,11 +100,17 @@ test('a receipt with everything in Odoo becomes a complete draft, receipt attach
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM receipt_file').get().n, 0, 'attached in Odoo: not kept here');
   assert.equal(raw.prepare("SELECT drawer_ok FROM po_created WHERE name = 'P02531'").get().drawer_ok, null, 'not from a drawer unless allowed');
 
-  // The same picture again: said, and no second PO.
+  // The same picture again: said, and no second PO unless asked for.
   const again = (await receipts.upload(env, { file: jpg('fuel') }, OWNER)).receipt;
   assert.equal(again.status, 'duplicate');
-  assert.match(again.problem, /P02531/);
+  assert.match(again.problem, /P02531.*make it anyway/);
   assert.equal(made.po.length, 1);
+  assert.equal(again.hasFile, true, 'kept, to make anyway');
+  await assert.rejects(receipts.retry(env, { id: again.id }, OWNER), /Make it anyway/);
+  const anyway = (await receipts.retry(env, { id: again.id, anyway: true }, OWNER)).receipt;
+  assert.equal(anyway.status, 'complete');
+  assert.equal(made.po.length, 2, 'the person said it is another one');
+  assert.equal(anyway.sameAs, null);
 });
 
 test('a vendor not in Odoo: no PO without a placeholder; with one, a draft to check and a To-Do', async () => {
@@ -132,11 +138,22 @@ test('one already in Odoo for that vendor, day and amount is not made twice; one
   const { env, made, raw } = await setUp();
   const dup = (await receipts.upload(env, { file: jpg('hinge') }, OWNER)).receipt;
   assert.equal(dup.status, 'duplicate');
-  assert.match(dup.problem, /P02500 is already in Odoo/);
+  assert.match(dup.problem, /Looks like P02500, already in Odoo .* on 2026-\d\d-\d\d \(the date as read off this receipt\)/);
+  assert.equal(dup.hasFile, true);
   const dark = (await receipts.upload(env, { file: jpg('dark') }, OWNER)).receipt;
   assert.equal(dark.status, 'unread');
   assert.match(dark.problem, /too dark/);
   assert.equal(made.po.length, 0);
+  // Not the same after all (another day misread, two bought): made when asked.
+  const made2 = (await receipts.retry(env, { id: dup.id, anyway: true }, OWNER)).receipt;
+  assert.equal(made2.status, 'complete');
+  assert.equal(made.po.length, 1);
+  made.po.length = 0;
+  // Or it is the same: set aside, and its file goes.
+  const dup2 = (await receipts.upload(env, { file: jpg('hinge') }, OWNER)).receipt;
+  assert.equal(dup2.status, 'duplicate');
+  await receipts.dismiss(env, { id: dup2.id }, OWNER);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM receipt_file WHERE receipt_id = ?').get(dup2.id).n, 0);
   const kept = await receipts.receiptFile(env, dark.id);
   assert.equal(kept.file, jpg('dark'));
   // Filled in by hand: it is that PO now, and the file is let go.

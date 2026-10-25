@@ -75,7 +75,8 @@ export async function renderReceipts(root) {
   function paint(message = null) {
     const items = data.items;
     const open = items.filter((x) => ['unread', 'failed'].includes(x.status));
-    const shown = items.filter((x) => filter === 'all' || (filter === 'todo' ? ['unread', 'failed', 'check'].includes(x.status) : x.status === filter));
+    const toLook = (x) => ['unread', 'failed', 'check'].includes(x.status) || (x.status === 'duplicate' && x.hasFile);
+    const shown = items.filter((x) => filter === 'all' || (filter === 'todo' ? toLook(x) : x.status === filter));
     const s = data.settings;
     const pill = (key, label, n) => h('button', { type: 'button', 'aria-pressed': String(filter === key), onclick: () => { filter = key; paint(); } }, `${label} · ${n}`);
     mount(view,
@@ -88,7 +89,7 @@ export async function renderReceipts(root) {
       message ? banner('good', message) : null,
       h('div.td-pills', { role: 'group', 'aria-label': 'Which' },
         pill('all', 'All', items.length),
-        pill('todo', 'To look at', items.filter((x) => ['unread', 'failed', 'check'].includes(x.status)).length),
+        pill('todo', 'To look at', items.filter(toLook).length),
         pill('complete', 'Complete', items.filter((x) => x.status === 'complete').length)),
       open.length ? h('div.rc-open',
         h('p.small', `${open.length} with no PO yet. “Try again” reads it again (after choosing the placeholders, say); “Fill it in” opens the usual ＋ PO form with the receipt already there.`),
@@ -134,6 +135,14 @@ export async function renderReceipts(root) {
         if (!receipt.po) paint(`Still no PO for ${x.name || 'that receipt'}: ${receipt.problem || 'it could not be read'}`);
       } catch (err) { said.textContent = err.message; e.target.disabled = false; }
     };
+    const anyway = async (e) => {
+      e.target.disabled = true; said.textContent = 'Making the PO…';
+      try {
+        const { receipt } = await api('/receipts/retry', { method: 'POST', body: { id: x.id, anyway: true } });
+        await read();
+        paint(receipt.po && receipt.status !== 'duplicate' ? `${receipt.po.name} made for ${x.name || 'that receipt'}.` : `No PO for ${x.name || 'that receipt'}: ${receipt.problem || 'it could not be read'}`);
+      } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    };
     const setAside = async () => {
       try { await api('/receipts/dismiss', { method: 'POST', body: { id: x.id } }); await read(); } catch (err) { said.textContent = err.message; }
     };
@@ -151,6 +160,8 @@ export async function renderReceipts(root) {
       h('div.rc-act',
         x.po?.url ? h('a', { href: x.po.url, target: '_blank', rel: 'noopener' }, 'Open in Odoo ↗') : null,
         ['unread', 'failed'].includes(x.status) && x.hasFile ? [h('button.btn', { type: 'button', onclick: again }, 'Try again'), h('button.btn', { type: 'button', onclick: fill }, 'Fill it in'), h('button.sh-link', { type: 'button', onclick: setAside }, 'Set aside')] : null,
+        // Looked like one seen before: the person decides.
+        x.status === 'duplicate' && x.hasFile ? [h('button.btn', { type: 'button', onclick: anyway }, 'Make it anyway'), h('button.sh-link', { type: 'button', onclick: setAside }, 'It is the same: set aside')] : null,
         said));
   }
 

@@ -130,11 +130,10 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
   let keep = true;
   const twin = await first(env.DB, "SELECT id, po_name, at FROM receipt WHERE hash = ?1 AND status NOT IN ('dismissed', 'duplicate') ORDER BY id LIMIT 1", hash);
   if (twin) {
-    Object.assign(r, { status: 'duplicate', same_as: twin.id, po_name: twin.po_name, problem: `The same file came in on ${twin.at.slice(0, 16)}${twin.po_name ? ` and is ${twin.po_name}` : ''}. No second PO.` });
-    keep = false;
+    Object.assign(r, { status: 'duplicate', same_as: twin.id, po_name: twin.po_name, problem: `The same file came in on ${twin.at.slice(0, 16)}${twin.po_name ? ` and is ${twin.po_name}` : ''}. No PO made: make it anyway if it is another one.` });
   } else {
     await makePo(env, r, { data, today, fetchImpl, mark }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
-    keep = ['unread', 'failed'].includes(r.status) || r.attachFailed;
+    keep = ['unread', 'failed', 'duplicate'].includes(r.status) || r.attachFailed;
   }
   const row = await first(env.DB, `INSERT INTO receipt (hash, name, mime, thumb, came, by_name, from_email, subject, hint, at, status, vendor_text, amount, day, description,
       vendor_name, product_name, vendor_ok, item_ok, problem, po_id, po_name, po_url, todo, same_as, item_by)
@@ -150,7 +149,7 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
  * its reference on the PO (Vendor Reference and Source Document) and whose
  * float it is, on the line.
  */
-async function makePo(env, r, { data, today, fetchImpl, mark = null }) {
+async function makePo(env, r, { data, today, fetchImpl, mark = null, anyway = false }) {
   if (/heic|heif/.test(r.mime)) { r.problem = 'An iPhone HEIC picture cannot be read: send it as a JPEG, or take a screenshot of it.'; return; }
   if (data.length > ATTACH_MAX) { r.problem = 'Too large to read: send a smaller photo, or a PDF under 7 MB.'; return; }
   if (!env.AI) { r.problem = 'The reader (Workers AI) is not available just now.'; return; }
@@ -188,11 +187,14 @@ async function makePo(env, r, { data, today, fetchImpl, mark = null }) {
   }
   r.vendor_name = useVendor.name;
   r.product_name = useProduct.name;
-  // Already in Odoo: the same vendor, the same day, within a cedi.
-  if (vendor) {
+  // Already in Odoo: the same vendor, the same day, within a cedi. Said, not
+  // final: the person who sent it may make it anyway (another day misread,
+  // two of the same bought).
+  if (vendor && !anyway) {
     const same = (await posOnDay({ ...opts, vendorId: vendor.id, day: r.day }).catch(() => [])).find((p) => Math.abs(p.total - read.amount) <= 100);
     if (same) {
-      Object.assign(r, { status: 'duplicate', po_id: same.id, po_name: same.name, problem: `${same.name} is already in Odoo for ${vendor.name}, ${ghs(same.total)}, that day. No second PO.` });
+      Object.assign(r, { status: 'duplicate', po_id: same.id, po_name: same.name,
+        problem: `Looks like ${same.name}, already in Odoo for ${vendor.name}, ${ghs(same.total)}, on ${r.day} (the date as read off this receipt). No PO made: make it anyway if it is another one.` });
       return;
     }
   }
@@ -296,19 +298,22 @@ export async function list(env) {
 export async function retry(env, body, account, { fetchImpl } = {}) {
   const row = await first(env.DB, 'SELECT * FROM receipt WHERE id = ?1', Number(body?.id));
   if (!row) throw new HttpError(404, 'No such receipt.');
-  if (!['unread', 'failed'].includes(row.status)) throw badRequest('That one has a PO already.');
+  // One that looked like a receipt seen before is made only when asked: "Make it anyway".
+  const anyway = row.status === 'duplicate' && Boolean(body?.anyway);
+  if (!['unread', 'failed'].includes(row.status) && !anyway) throw badRequest(row.status === 'duplicate' ? 'It looked like one seen before: choose Make it anyway.' : 'That one has a PO already.');
   const parts = await all(env.DB, 'SELECT data FROM receipt_file WHERE receipt_id = ?1 ORDER BY part', row.id);
   if (!parts.length) throw badRequest('Its file is not kept here any more: use Fill it in, or send it again.');
   const data = parts.map((p) => p.data).join('');
   const r = {
     ...row, status: 'unread', vendor_text: null, amount: null, day: null, description: null, vendor_name: null, product_name: null,
     vendor_ok: null, item_ok: null, item_by: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: row.by_name || account?.name || 'Insight',
+    same_as: anyway ? null : row.same_as,
   };
-  await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl, mark: await floatMark(env, row.id) }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
+  await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl, mark: await floatMark(env, row.id), anyway }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
   await run(env.DB, `UPDATE receipt SET status = ?2, vendor_text = ?3, amount = ?4, day = ?5, description = ?6, vendor_name = ?7, product_name = ?8,
-      vendor_ok = ?9, item_ok = ?10, problem = ?11, po_id = ?12, po_name = ?13, po_url = ?14, todo = ?15, item_by = ?16 WHERE id = ?1`,
-  row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.item_by);
-  const kept = ['unread', 'failed'].includes(r.status) || r.attachFailed;
+      vendor_ok = ?9, item_ok = ?10, problem = ?11, po_id = ?12, po_name = ?13, po_url = ?14, todo = ?15, item_by = ?16, same_as = ?17 WHERE id = ?1`,
+  row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.item_by, r.same_as);
+  const kept = ['unread', 'failed', 'duplicate'].includes(r.status) || r.attachFailed;
   if (!kept) await dropFile(env, row.id);
   return { receipt: shape({ ...r, id: row.id, has_file: kept ? 1 : 0 }) };
 }
@@ -317,7 +322,7 @@ export async function retry(env, body, account, { fetchImpl } = {}) {
 export async function dismiss(env, body, account) {
   const row = await first(env.DB, 'SELECT id, status FROM receipt WHERE id = ?1', Number(body?.id));
   if (!row) throw new HttpError(404, 'No such receipt.');
-  if (!['unread', 'failed'].includes(row.status)) throw badRequest('Only one with no PO can be set aside.');
+  if (!['unread', 'failed', 'duplicate'].includes(row.status)) throw badRequest('Only one with no PO can be set aside.');
   await run(env.DB, "UPDATE receipt SET status = 'dismissed', done_by = ?2, done_at = ?3 WHERE id = ?1", row.id, account?.name || 'Owner', now());
   await dropFile(env, row.id);
   return { ok: true };
@@ -382,7 +387,7 @@ export function resultLine(x) {
   const what = [x.vendorOk === false ? `“${x.vendorText || 'no vendor'}”` : x.vendorName, x.amount != null ? ghs(x.amount) : null, x.day].filter(Boolean).join(' · ');
   if (x.status === 'complete') return `✓ ${x.po.name} · ${what}`;
   if (x.status === 'check') return `⚠ ${x.po.name} · ${what} · ${x.problem}`;
-  if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem}`;
+  if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem} It is kept in Insight › Money › Receipts.`;
   const why = String(x.problem || 'It could not be read').replace(/\.?\s*$/, '.');
   return `✕ ${x.name || 'A receipt'}: no PO. ${why} It is kept in Insight › Money › Receipts.`;
 }
