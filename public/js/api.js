@@ -576,6 +576,7 @@ export const api = {
   hrCreateTemplate: (body) => request('/api/hr/templates', { method: 'POST', body }),
   hrUpdateTemplate: (id, body) => request(`/api/hr/templates/${id}`, { method: 'PUT', body }),
   hrDeleteTemplate: (id) => request(`/api/hr/templates/${id}`, { method: 'DELETE' }),
+  hrPreviewTemplate: (body) => request('/api/hr/templates/preview', { method: 'POST', body }),
 
   hrIssueContract: (id, body) => request(`/api/hr/people/${id}/contracts`, { method: 'POST', body }),
   hrFileContract: (id, body) => request(`/api/hr/people/${id}/contracts/file`, { method: 'POST', body }),

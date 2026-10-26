@@ -12,7 +12,7 @@ import { firstName, renderMail, sayDate } from '../lib/email-design.js';
 import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate } from '../lib/people.js';
 import { siteOrigin } from '../lib/site.js';
 import { seal, unseal } from '../lib/seal.js';
-import { employerName } from './people.js';
+import { companyNames, employerName } from './people.js';
 import { trail } from './recruitment.js';
 
 /**
@@ -132,6 +132,7 @@ export function shapeOffer(offer, { now } = {}) {
     withdrawnAt: offer.withdrawn_at,
     withdrawnBy: offer.withdrawn_by,
     contractId: offer.contract_id,
+    companyId: Number(offer.company_id) || null,
   };
 }
 
@@ -179,7 +180,9 @@ async function renderFor(ctx, candidate, input) {
     id_type: str(input.idType, 'ID document', { max: 120 }) || NOT_YET.id_type,
     property: settings.property_name || 'Somewhere Nice',
     property_address: settings.property_address || '',
-    company_legal_name: await employerName(ctx.db, {}),
+    // The company the template is for makes the offer; one for every
+    // company is the main one's.
+    company_legal_name: await employerName(ctx.db, { company_id: template.company_id }),
     leave_days: `${Math.max(15, leaveDays)} working days`,
     today: new Date().toISOString().slice(0, 10),
   };
@@ -200,7 +203,7 @@ export async function offerSetup(ctx, id) {
     : null;
   const templates = await ctx.db.prepare(
     // The permanent contract first, as the one most offers go out on.
-    `SELECT id, name, kind, body FROM hr_template WHERE active = 1 AND kind = 'contract'
+    `SELECT id, name, kind, body, company_id FROM hr_template WHERE active = 1 AND kind = 'contract'
       ORDER BY code = 'contract_permanent' DESC, code = 'contract_hotel' DESC, name`,
   ).all().catch(() => ({ results: [] }));
   const settings = await settingsOf(ctx.db);
@@ -217,8 +220,10 @@ export async function offerSetup(ctx, id) {
     templates: (templates.results ?? []).map((t) => ({
       id: t.id,
       name: t.name,
+      companyId: Number(t.company_id) || null,
       uses: placeholdersIn(t.body).map((p) => p.key),
     })),
+    companies: await companyNames(ctx.db),
     asked: ASKED_PLACEHOLDERS.map(({ key, label, fallback }) => ({ key, label, fallback: fallback ?? null })),
     reach: {
       email: Boolean(email && ctx.env?.RESEND_API_KEY && String(settings.email_from ?? '').trim()),
@@ -272,9 +277,9 @@ export async function makeOffer(ctx, id) {
   const created = await ctx.db.prepare(
     `INSERT INTO rec_offer (candidate_id, template_id, title, job_title, department, start_date, employee_no,
                             fields, message, body, body_hash, token_hash, token_box, sent_by, expires_at,
-                            remind, created_by)
+                            remind, created_by, company_id)
      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,
-             date('now', ?15) || ' 23:59:59', ?16, ?17) RETURNING *`,
+             date('now', ?15) || ' 23:59:59', ?16, ?17, ?18) RETURNING *`,
   ).bind(
     candidate.id, rendered.template.id,
     str(body.title, 'Title', { max: 160 }) || rendered.template.name,
@@ -284,6 +289,7 @@ export async function makeOffer(ctx, id) {
     await hashOfferToken(token, pepper),
     await seal(token, ctx.env?.SESSION_SECRET, LINK_PURPOSE).catch(() => null),
     sendBy, `+${days} days`, bool(body.remind, true) ? 1 : 0, actorOf(ctx),
+    Number(rendered.template.company_id) || null,
   ).first();
 
   await trail(ctx.db, {

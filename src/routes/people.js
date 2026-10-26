@@ -70,6 +70,31 @@ export async function employerName(db, person) {
     || setting(db, 'property_name', 'Somewhere Nice');
 }
 
+/** Every company, by the name it is known by, the main one first. */
+export async function companyNames(db) {
+  const rows = await db.prepare('SELECT id, main, legal_name FROM company ORDER BY main DESC, id')
+    .all().catch(() => ({ results: [] }));
+  const main = (await setting(db, 'company_legal_name', '')) || await setting(db, 'property_name', 'Somewhere Nice');
+  const list = (rows.results ?? []).map((r) => ({ id: Number(r.id), name: r.main ? main : (r.legal_name || `Company ${r.id}`) }));
+  return list.length ? list : [{ id: MAIN, name: main }];
+}
+
+/**
+ * Whether a template may go to this person. A template for one company is
+ * only for the people that company employs; one without a company is for
+ * everybody. Said in words that name both, because the fix is to choose the
+ * other template, and that needs knowing which company is which.
+ */
+export async function templateFits(db, template, person) {
+  const owner = Number(template?.company_id) || null;
+  if (!owner) return;
+  const theirs = Number(person?.company_id) || MAIN;
+  if (owner === theirs) return;
+  const names = new Map((await companyNames(db)).map((c) => [c.id, c.name]));
+  throw badRequest(`“${template.name}” is for ${names.get(owner) ?? 'another company'}, and ${person.name} `
+    + `is employed by ${names.get(theirs) ?? 'another company'}. Choose a template for their company.`);
+}
+
 /** What the forms are made of. Sent once so the browser draws what the server means. */
 export async function peopleModel(ctx) {
   return json({
@@ -154,6 +179,7 @@ export async function listPeople(ctx) {
       jobTitle: person.job_title,
       hiredOn: person.hired_on,
       active: Boolean(person.active),
+      companyId: Number(person.company_id) || MAIN,
       // Kept purely to be paid: no rota, no attendance, nothing chasing them.
       // Worth saying on the list, because their record looking thin is the
       // point rather than something anybody needs to go and fix.
@@ -227,6 +253,7 @@ export async function getPerson(ctx, id) {
       id: person.id, name: person.name, employeeNo: person.employee_no,
       department: person.department, jobTitle: person.job_title,
       hiredOn: person.hired_on, leftOn: person.left_on, active: Boolean(person.active),
+      companyId: Number(person.company_id) || MAIN,
     },
     profile: maskProfile(profile, { full }),
     lists,
@@ -967,8 +994,9 @@ export async function listTemplates(ctx) {
   const held = new Set((rows.results ?? []).map((t) => t.code).filter(Boolean));
 
   return json({
-    rows: (rows.results ?? []).map((t) => ({ ...t, uses: placeholdersIn(t.body) })),
+    rows: (rows.results ?? []).map((t) => ({ ...t, company_id: Number(t.company_id) || null, uses: placeholdersIn(t.body) })),
     placeholders: PLACEHOLDERS,
+    companies: await companyNames(ctx.db),
     // What the standard set would add that is not here. A property that loaded
     // the set a year ago has no way of knowing a new one has been written
     // since, and "Load the standard set" reads like something already done.
@@ -984,19 +1012,27 @@ export async function saveTemplate(ctx, id) {
   const text = str(body.body, 'The words', { required: true, max: 60_000 });
   const kind = ['contract', 'letter', 'policy', 'correspondence'].includes(body.kind)
     ? body.kind : 'contract';
+  // Empty is every company. Anything else has to be one that exists.
+  const companyId = body.companyId == null || body.companyId === '' ? null : Number(body.companyId);
+  if (companyId != null && !(await companyNames(ctx.db)).some((c) => c.id === companyId)) {
+    throw badRequest('That company does not exist.');
+  }
 
   if (id) {
     await ctx.db.prepare(
-      `UPDATE hr_template SET name = ?2, body = ?3, kind = ?4, active = ?5,
+      `UPDATE hr_template SET name = ?2, body = ?3, kind = ?4, active = ?5, company_id = ?6,
               updated_at = datetime('now') WHERE id = ?1`,
-    ).bind(Number(id), name, text, kind, bool(body.active, true) ? 1 : 0).run();
-    await audit(ctx, 'people.template_save', id, { name });
+    ).bind(Number(id), name, text, kind, bool(body.active, true) ? 1 : 0,
+      body.companyId === undefined
+        ? (await ctx.db.prepare('SELECT company_id FROM hr_template WHERE id = ?').bind(Number(id)).first())?.company_id ?? null
+        : companyId).run();
+    await audit(ctx, 'people.template_save', id, { name, companyId });
     return json({ ok: true, id: Number(id) });
   }
 
   const created = await ctx.db.prepare(
-    'INSERT INTO hr_template (name, body, kind, created_by) VALUES (?1,?2,?3,?4) RETURNING id',
-  ).bind(name, text, kind, actorOf(ctx)).first();
+    'INSERT INTO hr_template (name, body, kind, created_by, company_id) VALUES (?1,?2,?3,?4,?5) RETURNING id',
+  ).bind(name, text, kind, actorOf(ctx), companyId).first();
 
   await audit(ctx, 'people.template_new', created.id, { name });
   return json({ ok: true, id: created.id });
@@ -1095,9 +1131,36 @@ export async function issueContractFor(ctx, person, body = {}) {
     ? await ctx.db.prepare('SELECT * FROM hr_template WHERE id = ?').bind(Number(body.templateId)).first()
     : null;
   if (body.templateId && !template) throw notFound('No such template.');
+  if (template) await templateFits(ctx.db, template, person);
 
   const source = template?.body ?? str(body.body, 'The words', { required: true, max: 60_000 });
-  const profile = await ctx.db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(staffId).first();
+  const values = await contractValues(ctx, person, body);
+
+  const rendered = renderTemplate(source, values);
+  const hash = await hashBody(rendered);
+
+  const created = await ctx.db.prepare(
+    `INSERT INTO hr_contract (staff_id, template_id, title, body, body_hash, status, fields,
+                              satisfies, issued_by, issued_at)
+     VALUES (?1,?2,?3,?4,?5,'draft',?6,?7,?8,datetime('now')) RETURNING id`,
+  ).bind(
+    staffId, template?.id ?? null,
+    str(body.title, 'Title', { max: 160, fallback: template?.name || 'Contract of employment' }),
+    rendered, hash, JSON.stringify(values), template?.satisfies ?? null, actorOf(ctx),
+  ).first();
+
+  await logEvent(ctx, { staffId, contractId: created.id, kind: 'contract_issued', detail: hash.slice(0, 16) });
+  await audit(ctx, 'people.contract_issue', created.id, { staffId, hash });
+
+  return { id: created.id, hash };
+}
+
+/** What fills a template's placeholders for this person, as it would be issued. */
+async function contractValues(ctx, person, body = {}) {
+  const staffId = Number(person.id);
+  const profile = staffId
+    ? await ctx.db.prepare('SELECT * FROM hr_profile WHERE staff_id = ?').bind(staffId).first()
+    : null;
 
   const leaveDays = Number(person.leave_days ?? await setting(ctx.db, 'att_leave_days', 15)) || 15;
 
@@ -1126,25 +1189,60 @@ export async function issueContractFor(ctx, person, body = {}) {
     const given = str(body.values?.[asked.key], asked.label, { max: 300 });
     values[asked.key] = given || asked.fallback || '';
   }
-
-  const rendered = renderTemplate(source, values);
-  const hash = await hashBody(rendered);
-
-  const created = await ctx.db.prepare(
-    `INSERT INTO hr_contract (staff_id, template_id, title, body, body_hash, status, fields,
-                              satisfies, issued_by, issued_at)
-     VALUES (?1,?2,?3,?4,?5,'draft',?6,?7,?8,datetime('now')) RETURNING id`,
-  ).bind(
-    staffId, template?.id ?? null,
-    str(body.title, 'Title', { max: 160, fallback: template?.name || 'Contract of employment' }),
-    rendered, hash, JSON.stringify(values), template?.satisfies ?? null, actorOf(ctx),
-  ).first();
-
-  await logEvent(ctx, { staffId, contractId: created.id, kind: 'contract_issued', detail: hash.slice(0, 16) });
-  await audit(ctx, 'people.contract_issue', created.id, { staffId, hash });
-
-  return { id: created.id, hash };
+  return values;
 }
+
+/**
+ * A template as somebody would read it, before anything is issued.
+ *
+ * Filled in for a real member of staff where one is chosen, so the office
+ * sees exactly the words that person would be sent; otherwise for a sample
+ * person whose particulars are plainly made up. What is typed in when the
+ * document is issued (pay, probation and the rest) shows as a marked gap
+ * unless a value is given, or its lawful fallback where it has one. Nothing
+ * is stored.
+ */
+export async function previewTemplate(ctx) {
+  const body = await readJson(ctx.request);
+  const template = body.templateId
+    ? await ctx.db.prepare('SELECT * FROM hr_template WHERE id = ?').bind(Number(body.templateId)).first()
+    : null;
+  if (body.templateId && !template) throw notFound('No such template.');
+  const source = body.body != null
+    ? str(body.body, 'The words', { required: true, max: 60_000 })
+    : template?.body;
+  if (!source) throw badRequest('There are no words to preview.');
+
+  const staffId = Number(body.staffId) || null;
+  const person = staffId
+    ? await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first()
+    : null;
+  if (staffId && !person) throw notFound('No such member of staff.');
+
+  // A sample person is employed by the template's own company, so the
+  // contract names the employer it would.
+  const companyId = Number(body.companyId ?? template?.company_id) || null;
+  const values = await contractValues(ctx, person ?? { ...SAMPLE_PERSON, company_id: companyId }, { values: body.values ?? {} });
+  if (!person) Object.assign(values, SAMPLE_VALUES);
+  const given = body.values && typeof body.values === 'object' ? body.values : {};
+  for (const asked of ASKED_PLACEHOLDERS) {
+    if (!String(given[asked.key] ?? '').trim() && !asked.fallback) values[asked.key] = `[${asked.label}: typed in when it is issued]`;
+  }
+  return json({
+    title: str(body.name, 'Name', { max: 160 }) || template?.name || 'Untitled',
+    body: renderTemplate(source, values),
+    person: person ? { id: person.id, name: person.name } : null,
+    property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
+  });
+}
+
+/** Somebody who does not exist, for previewing a template without a real person behind it. */
+const SAMPLE_PERSON = { id: 0, name: 'Ama Sample', employee_no: 'SAMPLE-01', job_title: 'Front desk agent', department: 'Front office' };
+const SAMPLE_VALUES = {
+  address: '[their home address]',
+  id_type: '[their ID document]',
+  start_date: new Date().toISOString().slice(0, 10),
+};
 
 export async function contractWithTrail(db, id) {
   const contract = await db.prepare(

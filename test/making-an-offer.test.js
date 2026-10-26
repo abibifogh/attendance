@@ -367,3 +367,19 @@ test('the office reads the offer back with its trail', async () => {
     assert.deepEqual(read.events.map((e) => e.kind), ['offer_made', 'offer_sent', 'offer_opened', 'offer_code', 'offer_accepted']);
   } finally { t.restore(); }
 });
+
+test('an offer on one company’s template names that company and takes them on to its books', async () => {
+  const t = await setup();
+  try {
+    t.raw.prepare("INSERT INTO company (id, main, legal_name) VALUES (5, 0, 'Second Example Ltd') ON CONFLICT (id) DO UPDATE SET legal_name = excluded.legal_name").run();
+    t.raw.prepare('UPDATE hr_template SET company_id = 5 WHERE id = 7').run();
+    const setupOut = await body(await offerSetup(ctx(t.db), (await aCandidate(t.db)).id));
+    assert.equal(setupOut.templates[0].companyId, 5);
+    const { token, person, offer } = await offered(t);
+    assert.match(offer.body, /^CONTRACT OF EMPLOYMENT\nBetween Second Example Ltd and Ama Owusu/);
+    assert.equal(offer.company_id, 5);
+    await signWithCode(t, token);
+    const out = await body(await hire(ctx(t.db, { employeeNo: 'T200', sendLink: false, login: false }), person.id));
+    assert.equal(t.raw.prepare('SELECT company_id FROM att_staff WHERE id = ?').get(out.staffId).company_id, 5);
+  } finally { t.restore(); }
+});

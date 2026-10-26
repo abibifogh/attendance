@@ -137,8 +137,22 @@ async function makeOffer(data, reload) {
     return;
   }
   const asked = new Map(setup.asked.map((a) => [a.key, a]));
+  // Where there is more than one company, each template says whose it is:
+  // the company a template is for makes the offer and takes them on.
+  const companyName = new Map((setup.companies ?? []).map((c) => [c.id, c.name]));
+  const several = (setup.companies ?? []).length > 1;
   const templateSelect = h('select', { name: 'templateId', required: true },
-    setup.templates.map((t) => h('option', { value: t.id }, t.name)));
+    setup.templates.map((t) => h('option', { value: t.id },
+      several && t.companyId ? `${t.name} (${companyName.get(t.companyId) ?? 'one company'})` : t.name)));
+  const employer = h('p.muted', { style: { fontSize: '.82rem', margin: '-.3rem 0 0' } });
+  const drawEmployer = () => {
+    const t = setup.templates.find((x) => String(x.id) === templateSelect.value);
+    const id = t?.companyId ?? setup.companies?.[0]?.id;
+    employer.textContent = several ? `The employer named in it, and the company that takes them on: ${companyName.get(id) ?? ''}.` : '';
+    employer.hidden = !several;
+  };
+  templateSelect.addEventListener('change', drawEmployer);
+  drawEmployer();
   const extras = h('div.rec-offer-extras');
   const drawExtras = () => {
     const uses = new Set(setup.templates.find((t) => String(t.id) === templateSelect.value)?.uses ?? []);
@@ -205,6 +219,7 @@ async function makeOffer(data, reload) {
 
       h('h3.rec-offer-sec', 'The contract'),
       field('Template', templateSelect),
+      employer,
       extras,
       h('p.muted', { style: { fontSize: '.82rem', margin: 0 } },
         'Their name, the job, the start date and the property’s details are filled in from what HIVE already knows. ',

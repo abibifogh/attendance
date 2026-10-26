@@ -7986,3 +7986,15 @@ button.lp-row:disabled { cursor: default; }
 .contract-flow p { margin: 0 0 .85rem; white-space: pre-line; }
 .offer-preview .contract-flow { padding: .7rem .8rem; font-size: .82rem; }
 .offer .sv2-body, .offer .sv2-card { min-width: 0; }
+
+/* A template, previewed as staff see it. */
+.tpl-words-head { display: flex; justify-content: flex-end; margin: .2rem 0 -.4rem; }
+.tpl-preview { display: flex; flex-direction: column; gap: .7rem; }
+.tpl-preview-bar { display: flex; justify-content: space-between; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.tpl-preview-who { display: flex; align-items: center; gap: .5rem; font-size: .88rem; }
+.tpl-preview-who select { min-width: 12rem; }
+.tpl-frame { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; height: 65vh; overflow-y: auto; margin: 0 auto; width: 100%; box-sizing: border-box; transition: width .2s; }
+.tpl-frame.is-phone { width: 390px; max-width: 100%; border-radius: 28px; border-width: 8px; border-color: #1b1f27; }
+.tpl-frame .invite { padding-bottom: 1.5rem; }
+.tpl-frame.is-phone .contract-text { font-size: .86rem; }
+.tpl-preview-who span { white-space: nowrap; }

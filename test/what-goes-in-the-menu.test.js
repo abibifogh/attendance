@@ -190,7 +190,7 @@ test('a manager reads People with its five, and the directory and handbook besid
   const menu = menuFor(roleHolds('manager'), { staffId: null });
   const people = menu.find((g) => g.key === 'people');
   assert.deepEqual(tabsOf(people).map((t) => t.label),
-    ['Staff', 'Recruitment', 'First weeks', 'Letters', 'Signatures', 'Directory', 'Handbook', 'HR FAQ']);
+    ['Staff', 'Recruitment', 'First weeks', 'Letters', 'Signatures', 'Templates', 'Directory', 'Handbook', 'HR FAQ']);
   assert.equal(menu.some((g) => g.key === 'money'), false, 'no payroll for a manager by default');
 });
 

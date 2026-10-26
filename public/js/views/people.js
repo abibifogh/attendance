@@ -360,8 +360,9 @@ function inbox(rows, canManage, reload) {
  * reminded until signed.
  */
 async function sendToMany(rows, reload) {
-  const { rows: templates, placeholders } = await api.hrTemplates();
+  const { rows: templates, placeholders, companies = [] } = await api.hrTemplates();
   const usable = (templates ?? []).filter((t) => t.active !== 0);
+  const companyName = new Map(companies.map((c) => [c.id, c.name]));
   if (!usable.length) { toast('Write a template first, under Templates.', 'bad'); return; }
   const people = rows.filter((r) => r.active).sort((a, b) => String(a.department ?? '').localeCompare(String(b.department ?? '')) || a.name.localeCompare(b.name));
   const departments = [...new Set(people.map((p) => p.department).filter(Boolean))].sort();
@@ -369,7 +370,8 @@ async function sendToMany(rows, reload) {
   const asked = (placeholders ?? []).filter((p) => p.ask);
 
   const template = h('select', { name: 'templateId', required: true },
-    usable.map((t) => h('option', { value: t.id }, t.name)));
+    usable.map((t) => h('option', { value: t.id },
+      t.company_id && companies.length > 1 ? `${t.name} (${companyName.get(t.company_id) ?? 'one company'} only)` : t.name)));
   const valuesBox = h('div');
   const drawValues = () => {
     const t = usable.find((x) => String(x.id) === template.value);
@@ -392,13 +394,28 @@ async function sendToMany(rows, reload) {
     });
     return { p, box, row: h('label.tickline.many-row', box, h('span', p.name, h('small.muted', ` ${p.department ?? ''}`))) };
   });
+  // A template for one company only goes to the people that company employs.
+  const fits = (p) => {
+    const t = usable.find((x) => String(x.id) === template.value);
+    return !t?.company_id || t.company_id === p.companyId;
+  };
   const pickDept = (dept) => {
     for (const b of boxes) {
-      const on = dept === '*' || b.p.department === dept;
+      const on = (dept === '*' || b.p.department === dept) && fits(b.p);
       if (on) { b.box.checked = true; chosen.add(b.p.id); }
     }
     count.textContent = `${chosen.size} chosen`;
   };
+  const showFitting = () => {
+    for (const b of boxes) {
+      const ok = fits(b.p);
+      b.row.hidden = !ok;
+      if (!ok && b.box.checked) { b.box.checked = false; chosen.delete(b.p.id); }
+    }
+    count.textContent = `${chosen.size} chosen`;
+  };
+  template.addEventListener('change', showFitting);
+  showFitting();
 
   const done = await formDialog({
     title: 'Send a document to several people',

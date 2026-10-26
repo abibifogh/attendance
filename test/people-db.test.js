@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   acceptSubmission, addDocument, countersignContract, createInvite,
   fileSignedContract, getContract, getDocument, getPerson, issueContract,
-  listPeople, listSubmissions, listTemplates, loadStandardTemplates, rejectSubmission,
+  listPeople, listSubmissions, listTemplates, loadStandardTemplates, previewTemplate, rejectSubmission,
   revokeInvite, saveList, savePerson, saveTemplate,
 } from '../src/routes/people.js';
 import {
@@ -729,4 +729,60 @@ test('a contract issued from a standard template answers its requirement when si
   const status = (await read(await getPerson(ctx(db), 1))).fileStatus
     .find((d) => d.code === 'handbook');
   assert.equal(status.state, 'held');
+});
+
+test('a template previews filled in for a sample person or a real one, and stores nothing', async () => {
+  const { raw, db } = await setup();
+  const words = 'Between {{property}} and {{name}} ({{employee_no}}), {{job_title}} in {{department}}. '
+    + 'Pay: {{salary}}. Probation: {{probation}}. Address: {{address}}.';
+  const before = raw.prepare('SELECT COUNT(*) n FROM hr_contract').get().n;
+
+  const sample = await read(await previewTemplate(ctx(db, { body: { body: words, name: 'Draft' } })));
+  assert.equal(sample.title, 'Draft');
+  assert.equal(sample.person, null);
+  assert.match(sample.body, /and Ama Sample \(SAMPLE-01\), Front desk agent in Front office/);
+  assert.match(sample.body, /Pay: \[Remuneration: typed in when it is issued\]/);
+  assert.match(sample.body, /Probation: six months/, 'a placeholder with a lawful fallback shows it');
+  assert.match(sample.body, /Address: \[their home address\]/);
+
+  const real = await read(await previewTemplate(ctx(db, { body: { body: words, staffId: 2, values: { salary: 'GH₵ [test]' } } })));
+  assert.equal(real.person.name, 'Kofi Mensah');
+  assert.match(real.body, /Kofi Mensah \(1002\), Watchman in Security/);
+  assert.match(real.body, /Pay: GH₵ \[test\]/);
+
+  const made = await read(await saveTemplate(ctx(db, { body: { name: 'Saved one', kind: 'policy', body: 'I, {{name}}, agree.' } })));
+  const saved = await read(await previewTemplate(ctx(db, { body: { templateId: made.id } })));
+  assert.equal(saved.title, 'Saved one');
+  assert.equal(saved.body, 'I, Ama Sample, agree.');
+
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM hr_contract').get().n, before, 'a preview issues nothing');
+});
+
+test('a template for one company is only issued to the people that company employs', async () => {
+  const { raw, db } = await setup();
+  raw.prepare("INSERT INTO company (id, main, legal_name) VALUES (5, 0, 'Second Example Ltd') ON CONFLICT (id) DO UPDATE SET legal_name = excluded.legal_name").run();
+  raw.prepare('UPDATE att_staff SET company_id = 5 WHERE id = 2').run();
+
+  const made = await read(await saveTemplate(ctx(db, {
+    body: { name: 'Second company contract', kind: 'contract', body: 'Between {{company_legal_name}} and {{name}}.', companyId: 5 },
+  })));
+  const listed = await read(await listTemplates(ctx(db)));
+  assert.equal(listed.rows.find((t) => t.id === made.id).company_id, 5);
+  assert.ok(listed.companies.some((c) => c.id === 5 && c.name === 'Second Example Ltd'));
+
+  const ok = await read(await issueContract(ctx(db, { body: { templateId: made.id } }), 2));
+  const body = raw.prepare('SELECT body FROM hr_contract WHERE id = ?').get(ok.id).body;
+  assert.equal(body, 'Between Second Example Ltd and Kofi Mensah.');
+
+  await assert.rejects(
+    issueContract(ctx(db, { body: { templateId: made.id } }), 1),
+    /is for Second Example Ltd, and Augustina Adjei Abla is employed by/,
+  );
+
+  const preview = await read(await previewTemplate(ctx(db, { body: { templateId: made.id } })));
+  assert.equal(preview.body, 'Between Second Example Ltd and Ama Sample.', 'a sample person works for the template’s company');
+
+  await assert.rejects(saveTemplate(ctx(db, { body: { name: 'x', body: 'y', companyId: 99 } })), /does not exist/);
+  await saveTemplate(ctx(db, { body: { name: 'Second company contract', kind: 'contract', body: 'Words.', companyId: '' } }), made.id);
+  assert.equal(raw.prepare('SELECT company_id FROM hr_template WHERE id = ?').get(made.id).company_id, null, 'empty is every company');
 });

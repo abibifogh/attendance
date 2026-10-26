@@ -196,6 +196,7 @@ const ROUTES = [
   { group: 'people', tab: 'First weeks', path: 'onboarding-desk', label: 'First weeks', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
   { group: 'people', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
   { group: 'people', tab: 'Signatures', path: 'signing', label: 'Signatures', permission: ['hr_view', 'corr_view'], render: renderSigning, live: ['people', 'letters'] },
+  { group: 'people', tab: 'Templates', path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, live: ['people'] },
   // Reachable by everybody signed in. Under Me for staff, under People for
   // everybody who runs something.
   { group: 'me', tab: 'Directory', mgroup: 'people', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
@@ -229,7 +230,6 @@ const ROUTES = [
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, live: ['people'], hidden: true },
   { path: 'rec-candidate', label: 'Candidate', permission: 'rec_view', render: renderRecCandidate, live: ['recruitment'], hidden: true },
-  { path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, hidden: true },
   { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, live: ['people'], hidden: true },
   // The same page, read by the person it is about. A separate path because the

@@ -1,8 +1,8 @@
 import { api } from '../api.js';
 import { h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
-import { navigate } from '../app.js';
 import { field, formDialog } from './att-shared.js';
+import { signaturePad } from '../fields.js';
 
 /**
  * What each kind is for, in the words the screen uses.
@@ -30,7 +30,8 @@ const KIND_LABEL = Object.fromEntries(KINDS);
  */
 export async function renderPeopleTemplates() {
   const host = h('div');
-  const { rows, placeholders, missing = [] } = await api.hrTemplates();
+  const { rows, placeholders, missing = [], companies = [] } = await api.hrTemplates();
+  const companyName = new Map(companies.map((c) => [c.id, c.name]));
   const reload = async () => mount(host, await renderPeopleTemplates());
 
   const edit = async (existing) => {
@@ -49,6 +50,12 @@ export async function renderPeopleTemplates() {
             }, label))),
           'A letter template is the only kind the Letters screen offers'),
         ),
+        companies.length > 1
+          ? field('For', h('select', { name: 'companyId' },
+            h('option', { value: '', selected: !existing?.company_id }, 'Every company'),
+            companies.map((c) => h('option', { value: c.id, selected: existing?.company_id === c.id }, `${c.name} only`))),
+          'One company’s template is only offered for the people it employs, and names it as the employer')
+          : null,
 
         h('details', { open: !existing },
           h('summary', { style: { cursor: 'pointer', fontSize: '.88rem', margin: '.4rem 0' } },
@@ -69,6 +76,19 @@ export async function renderPeopleTemplates() {
             + 'visibly unfilled rather than blank.'),
         ),
 
+        h('div.tpl-words-head',
+          h('button.btn-sm', {
+            type: 'button',
+            onclick: (e) => {
+              const form = e.target.closest('form');
+              previewTemplate({
+                name: form.querySelector('[name="name"]').value,
+                kind: form.querySelector('[name="kind"]').value,
+                body: form.querySelector('[name="body"]').value,
+                companyId: form.querySelector('[name="companyId"]')?.value || null,
+              });
+            },
+          }, 'Preview as staff see it')),
         field('The words', h('textarea', {
           name: 'body', rows: 22, required: true, maxlength: 60000,
           style: { fontFamily: 'var(--mono, ui-monospace, monospace)', fontSize: '.85rem' },
@@ -87,6 +107,7 @@ export async function renderPeopleTemplates() {
           kind: form.get('kind'),
           body: form.get('body'),
           active: form.get('active') !== 'false',
+          ...(companies.length > 1 ? { companyId: form.get('companyId') || null } : {}),
         };
         return existing ? api.hrUpdateTemplate(existing.id, payload) : api.hrCreateTemplate(payload);
       },
@@ -130,7 +151,6 @@ export async function renderPeopleTemplates() {
         h('div.sub', 'What a contract is made from'),
       ),
       h('div.btn-row',
-        h('button.btn-sm', { onclick: () => navigate('people') }, '\u2039 People'),
         h('button.btn-sm', {
           onclick: loadStandard,
           class: missing.length ? 'btn-sm btn-primary' : 'btn-sm',
@@ -168,7 +188,10 @@ export async function renderPeopleTemplates() {
           // The kind is the band heading, so it is not repeated on the row.
           // Retired is not a kind and does need saying.
           format: (v, r) => h('div', h('div', v),
-            r.active ? null : h('small.muted', 'Retired')),
+            companies.length > 1
+              ? h('small.muted', r.company_id ? `${companyName.get(r.company_id) ?? 'One company'} only` : 'Every company')
+              : null,
+            r.active ? null : h('small.muted', { style: { display: 'block' } }, 'Retired')),
         },
         {
           key: 'uses',
@@ -186,6 +209,7 @@ export async function renderPeopleTemplates() {
           key: 'actions',
           label: '',
           format: (v, r) => h('div.btn-row',
+            h('button.btn-sm', { onclick: () => previewTemplate({ templateId: r.id, name: r.name, kind: r.kind, companyId: r.company_id }) }, 'Preview'),
             h('button.btn-sm', { onclick: () => edit(r) }, 'Edit'),
             h('button.btn-sm', { onclick: () => remove(r) }, 'Delete'),
           ),
@@ -214,6 +238,105 @@ export async function renderPeopleTemplates() {
   );
 
   return host;
+}
+
+// ---------------------------------------------------------------------------
+// Preview
+// ---------------------------------------------------------------------------
+
+/**
+ * A template as the person it is sent to will see it.
+ *
+ * Built from the same pieces as the page a member of staff opens from their
+ * link (the property's name at the top, the title, the words, and the box to
+ * sign at the foot), inside a frame the width of a phone or of a computer.
+ * Filled in for a sample person, or for somebody real chosen from the list,
+ * with what is typed in at issue left as a marked gap. Nothing is sent and
+ * nothing is stored; the sign box does nothing.
+ *
+ * A letter template is printed on the letterhead from the Letters screen
+ * rather than signed on a phone, and the preview says so.
+ */
+let staffList = null;
+
+async function previewTemplate({ templateId = null, name = '', kind = 'contract', body = null, companyId = null }) {
+  const frame = h('div.tpl-frame.is-phone');
+  const who = h('select', { 'aria-label': 'Show it for' }, h('option', { value: '' }, 'A sample person'));
+  const width = h('div.seg', { role: 'group', 'aria-label': 'Screen' },
+    h('button.active', { type: 'button', onclick: (e) => size(e, true) }, 'Phone'),
+    h('button', { type: 'button', onclick: (e) => size(e, false) }, 'Computer'));
+  const size = (e, phone) => {
+    frame.classList.toggle('is-phone', phone);
+    for (const b of width.children) b.classList.toggle('active', b === e.target);
+  };
+
+  const draw = async () => {
+    mount(frame, h('p.muted', { style: { padding: '1rem' } }, 'Filling it in…'));
+    try {
+      const out = await api.hrPreviewTemplate({
+        templateId, name, body, companyId, staffId: who.value || null,
+      });
+      mount(frame, staffView(out, kind));
+    } catch (err) {
+      mount(frame, h('p.form-error', { style: { padding: '1rem' } }, err.message));
+    }
+  };
+  who.addEventListener('change', draw);
+
+  if (!staffList) {
+    staffList = await api.hrPeople().then((d) => (d.rows ?? []).filter((r) => r.active)).catch(() => []);
+  }
+  // Only the people this template could go to.
+  for (const p of staffList) {
+    if (companyId && Number(companyId) !== p.companyId) continue;
+    who.append(h('option', { value: p.id }, p.name));
+  }
+
+  const shown = formDialog({
+    title: `Preview: ${name || 'Untitled'}`,
+    submitLabel: 'Close',
+    wide: true,
+    body: h('div.tpl-preview',
+      h('div.tpl-preview-bar',
+        h('label.tpl-preview-who', h('span', 'Show it for'), who),
+        width),
+      h('p.muted', { style: { fontSize: '.82rem', margin: 0 } },
+        kind === 'correspondence'
+          ? 'A letter template is printed on your letterhead from the Letters screen. This shows its words filled in.'
+          : 'What they see when they open the link they are sent. Anything typed in when it is issued shows in square brackets.'),
+      frame),
+    onSubmit: async () => true,
+  });
+  await draw();
+  return shown;
+}
+
+/** The page from the staff link, drawn with the same classes, doing nothing. */
+function staffView(out, kind) {
+  const pad = signaturePad({ height: 120 });
+  const inert = { type: 'button', tabindex: -1, onclick: (e) => { e.preventDefault(); toast('This is only a preview.'); } };
+  return h('main.invite',
+    h('div.invite-inner',
+      h('header.invite-head', h('div.invite-brand', out.property || 'Staff')),
+      h('button.btn-sm.invite-back', inert, '‹ Back'),
+      h('div.card',
+        h('h2', out.title),
+        h('p.muted', kind === 'correspondence' ? 'A letter.' : 'Read all of it. Scroll to the bottom to sign.')),
+      h('div.card', h('pre.contract-text', out.body)),
+      kind === 'correspondence' ? null : h('div.card',
+        h('h3', 'Sign here'),
+        h('label.tickline',
+          h('input', { type: 'checkbox', tabindex: -1 }),
+          h('span', 'I have read this document and I agree to sign it electronically. '
+            + 'I understand this has the same effect as signing on paper.')),
+        h('p.muted', 'Before you sign, we send a six-digit code to their email or phone to check it is them.'),
+        pad.element,
+        h('label.field', h('span', 'Or type your full name'),
+          h('input', { type: 'text', tabindex: -1, placeholder: out.person?.name ?? 'Ama Sample' })),
+        h('button.btn.btn-primary.btn-wide', inert, 'Sign this'),
+        h('button.btn-sm.btn-wide', { ...inert, style: { marginTop: '.6rem' } }, 'I do not want to sign this'),
+        h('p.fineprint', 'When you sign, the time, your network address and a fingerprint of these exact words '
+          + 'are recorded, so both you and the property can show later what was agreed.'))));
 }
 
 /** The nudge on an empty screen, which is where everybody starts. */

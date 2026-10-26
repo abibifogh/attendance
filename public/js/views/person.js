@@ -763,10 +763,11 @@ function toBase64(bytes) {
 function contractsTab(data, model, reload) {
   const issue = async () => {
     const { rows: templates } = await api.hrTemplates();
-    const usable = templates.filter((t) => t.active);
+    // Theirs: every company's templates, and their own company's.
+    const usable = templates.filter((t) => t.active && (!t.company_id || t.company_id === data.person.companyId));
 
     if (!usable.length) {
-      toast('Make a template first — Templates, on the People screen.', 'bad');
+      toast('There is no template for their company yet. Make one under People › Templates.', 'bad');
       return;
     }
 

@@ -2561,8 +2561,8 @@ export async function hire(ctx, id) {
   let staff;
   try {
     staff = await ctx.db.prepare(
-      `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, on_rota, on_clock)
-       VALUES (?1,?2,?3,?4,?5,?6,?7) RETURNING id`,
+      `INSERT INTO att_staff (employee_no, name, department, job_title, hired_on, on_rota, on_clock, company_id)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8) RETURNING id`,
     ).bind(
       employeeNo, name,
       str(body.department, 'Department', { max: 80, fallback: department }),
@@ -2570,6 +2570,8 @@ export async function hire(ctx, id) {
       hiredOn,
       bool(body.onRota, true) ? 1 : 0,
       bool(body.onClock, true) ? 1 : 0,
+      // On the books of the company that made the offer, where it was one company's.
+      Number(offer?.company_id) || null,
     ).first();
   } catch (err) {
     // The one mistake that matters here, said in the words somebody needs.
