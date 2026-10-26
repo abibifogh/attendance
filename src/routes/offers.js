@@ -12,7 +12,9 @@ import { firstName, renderMail, sayDate } from '../lib/email-design.js';
 import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate } from '../lib/people.js';
 import { siteOrigin } from '../lib/site.js';
 import { seal, unseal } from '../lib/seal.js';
-import { companyNames, employerAddress, employerName } from './people.js';
+import {
+  companyNames, coverOf, employerAddress, employerName, logoResponse,
+} from './people.js';
 import { trail } from './recruitment.js';
 
 /**
@@ -694,7 +696,26 @@ export async function offerOpen(ctx, token) {
     signCode: route.required
       ? { required: true, hint: route.hint, verified: Boolean(offer.otp_verified_at) }
       : { required: false },
+    // The contract's cover, for the company making the offer.
+    cover: await coverOf(ctx.db, {
+      companyId: offer.company_id,
+      title: offer.title,
+      name: candidate?.name ?? '',
+      job: offer.job_title,
+      department: offer.department,
+      start: offer.start_date,
+      reference: `Offer ${String(offer.id).padStart(5, '0')}`,
+      issued: offer.created_at,
+      employeeNo: offer.employee_no,
+      offered: offer.status !== 'accepted',
+    }).then((c) => ({ ...c, logoUrl: c.hasLogo ? `/api/o/${encodeURIComponent(token)}/logo` : null })).catch(() => null),
   });
+}
+
+/** The logo of the company making the offer, for the top of its contract. */
+export async function offerLogo(ctx, token) {
+  const offer = await offerFor(ctx, token);
+  return logoResponse(ctx.db, offer.company_id);
 }
 
 /** A six-digit code to sign with, to their own email or phone. One live at a time; fifteen minutes. */

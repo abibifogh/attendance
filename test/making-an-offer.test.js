@@ -383,3 +383,16 @@ test('an offer on one company’s template names that company and takes them on 
     assert.equal(t.raw.prepare('SELECT company_id FROM att_staff WHERE id = ?').get(out.staffId).company_id, 5);
   } finally { t.restore(); }
 });
+
+test('the offer page carries the contract’s cover, from the company making the offer', async () => {
+  const t = await setup();
+  try {
+    const { token } = await offered(t);
+    const page = await body(await offerOpen(pub(t.db), token));
+    assert.equal(page.cover.companyName, 'Example Hotels Ltd');
+    assert.match(page.cover.sentence, /^made between Example Hotels Ltd and Ama Owusu, who would be employed as Front desk agent in the Front office department from /);
+    assert.equal(page.cover.logoUrl, null);
+    const { offerLogo } = await import('../src/routes/offers.js');
+    await assert.rejects(offerLogo(pub(t.db), token), /No logo/);
+  } finally { t.restore(); }
+});

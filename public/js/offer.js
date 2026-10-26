@@ -1,6 +1,7 @@
 import { h, mount, toast } from './util.js';
 import { signaturePad } from './fields.js';
 import { contractFlow } from './contract-flow.js';
+import { coverMasthead } from './views/contract-cover.js';
 
 /**
  * A job offer, opened on the candidate's phone.
@@ -96,6 +97,7 @@ function showOffer() {
     h('section.sv2-card',
       h('div.offer-row', h('h2', 'The contract'),
         h('button.sv2-link', { type: 'button', onclick: () => { showContract(); setTimeout(() => window.print(), 300); } }, 'Print or save it')),
+      coverMasthead(p.cover),
       h('div.offer-preview', { 'aria-hidden': 'true' }, contractText(p.body.slice(0, 900))),
       h('button.sv2-link', { type: 'button', onclick: showContract }, 'Read all of it')),
     h('div.offer-actions',
@@ -210,6 +212,7 @@ function showContract() {
   });
 
   mount(root, shell(p.property, p.title,
+    coverMasthead(p.cover),
     h('section.offer-paper', contractText(p.body)),
     h('section.sv2-card.offer-sign.no-print',
       h('h2', 'Accept and sign'),
@@ -255,6 +258,7 @@ function accepted(justNow = false) {
 function showSigned() {
   const p = packet;
   mount(root, shell(p.property, p.title,
+    coverMasthead(p.cover),
     h('section.offer-paper', contractText(p.body),
       h('p.offer-signed', `Signed by ${p.signerName}${p.signedAt ? `, ${stamp(p.signedAt)}` : ''}.`)),
     h('div.offer-actions.no-print', h('button.btn.btn-wide', { type: 'button', onclick: () => accepted() }, 'Back'))));

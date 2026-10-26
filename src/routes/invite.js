@@ -2,7 +2,7 @@ import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/htt
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
 import { cleanSubmission, formPlan, hashBody, unanswered } from '../lib/people.js';
 import { requiredDocumentsFor } from '../lib/ghana-templates.js';
-import { currentPlan, storeFile } from './people.js';
+import { contractCover, currentPlan, logoResponse, storeFile } from './people.js';
 import { fromBase64 } from '../lib/files.js';
 import { createNotice } from '../lib/notices.js';
 import { firstUsableEmail, sendEmail, senderNameOf, senderWithName } from '../lib/notify.js';
@@ -259,10 +259,20 @@ export async function inviteOpen(ctx, token) {
   }
 
   const contracts = await ctx.db.prepare(
-    `SELECT c.id, c.title, c.body, c.body_hash, c.status, c.signed_at, c.signer_name
+    `SELECT c.id, c.title, c.body, c.body_hash, c.status, c.signed_at, c.signer_name,
+            c.fields, c.template_id, c.issued_at, c.created_at,
+            p.name staff_name, p.employee_no, p.company_id staff_company_id
        FROM hr_contract c JOIN hr_invite_contract ic ON ic.contract_id = c.id
+       JOIN att_staff p ON p.id = c.staff_id
       WHERE ic.invite_id = ? ORDER BY c.id`,
   ).bind(invite.id).all();
+  // The cover each one opens with. Its logo comes through this link, which is
+  // all this page can reach.
+  const covers = new Map();
+  for (const c of contracts.results ?? []) {
+    const cover = await contractCover(ctx.db, c).catch(() => null);
+    if (cover) covers.set(c.id, { ...cover, logoUrl: cover.hasLogo ? `/api/i/${encodeURIComponent(token)}/logo` : null });
+  }
 
   // Whether they have already sent their details in on this link. Asked again
   // is fine — people remember something afterwards — but the screen should say
@@ -317,8 +327,19 @@ export async function inviteOpen(ctx, token) {
       declined: c.status === 'declined',
       signedAt: c.signed_at,
       signerName: c.signer_name,
+      cover: covers.get(c.id) ?? null,
     })),
   });
+}
+
+/**
+ * The logo of the company that employs the person this link is for, for the
+ * top of their contract. Nothing about them: a logo is on the front door.
+ */
+export async function inviteLogo(ctx, token) {
+  const invite = await inviteFor(ctx, token);
+  const person = await ctx.db.prepare('SELECT company_id FROM att_staff WHERE id = ?').bind(invite.staff_id).first();
+  return logoResponse(ctx.db, person?.company_id);
 }
 
 /**

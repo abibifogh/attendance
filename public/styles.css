@@ -7999,29 +7999,62 @@ button.lp-row:disabled { cursor: default; }
 .tpl-frame.is-phone .contract-flow { font-size: .88rem; }
 .tpl-preview-who span { white-space: nowrap; }
 
-/* A contract's cover page, printed. Hidden on screen. */
+/* A contract's cover page: printed, or shown at the shape of A4 in the
+   template preview. Hidden on screen otherwise. */
 .print-cover { display: none; }
+.print-cover.is-screen { display: block; width: 100%; max-width: 520px; margin: 0 auto; aspect-ratio: 210 / 297; background: #fff; font-size: 8px; box-shadow: 0 2px 12px rgba(16, 24, 40, .12); }
+.print-cover.is-screen .pc-frame { border-width: .28em; padding: .7em; }
+.print-cover.is-screen .pc-inner { padding: 5em 5.6em 3.4em; }
+.pc-frame { height: 100%; box-sizing: border-box; border: 2.2pt solid #1f3a5f; padding: 6pt; color: #1a1d23; font-family: "Times New Roman", Times, serif; }
+.pc-inner { height: 100%; box-sizing: border-box; border: .6pt solid #1f3a5f; padding: 40pt 46pt 28pt; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.pc-ring { width: 108pt; height: 108pt; border-radius: 50%; border: .75pt solid #b8bec8; display: flex; align-items: center; justify-content: center; flex: none; background: #fff; }
+.pc-ring img { max-width: 66%; max-height: 66%; object-fit: contain; }
+.pc-initials { font-family: "Times New Roman", Times, serif; font-size: 26pt; color: #1f3a5f; }
+.pc-company { margin-top: 18pt; font-size: 14pt; letter-spacing: .24em; }
+.pc-under { margin-top: 4pt; font-size: 10.5pt; font-style: italic; color: #5a6170; }
+.pc-divider { margin-top: 30pt; display: flex; align-items: center; gap: 10pt; width: 260pt; max-width: 80%; }
+.pc-divider span { flex: 1; height: .75pt; background: #1f3a5f; }
+.pc-divider i { width: 6pt; height: 6pt; transform: rotate(45deg); background: #1f3a5f; flex: none; }
+.pc-title { margin: 24pt 0 0; font-size: 31pt; font-weight: 400; letter-spacing: .07em; line-height: 1.2; }
+.pc-subtitle { margin-top: 6pt; font-size: 14pt; font-style: italic; color: #5a6170; }
+.pc-sentence { margin: 34pt 0 0; max-width: 360pt; font-size: 13pt; line-height: 1.6; }
+.pc-facts { margin-top: auto; width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12pt; text-align: left; }
+.pc-facts div { display: flex; flex-direction: column; gap: 3pt; }
+.pc-facts span { font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; letter-spacing: .12em; color: #5a6170; }
+.pc-facts b { font-weight: 400; font-size: 11.5pt; }
+.pc-foot { margin-top: 16pt; font-family: Helvetica, Arial, sans-serif; font-size: 7pt; letter-spacing: .1em; color: #5a6170; }
+/* On screen the sizes scale with the sheet, set in em of its 8px. */
+.print-cover.is-screen .pc-ring { width: 13.5em; height: 13.5em; }
+.print-cover.is-screen .pc-initials { font-size: 3.2em; }
+.print-cover.is-screen .pc-company { margin-top: 2.2em; font-size: 1.75em; }
+.print-cover.is-screen .pc-under { font-size: 1.3em; margin-top: .4em; }
+.print-cover.is-screen .pc-divider { margin-top: 3.6em; width: 32em; gap: 1.2em; }
+.print-cover.is-screen .pc-divider span { height: 1px; }
+.print-cover.is-screen .pc-divider i { width: .75em; height: .75em; }
+.print-cover.is-screen .pc-title { margin-top: 3em; font-size: 3.8em; }
+.print-cover.is-screen .pc-subtitle { font-size: 1.75em; margin-top: .4em; }
+.print-cover.is-screen .pc-sentence { margin-top: 4em; font-size: 1.6em; max-width: 28em; }
+.print-cover.is-screen .pc-facts span { font-size: .95em; }
+.print-cover.is-screen .pc-facts b { font-size: 1.45em; }
+.print-cover.is-screen .pc-foot { font-size: .9em; margin-top: 2em; }
 @media print {
-  .print-cover { display: block; box-sizing: border-box; height: 262mm; padding: 0; break-after: page; page-break-after: always; color: #1a1d23; font-family: "Times New Roman", Times, serif; }
-  .pc-frame { height: 100%; box-sizing: border-box; border: 2.2pt solid #1f3a5f; padding: 6pt; }
-  .pc-inner { height: 100%; box-sizing: border-box; border: .6pt solid #1f3a5f; padding: 40pt 46pt 28pt; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .pc-ring { width: 108pt; height: 108pt; border-radius: 50%; border: .75pt solid #b8bec8; display: flex; align-items: center; justify-content: center; }
-  .pc-ring img { max-width: 72pt; max-height: 72pt; object-fit: contain; }
-  .pc-initials { font-size: 26pt; color: #1f3a5f; }
-  .pc-company { margin-top: 18pt; font-size: 14pt; letter-spacing: .24em; }
-  .pc-under { margin-top: 4pt; font-size: 10.5pt; font-style: italic; color: #5a6170; }
-  .pc-divider { margin-top: 30pt; display: flex; align-items: center; gap: 10pt; width: 260pt; }
-  .pc-divider span { flex: 1; height: .75pt; background: #1f3a5f; }
-  .pc-divider i { width: 6pt; height: 6pt; transform: rotate(45deg); background: #1f3a5f; }
-  .pc-title { margin: 24pt 0 0; font-size: 31pt; font-weight: 400; letter-spacing: .07em; line-height: 1.2; }
-  .pc-subtitle { margin-top: 6pt; font-size: 14pt; font-style: italic; color: #5a6170; }
-  .pc-sentence { margin: 34pt 0 0; max-width: 360pt; font-size: 13pt; line-height: 1.6; }
-  .pc-facts { margin-top: auto; width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12pt; text-align: left; }
-  .pc-facts div { display: flex; flex-direction: column; gap: 3pt; }
-  .pc-facts span { font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; letter-spacing: .12em; color: #5a6170; }
-  .pc-facts b { font-weight: 400; font-size: 11.5pt; }
-  .pc-foot { margin-top: 16pt; font-family: Helvetica, Arial, sans-serif; font-size: 7pt; letter-spacing: .1em; color: #5a6170; }
+  .print-cover { display: block; box-sizing: border-box; height: 262mm; padding: 0; break-after: page; page-break-after: always; }
+  .print-cover.is-screen { display: none; }
 }
+
+/* The cover, small, at the top of a contract on a phone. */
+.cover-mast { background: #fff; border: 2px solid #1f3a5f; padding: 4px; border-radius: 4px; color: #1a1d23; margin-bottom: .8rem; }
+.cm-inner { border: 1px solid #1f3a5f; border-radius: 2px; padding: 1.2rem 1rem 1.1rem; display: flex; flex-direction: column; align-items: center; text-align: center; font-family: "Times New Roman", Times, serif; }
+.pc-ring.cm-ring { width: 64px; height: 64px; border-width: 1px; }
+.cm-ring .pc-initials { font-size: 1.35rem; }
+.cm-company { margin-top: .6rem; font-size: .82rem; letter-spacing: .2em; }
+.cover-mast .pc-divider { margin-top: .8rem; width: 160px; gap: 8px; }
+.cover-mast .pc-divider span { height: 1px; }
+.cover-mast .pc-divider i { width: 5px; height: 5px; }
+.cm-title { margin-top: .7rem; font-size: 1.3rem; letter-spacing: .06em; line-height: 1.2; }
+.cm-subtitle { margin-top: .15rem; font-size: .92rem; font-style: italic; color: #5a6170; }
+.cm-sentence { margin: .7rem 0 0; font-size: .9rem; line-height: 1.5; max-width: 28rem; }
+
 @media print {
   /* The phone's menu bar is furniture too. */
   .bottom-bar { display: none !important; }
@@ -8030,3 +8063,6 @@ button.lp-row:disabled { cursor: default; }
   .card:has(.contract-body) { break-inside: auto; page-break-inside: auto; }
   .contract-body { max-height: none; overflow: visible; }
 }
+.tpl-frame.is-cover { background: var(--surface-2); padding: 1rem; }
+.tpl-cover { display: flex; justify-content: center; }
+.offer .cover-mast { max-width: 46rem; width: 100%; margin: 0 auto; box-sizing: border-box; }

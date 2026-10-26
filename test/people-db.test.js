@@ -10,7 +10,7 @@ import {
   revokeInvite, saveList, savePerson, saveTemplate,
 } from '../src/routes/people.js';
 import {
-  inviteDecline, inviteDetails, inviteHead, inviteOpen, inviteSign, inviteViewed,
+  inviteDecline, inviteDetails, inviteHead, inviteLogo, inviteOpen, inviteSign, inviteViewed,
 } from '../src/routes/invite.js';
 import { hashBody } from '../src/lib/people.js';
 import { STANDARD_TEMPLATES } from '../src/lib/ghana-templates.js';
@@ -787,4 +787,36 @@ test('a template for one company is only issued to the people that company emplo
   await assert.rejects(saveTemplate(ctx(db, { body: { name: 'x', body: 'y', companyId: 99 } })), /does not exist/);
   await saveTemplate(ctx(db, { body: { name: 'Second company contract', kind: 'contract', body: 'Words.', companyId: '' } }), made.id);
   assert.equal(raw.prepare('SELECT company_id FROM hr_template WHERE id = ?').get(made.id).company_id, null, 'empty is every company');
+});
+
+test('a contract on a link carries its cover, and the employer’s logo comes through the same link', async () => {
+  const { raw, db } = await setup();
+  raw.prepare("INSERT INTO settings (key, value) VALUES ('company_legal_name', 'Example Hotels Ltd') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
+  const contract = await issue(db);
+  const link = await makeLink(db, { wantsDetails: false, contractIds: [contract.id] });
+  const packet = await read(await inviteOpen(phone(db), link.token));
+  const cover = packet.contracts[0].cover;
+  assert.equal(cover.companyName, 'Example Hotels Ltd');
+  assert.equal(cover.title, 'Contract of employment');
+  assert.equal(cover.logoUrl, null, 'no logo uploaded yet');
+  assert.match(cover.sentence, /^made between Example Hotels Ltd and Augustina Adjei Abla, who is employed as Housekeeper/);
+  await assert.rejects(inviteLogo(phone(db), link.token), /No logo/);
+
+  const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+  raw.prepare("INSERT OR REPLACE INTO company_logo (id, mime, bytes, content) VALUES (1, 'image/png', ?, ?)").run(png.length, png);
+  const again = await read(await inviteOpen(phone(db), link.token));
+  assert.equal(again.contracts[0].cover.logoUrl, `/api/i/${encodeURIComponent(link.token)}/logo`);
+  const logo = await inviteLogo(phone(db), link.token);
+  assert.equal(logo.headers.get('Content-Type'), 'image/png');
+  assert.equal(new Uint8Array(await logo.arrayBuffer()).length, png.length);
+  await assert.rejects(inviteLogo(phone(db), 'not-a-real-link'), /does not work/);
+});
+
+test('a template preview carries the cover it would have', async () => {
+  const { db } = await setup();
+  const out = await read(await previewTemplate(ctx(db, { body: { body: 'Hello {{name}}.', name: 'Contract of employment — fixed term', kind: 'contract' } })));
+  assert.equal(out.cover.title, 'Contract of employment');
+  assert.equal(out.cover.subtitle, 'Fixed term');
+  assert.equal(out.cover.reference, '[Given when issued]');
+  assert.match(out.cover.sentence, /and Ama Sample, who is employed as Front desk agent in the Front office department/);
 });

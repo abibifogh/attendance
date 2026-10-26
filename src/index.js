@@ -685,6 +685,7 @@ export const ROUTES = [
   ['POST', '/api/c/:token/cv', 'public', hiring.file],
   ['GET', '/api/o/:token', 'public', offers.offerHead],
   ['POST', '/api/o/:token/open', 'public', offers.offerOpen],
+  ['GET', '/api/o/:token/logo', 'public', offers.offerLogo],
   ['POST', '/api/o/:token/code', 'public', offers.offerCode],
   ['POST', '/api/o/:token/accept', 'public', offers.offerAccept],
   ['POST', '/api/o/:token/decline', 'public', offers.offerDecline],
@@ -697,6 +698,7 @@ export const ROUTES = [
 
   ['GET', '/api/i/:token', 'public', invite.inviteHead],
   ['POST', '/api/i/:token/open', 'public', invite.inviteOpen],
+  ['GET', '/api/i/:token/logo', 'public', invite.inviteLogo],
   ['POST', '/api/i/:token/details', 'public', invite.inviteDetails],
   // The paper they are holding, photographed on the device that is asking for
   // it. It lands as a claim, exactly like the typed answers beside it.

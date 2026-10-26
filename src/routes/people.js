@@ -1240,11 +1240,25 @@ export async function previewTemplate(ctx) {
   for (const asked of ASKED_PLACEHOLDERS) {
     if (!String(given[asked.key] ?? '').trim() && !asked.fallback) values[asked.key] = `[${asked.label}: typed in when it is issued]`;
   }
+  const title = str(body.name, 'Name', { max: 160 }) || template?.name || 'Untitled';
   return json({
-    title: str(body.name, 'Name', { max: 160 }) || template?.name || 'Untitled',
+    title,
     body: renderTemplate(source, values),
     person: person ? { id: person.id, name: person.name } : null,
     property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
+    // Its cover page, for the person it is shown for.
+    cover: await coverOf(ctx.db, {
+      companyId: person ? person.company_id : companyId,
+      title,
+      kind: ['contract', 'letter', 'policy', 'correspondence'].includes(body.kind) ? body.kind : (template?.kind ?? 'contract'),
+      name: values.name,
+      job: values.job_title,
+      department: values.department,
+      start: values.start_date,
+      reference: '[Given when issued]',
+      issued: new Date().toISOString().slice(0, 10),
+      employeeNo: values.employee_no,
+    }),
   });
 }
 
@@ -1301,33 +1315,54 @@ export const contractRef = (id) => `HR-C-${String(id).padStart(5, '0')}`;
  * words that were signed.
  */
 export async function contractCover(db, contract) {
-  const person = { company_id: contract.staff_company_id };
-  const companyId = Number(contract.staff_company_id) || MAIN;
-  const companyName = await employerName(db, person);
-  const tradingName = await setting(db, 'property_name', '');
   const fields = (() => { try { return JSON.parse(contract.fields || '{}'); } catch { return {}; } })();
   const template = contract.template_id
     ? await db.prepare('SELECT kind FROM hr_template WHERE id = ?').bind(contract.template_id).first().catch(() => null)
     : null;
+  return coverOf(db, {
+    companyId: contract.staff_company_id,
+    title: contract.title,
+    kind: template?.kind ?? 'contract',
+    name: contract.staff_name ?? fields.name ?? '',
+    job: fields.job_title,
+    department: fields.department,
+    start: fields.start_date,
+    reference: contractRef(contract.id),
+    issued: contract.issued_at ?? contract.created_at,
+    employeeNo: contract.employee_no ?? null,
+  });
+}
+
+/**
+ * The cover, from its parts, for a contract, an offer or a template being
+ * previewed alike. `offered` says "who would be employed" rather than "who is
+ * employed", for an offer not yet accepted.
+ */
+export async function coverOf(db, {
+  companyId: given, title: fullTitle, kind = 'contract', name = '', job = '', department = '', start = '',
+  reference = null, issued = null, employeeNo = null, offered = false,
+}) {
+  const companyId = Number(given) || MAIN;
+  const person = { company_id: companyId };
+  const companyName = await employerName(db, person);
+  const tradingName = await setting(db, 'property_name', '');
   const logo = companyId === MAIN
     ? await db.prepare('SELECT 1 AS yes FROM company_logo WHERE id = 1').first().catch(() => null)
     : await db.prepare('SELECT 1 AS yes, logo_at FROM company WHERE id = ? AND logo_content IS NOT NULL').bind(companyId).first().catch(() => null);
   const stamp = companyId === MAIN ? await setting(db, 'company_logo_at', '') : (logo?.logo_at ?? '');
 
   // "Contract of employment — permanent" reads as a title and a kind.
-  const [title, ...rest] = String(contract.title ?? '').split(/\s+[—–-]\s+/);
+  const [title, ...rest] = String(fullTitle ?? '').split(/\s+[—–-]\s+/);
   const subtitle = rest.join(' - ').trim();
-  const name = contract.staff_name ?? fields.name ?? '';
-  const job = String(fields.job_title ?? '').trim();
-  const department = String(fields.department ?? '').trim();
-  const start = String(fields.start_date ?? '').trim();
+  const role = String(job ?? '').trim();
+  const dept = String(department ?? '').trim();
+  const from = String(start ?? '').trim();
   const sayDay = (day) => (/^\d{4}-\d{2}-\d{2}/.test(day)
     ? new Date(`${day.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
     : day);
-  const isContract = (template?.kind ?? 'contract') === 'contract';
-  const sentence = isContract && job
-    ? `made between ${companyName} and ${name}, who is employed as ${job}`
-      + `${department ? ` in the ${department} department` : ''}${start ? ` from ${sayDay(start)}` : ''}, `
+  const sentence = kind === 'contract' && role
+    ? `made between ${companyName} and ${name}, who ${offered ? 'would be' : 'is'} employed as ${role}`
+      + `${dept ? ` in the ${dept} department` : ''}${from ? ` from ${sayDay(from)}` : ''}, `
       + 'under the Labour Act, 2003 (Act 651).'
     : `made between ${companyName} and ${name}.`;
 
@@ -1342,10 +1377,19 @@ export async function contractCover(db, contract) {
     title: title || 'Contract',
     subtitle: subtitle ? subtitle[0].toUpperCase() + subtitle.slice(1) : null,
     sentence,
-    reference: contractRef(contract.id),
-    issued: String(contract.issued_at ?? contract.created_at ?? '').slice(0, 10),
-    employeeNo: contract.employee_no ?? null,
+    reference,
+    issued: String(issued ?? '').slice(0, 10) || null,
+    employeeNo,
   };
+}
+
+/** A company's logo as a response, for a page reached by a link rather than a login. */
+export async function logoResponse(db, companyId) {
+  const logo = await companyLogoBytes(db, companyId);
+  if (!logo) throw notFound('No logo has been uploaded.');
+  return new Response(logo.bytes, {
+    headers: { 'Content-Type': logo.mime || 'image/png', 'Cache-Control': 'private, max-age=3600' },
+  });
 }
 
 /** The bytes of a company's logo, for a PDF, or null. */

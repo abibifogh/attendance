@@ -1,6 +1,7 @@
 import { h, mount, toast } from './util.js';
 import { control, listEditor, signaturePad } from './fields.js';
 import { contractFlow } from './contract-flow.js';
+import { coverMasthead } from './views/contract-cover.js';
 
 /**
  * The page somebody opens on their phone.
@@ -539,6 +540,9 @@ function showContract(contract) {
 
   mount(root, shell(packet.property,
     back(),
+    // The cover it opens with on paper, small, so they know whose it is and
+    // what it is before they read.
+    coverMasthead(contract.cover),
     h('div.card',
       h('h2', contract.title),
       h('p.muted', 'Read all of it. Scroll to the bottom to sign.'),

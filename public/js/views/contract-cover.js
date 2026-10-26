@@ -22,10 +22,10 @@ const longDate = (day) => (/^\d{4}-\d{2}-\d{2}/.test(String(day ?? ''))
 
 const divider = () => h('div.pc-divider', { 'aria-hidden': 'true' }, h('span'), h('i'), h('span'));
 
-export function contractCover(cover) {
-  if (!cover) return null;
+/** The logo in its ring, or the initials where there is none or it will not load. */
+function ring(cover, cls = 'div.pc-ring') {
   const initials = h('span.pc-initials', initialsOf(cover.companyName));
-  const ring = h('div.pc-ring',
+  return h(cls,
     cover.logoUrl
       ? h('img', {
         src: cover.logoUrl,
@@ -33,10 +33,18 @@ export function contractCover(cover) {
         onerror: (e) => e.target.replaceWith(initials),
       })
       : initials);
-  return h('section.print-cover',
+}
+
+/**
+ * The whole cover page. `screen` shows it on screen too, at the shape of a
+ * sheet of A4, for the template preview; otherwise it only ever prints.
+ */
+export function contractCover(cover, { screen = false } = {}) {
+  if (!cover) return null;
+  return h(`section.print-cover${screen ? '.is-screen' : ''}`,
     h('div.pc-frame',
       h('div.pc-inner',
-        ring,
+        ring(cover),
         h('div.pc-company', String(cover.companyName ?? '').toUpperCase()),
         h('div.pc-under', [cover.tradingAs ? `trading as ${cover.tradingAs}` : null, cover.address].filter(Boolean).join(' · ')),
         divider(),
@@ -49,4 +57,20 @@ export function contractCover(cover) {
           h('div', h('span', 'ISSUED'), h('b', longDate(cover.issued))),
           h('div', h('span', 'EMPLOYEE NO.'), h('b', cover.employeeNo || '—'))),
         h('div.pc-foot', `PRIVATE AND CONFIDENTIAL · CHECK THIS COPY AT ${location.host}/verify`.toUpperCase()))));
+}
+
+/**
+ * The cover, small, for the top of a contract on a phone: the logo, the
+ * company, the document's name and who it is between, in the same frame.
+ */
+export function coverMasthead(cover) {
+  if (!cover) return null;
+  return h('section.cover-mast', { 'aria-label': `${cover.title}, from ${cover.companyName}` },
+    h('div.cm-inner',
+      ring(cover, 'div.pc-ring.cm-ring'),
+      h('div.cm-company', String(cover.companyName ?? '').toUpperCase()),
+      divider(),
+      h('div.cm-title', String(cover.title ?? '').toUpperCase()),
+      cover.subtitle ? h('div.cm-subtitle', cover.subtitle) : null,
+      h('p.cm-sentence', cover.sentence)));
 }

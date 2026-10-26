@@ -4,6 +4,7 @@ import { card, table } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { signaturePad } from '../fields.js';
 import { contractFlow } from '../contract-flow.js';
+import { contractCover, coverMasthead } from './contract-cover.js';
 
 /**
  * What each kind is for, in the words the screen uses.
@@ -263,21 +264,35 @@ let staffList = null;
 async function previewTemplate({ templateId = null, name = '', kind = 'contract', body = null, companyId = null }) {
   const frame = h('div.tpl-frame.is-phone');
   const who = h('select', { 'aria-label': 'Show it for' }, h('option', { value: '' }, 'A sample person'));
-  const width = h('div.seg', { role: 'group', 'aria-label': 'Screen' },
-    h('button.active', { type: 'button', onclick: (e) => size(e, true) }, 'Phone'),
-    h('button', { type: 'button', onclick: (e) => size(e, false) }, 'Computer'));
-  const size = (e, phone) => {
-    frame.classList.toggle('is-phone', phone);
-    for (const b of width.children) b.classList.toggle('active', b === e.target);
+  // Phone and computer show the page they sign on; Cover page shows the
+  // first sheet of the signed PDF and of a printed copy.
+  let view = 'phone';
+  let last = null;
+  const show = () => {
+    frame.classList.toggle('is-phone', view === 'phone');
+    frame.classList.toggle('is-cover', view === 'cover');
+    if (!last) return;
+    mount(frame, view === 'cover'
+      ? h('div.tpl-cover', contractCover(last.cover, { screen: true }))
+      : staffView(last, kind));
   };
+  const width = h('div.seg', { role: 'group', 'aria-label': 'Show' },
+    [['phone', 'Phone'], ['computer', 'Computer'], ['cover', 'Cover page']].map(([key, label]) => h(`button${key === view ? '.active' : ''}`, {
+      type: 'button',
+      onclick: (e) => {
+        view = key;
+        for (const b of width.children) b.classList.toggle('active', b === e.target);
+        show();
+      },
+    }, label)));
 
   const draw = async () => {
     mount(frame, h('p.muted', { style: { padding: '1rem' } }, 'Filling it in…'));
     try {
-      const out = await api.hrPreviewTemplate({
-        templateId, name, body, companyId, staffId: who.value || null,
+      last = await api.hrPreviewTemplate({
+        templateId, name, body, kind, companyId, staffId: who.value || null,
       });
-      mount(frame, staffView(out, kind));
+      show();
     } catch (err) {
       mount(frame, h('p.form-error', { style: { padding: '1rem' } }, err.message));
     }
@@ -320,6 +335,7 @@ function staffView(out, kind) {
     h('div.invite-inner',
       h('header.invite-head', h('div.invite-brand', out.property || 'Staff')),
       h('button.btn-sm.invite-back', inert, '‹ Back'),
+      kind === 'correspondence' ? null : coverMasthead(out.cover),
       h('div.card',
         h('h2', out.title),
         h('p.muted', kind === 'correspondence' ? 'A letter.' : 'Read all of it. Scroll to the bottom to sign.')),
