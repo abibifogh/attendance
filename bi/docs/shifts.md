@@ -139,6 +139,34 @@ difference does not close the to-do, and Done on the to-do does not answer
 the difference. Making, changing, removing and finishing one each go in the
 difference's history (`shift_task`, migration 0045).
 
+### A shift's reconciliation report
+
+**⤓ Reconciliation report** at the top of a shift (for whoever sees amounts)
+makes a report of the shift to print, save as a PDF or download. It holds:
+- the drawer: opening count, cash taken (by kind), expenses and cash moved
+  out, should hold, counted, and the difference;
+- card and MoMo: ASSD's lines against what the card machine and MoMo took,
+  with each difference;
+- expenses against their POs;
+- the desk's stock (water, padlocks) and the laundry;
+- every difference with where it stands: answer needed, waiting for an admin,
+  answered, or explaining the drawer.
+
+There are three layouts of the same figures. Choose one and the preview
+changes; the choice is remembered on that device.
+- **The statement** reads top to bottom like an accountant's reconciliation,
+  on one A4 page, with "Checked by" and "Date" lines.
+- **The bridge** draws bars from where each figure started to what was found.
+- **The checklist** has one row per check (ASSD, found, difference, ticked or
+  not), with a to-do list at the end.
+
+**Print or save as PDF** opens the report in a page of its own and prints it.
+Choose "Save as PDF" as the printer to keep a file. **Download (.html)** saves
+the page itself, which opens in any browser. The report shows the figures as
+they stood when it was made, and says so. It is drawn in the browser from what
+the Shifts screen already has (`public/js/recon.js`), so it needs nothing new
+on the server.
+
 ## What you load, and how often
 
 All three are loaded on the Shifts tab under **Load files**, by an owner. The
