@@ -493,6 +493,11 @@ export async function closeShift(ctx) {
   const already = await ctx.db.prepare('SELECT id FROM till_report WHERE day = ?1 AND slot = ?2 AND user_id = ?3 AND reopened_at IS NULL')
     .bind(day, slot, userId).first();
   if (already) throw new HttpError(409, 'You have already closed that shift. Ask a supervisor to reopen it if something was wrong.');
+  // A day an admin has locked in Insight takes no closing report. Without Insight, nothing stops it.
+  const lock = await insightOrNull(ctx.env, '/api/link/till/lock', {});
+  if (lock?.through && day <= lock.through) {
+    throw new HttpError(423, `That day is locked in Insight (up to ${sayDate(lock.through)}), so no closing report can be sent for it. Speak to a supervisor.`);
+  }
 
   if (typeof body.floatOk !== 'boolean') throw badRequest('Say whether your opening float was correct.');
   const floatDiff = body.floatOk ? null : pesewas(body.floatDiff, 'The float difference', { allowNegative: true });
@@ -810,6 +815,8 @@ export async function answer(ctx) {
   const list = await insight(ctx.env, '/api/link/till/issues', { userId });
   const issue = (list.issues || []).find((i) => i.key === key);
   if (!issue) throw notFound('That is not on your list any more.');
+  // An admin locked that day in Insight: nothing more can be sent on it.
+  if (issue.locked) throw new HttpError(423, 'That shift’s day is locked: nothing more can be sent on it. Speak to a supervisor.');
 
   // A shift not checked yet: its amounts may change, so only a note for
   // whoever checks it. Explaining, paying back or a PO come once it is checked.

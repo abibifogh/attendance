@@ -569,7 +569,7 @@ export async function renderAttMyTillIssues() {
     const checked = data.issues.filter((i) => i.checked !== false);
     const waiting = data.issues.filter((i) => i.checked === false);
     const sub = [
-      checked.length ? `${checked.length} checked and need${checked.length === 1 ? 's' : ''} you` : null,
+      checked.filter((i) => !i.locked).length ? `${checked.filter((i) => !i.locked).length} checked and need${checked.filter((i) => !i.locked).length === 1 ? 's' : ''} you` : null,
       waiting.length ? `${waiting.length} not checked yet` : null,
     ].filter(Boolean).join(' · ') || 'Nothing needs you';
     mount(host,
@@ -660,7 +660,11 @@ export async function renderAttMyTillIssues() {
     const state = open.get(issue.key) || null;
     const soft = issue.checked === false;
     let action;
-    if (soft) {
+    if (issue.locked) {
+      // An admin closed that day in Insight: shown, but nothing more can be sent.
+      action = h('div.till-said', '🔒 This day is locked. Nothing more can be sent on it: speak to a supervisor.',
+        issue.answer?.text ? h('div.till-hint', `You said: ${issue.answer.text}`) : null);
+    } else if (soft) {
       action = noteAction(issue);
     } else if (issue.status === 'answered' && issue.proof) {
       action = [h('div.till-said', h('strong', 'You said: '), issue.answer?.text || ''), proofAsk(issue)];
@@ -717,7 +721,7 @@ export async function renderAttMyTillIssues() {
     }
     return card(`${SLOT[issue.slot]} · ${dayText(issue.day)}`, {
       cls: `till-issue till-${tone}${soft ? ' till-soft' : ''}`,
-      note: soft ? 'not checked yet' : issue.status === 'answered' ? 'with the supervisor' : 'needs your answer',
+      note: issue.locked ? 'locked' : soft ? 'not checked yet' : issue.status === 'answered' ? 'with the supervisor' : 'needs your answer',
     },
     // Who checked it, so the amount is known to be final.
     !soft && issue.checkedBy && issue.kind !== 'moved' ? h('div.till-checked', `✓ Checked by ${issue.checkedBy}${issue.checkedAt ? `, ${dayText(String(issue.checkedAt).slice(0, 10))}` : ''}`) : null,

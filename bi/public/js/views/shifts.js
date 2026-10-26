@@ -542,7 +542,8 @@ export async function renderShifts(root, { range }) {
   const exceptionsOf = (s) => data.exceptions.filter((x) => x.day === s.day && x.slot === s.slot);
   /** "7 of 9 card and MoMo found", with those whose difference was answered. */
   const cardText = (s, word = '') => `${s.cardFound} of ${s.cardLines} card and MoMo${word} found${s.cardAnswered ? `, ${s.cardAnswered} answered` : ''}`;
-  const waiting = () => data.exceptions.filter((x) => x.severity !== 'info' && !x.answer);
+  // A locked day's differences can no longer be answered: not in the Inbox.
+  const waiting = () => data.exceptions.filter((x) => x.severity !== 'info' && !x.answer && !x.locked);
 
   /** The register with what is being typed applied, so the screen moves as somebody types. */
   function numbers(s) {
@@ -1146,8 +1147,12 @@ export async function renderShifts(root, { range }) {
         h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›')));
     // Without the amounts, the drawer's story is nothing but blanks: the
     // closing report and what does not agree are what there is to see.
+    // A locked day: say so at the top; every change on it is refused.
+    const lockNote = data.lock && s.day <= data.lock.through
+      ? banner('info', `🔒 This day is locked: days up to ${shortDay(data.lock.through)} were locked by ${data.lock.by || 'an admin'}. Nothing on this shift can be changed until an admin moves the lock back (Settings › Locked dates).`)
+      : null;
     if (!may('money')) {
-      mount(v, back, head, whose, checked, report,
+      mount(v, back, head, lockNote, whose, checked, report,
         exceptionsBlock(s));
       return;
     }
@@ -1187,6 +1192,7 @@ export async function renderShifts(root, { range }) {
     mount(v,
       back,
       head,
+      lockNote,
       whose,
       checked,
       report,
@@ -1198,7 +1204,7 @@ export async function renderShifts(root, { range }) {
           h('div.sh-inputs',
             h('label.field', { for: 'sh-recount' }, 'Recount the notes and coins (optional)', recount),
             opening ? h('label.field', { for: 'sh-opening' }, 'Opening count', opening) : null),
-          h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open }, 'Save'), unsaved, said)),
+          h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open || Boolean(lockNote) }, 'Save'), unsaved, said)),
         h('section.card',
           h('div.sh-cardhead', h('div', h('h2', 'How it was paid'),
             h('p.sh-sub', 'Every payment in the shift, by the method ASSD recorded. Only cash goes in the drawer.'))),
@@ -2871,7 +2877,7 @@ export async function renderShifts(root, { range }) {
       } catch (err) { said.textContent = err.message; }
     };
     // An admin may reconcile it even with a supervisor's answer waiting: that sets the answer aside.
-    const canLink = actsOn(x) && !x.answer && (!x.proposed || admin) && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
+    const canLink = actsOn(x) && !x.locked && !x.answer && (!x.proposed || admin) && x.severity !== 'info' && !['receipts-unclear', 'receipts-carried'].includes(x.kind);
     const decide = async (ok) => {
       said.textContent = 'Saving…';
       try {
@@ -2984,8 +2990,12 @@ export async function renderShifts(root, { range }) {
             try { await reconcile([x.key, o.key], `Same ${money(Math.abs(o.amount))}: ${label(x)} and ${label(o)}`); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
           },
         }, `${label(o)} (${flowText(flowOf(o))}) · reconcile with it`))) : null,
+      // A locked day: where it stood when it was locked, and nothing to press.
+      x.locked ? h('div.sh-done.sh-lockednote',
+        h('span', `🔒 Locked${x.answer ? `. ${x.answer.link ? 'Reconciled with others' : `Answered: ${x.answer.answer}`}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by})` : ''}`
+          : x.proposed ? `. Still waiting for an admin: ${x.proposed.answer} (${x.proposed.by})` : x.moved ? '. Put on staff accounts' : x.link ? '. Reconciled with others' : ' with no answer'}. Days up to ${shortDay(data.lock.through)} were locked by ${data.lock.by || 'an admin'}.`))
       // A supervisor's answer or reconciliation: shown, and waiting for an admin.
-      x.proposed ? h('div.sh-waiting',
+      : x.proposed ? h('div.sh-waiting',
         h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
         admin ? [
           h('button.btn.primary', { type: 'button', onclick: () => decide(true) }, 'Approve'),
@@ -3060,7 +3070,7 @@ export async function renderShifts(root, { range }) {
    * one shift, not answered yet. One waiting for approval too: moving it
    * decides it instead of the answer.
    */
-  const movable = (x) => admin && Boolean(x.amount) && Boolean(x.day && x.slot) && !x.answer && !x.link && !x.moved && x.severity !== 'info';
+  const movable = (x) => admin && !x.locked && Boolean(x.amount) && Boolean(x.day && x.slot) && !x.answer && !x.link && !x.moved && x.severity !== 'info';
 
   /** Who carries a difference, how much each, and why: all of it placed, the reason required. */
   function movePanel(x) {

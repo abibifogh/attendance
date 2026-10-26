@@ -2052,3 +2052,10 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
   .rc-layout small { display: none; }
   .po-sheet .po-in.rc-dialog .po-acts { flex-wrap: wrap; }
 }
+
+/* Locked dates */
+.tl-lockform { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: .6rem 1rem; align-items: end; margin-top: .8rem; }
+.tl-lockacts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.tl-lockhist { margin-top: .8rem; font-size: .9rem; } .tl-lockhist ul { margin: .4rem 0 0; padding-left: 1.1rem; color: var(--ink-2); }
+.sh-lockednote span { color: var(--ink-2); }
+@media (max-width: 640px) { .tl-lockform { grid-template-columns: 1fr; } }

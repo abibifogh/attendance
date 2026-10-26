@@ -73,7 +73,7 @@ export async function renderMyDay() {
       '#/att-my-till', 'warn'));
   }
   // Only what has been checked: a shift not checked yet may still change.
-  const toSort = (issues?.issues ?? []).filter((i) => i.checked !== false).length;
+  const toSort = (issues?.issues ?? []).filter((i) => i.checked !== false && !i.locked).length;
   if (toSort) {
     todo.push(task('cash', 'Your till: to sort out',
       `${toSort} ${toSort === 1 ? 'thing' : 'things'} to answer`, '#/att-my-till-issues', 'bad'));

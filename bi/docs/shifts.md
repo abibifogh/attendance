@@ -167,6 +167,44 @@ they stood when it was made, and says so. It is drawn in the browser from what
 the Shifts screen already has (`public/js/recon.js`), so it needs nothing new
 on the server.
 
+### Locked dates
+
+Once the shifts up to a day are reconciled, an admin locks them under
+**Settings › Locked dates**: choose the last day to lock, say why if you
+like, and press **Lock up to this day**. From then on nobody changes those
+days, admins included. Refused, with who locked it:
+- answers and approvals, reconciliations and taking them apart;
+- corrections to cash movements and receipts read one way or the other;
+- counts typed, POs linked or marked paid from the big safe;
+- payments moved between shifts, differences put on staff accounts (or taken off);
+- checks and taking them back, a refund marked paid back;
+- closing reports reopened, moved or given another owner;
+- Nice Place readings (moved onto or off a locked day too).
+
+A locked shift says so at the top. Its differences show where they stood and
+have nothing to press, and they are not in the Inbox. Notes and to-dos are not
+changes to a shift, so they stay open.
+
+**Files loaded later** leave locked days as they were:
+- a journal's lines for them are not loaded (a night past midnight goes with
+  its shift: the lock keeps the last ASSD number of the locked day's last
+  shift);
+- the card machine's rows up to 06:00 the morning after the last locked day
+  are not loaded;
+- the bank's rows dated on locked days are not loaded.
+
+A bank credit dated after the lock still loads: it settles card payments
+taken on a locked day, it does not change the shift. Each upload says how
+many lines were left out.
+
+**In HIVE**, a locked day's items on *To sort out* say "locked" and take no
+answer, and they are not counted. A closing report for a locked day is
+refused.
+
+**Moving the lock back** (to an earlier day, or off) needs a reason. Every
+change is kept in the history under the form. Lock only days the journal
+covers in full: a night the journal stops inside is locked as far as it goes.
+
 ## What you load, and how often
 
 All three are loaded on the Shifts tab under **Load files**, by an owner. The

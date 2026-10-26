@@ -640,7 +640,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     mount(v, h('p.muted', 'Reading the settings…'));
     const d = await read(true);
     const s = d.settings;
-    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits']];
+    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits'], ['lock', 'Locked dates']];
     const save = async (body) => {
       try {
         await api('/till/settings', { method: 'POST', body });
@@ -648,7 +648,8 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         await settings(v);
       } catch (err) { alert(err.message); }
     };
-    const body = settingsTab === 'who' ? whoView(s, save)
+    const body = settingsTab === 'lock' ? await lockView(v)
+      : settingsTab === 'who' ? whoView(s, save)
       : settingsTab === 'told' ? notifyView(s, save)
         : settingsTab === 'desk' ? h('div.tl-stack', checksView(s, save), rentalsView(s, save), loginsView(s, save))
           : await limitsView(s, save, v);
@@ -772,6 +773,42 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
 
 
   /** The numbers that decide what is raised and how far back things are read. */
+  /**
+   * Locked dates: the shifts up to a day, closed. Nobody changes them, admins
+   * included, until an admin moves the lock back, saying why.
+   */
+  async function lockView(v) {
+    const lock = await api('/shifts/lock');
+    const sayDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    const day = h('input', { type: 'date', max: yesterday, value: lock.through || yesterday, 'aria-label': 'Lock up to and including' });
+    const note = h('input', { type: 'text', maxlength: '300', placeholder: lock.through ? 'Why (needed to move it back)' : 'Why (optional), e.g. October reconciled', 'aria-label': 'Why' });
+    const said = h('span.small');
+    const send = async (through) => {
+      if (through && !confirm(`Lock every shift up to ${sayDay(through)}? Nobody will be able to change them, admins included, until an admin moves the lock back. Differences still open on those days stay open.`)) return;
+      said.textContent = 'Saving…';
+      try {
+        await api('/shifts/lock', { method: 'POST', body: { through, note: note.value } });
+        await settings(v);
+      } catch (err) { said.textContent = err.message; }
+    };
+    return h('div.card',
+      h('div.sh-cardhead', h('h2', 'Locked dates'),
+        h('span.sh-sub', 'Once the shifts up to a day are reconciled, lock them. After that, nobody can change anything on them, admins included: no answers, reconciliations, counts, corrections, POs, moves to staff accounts, checks, closing reports or Nice Place readings. Files loaded later leave those days as they are. Notes and to-dos stay open.')),
+      lock.through
+        ? banner('info', `🔒 Locked up to ${sayDay(lock.through)} by ${lock.by || 'an admin'}${lock.at ? ` on ${String(lock.at).slice(0, 16)}` : ''}${lock.note ? `: ${lock.note}` : ''}.`)
+        : banner('info', 'Nothing is locked.'),
+      h('div.tl-lockform',
+        h('label.field', 'Lock up to and including', day),
+        h('label.field', 'Why', note),
+        h('div.tl-lockacts',
+          h('button.btn.primary', { type: 'button', onclick: () => send(day.value) }, lock.through ? 'Move the lock to this day' : 'Lock up to this day'),
+          lock.through ? h('button.btn', { type: 'button', onclick: () => send(null) }, 'Take the lock off') : null,
+          said)),
+      lock.history?.length ? h('details.tl-lockhist', h('summary', `History · ${lock.history.length}`),
+        h('ul', lock.history.map((x) => h('li', `${String(x.at).slice(0, 16)} · ${x.by}: ${x.through ? `locked up to ${sayDay(x.through)}` : 'took the lock off'}${x.from ? ` (was ${sayDay(x.from)})` : ''}${x.note ? ` · “${x.note}”` : ''}`)))) : null);
+  }
+
   async function limitsView(s, save, v) {
     let t = null;
     try { t = await api('/todo'); } catch { t = null; }
