@@ -201,6 +201,12 @@ export const api = {
   recInvite: (id, body) => request(`/api/rec/candidates/${id}/invite`, { method: 'POST', body }),
   recRevokeInvite: (id) => request(`/api/rec/invites/${id}/revoke`, { method: 'POST' }),
   recHire: (id, body) => request(`/api/rec/candidates/${id}/hire`, { method: 'POST', body }),
+  recOfferSetup: (id) => request(`/api/rec/candidates/${id}/offer`),
+  recOfferPreview: (id, body) => request(`/api/rec/candidates/${id}/offer/preview`, { method: 'POST', body }),
+  recMakeOffer: (id, body) => request(`/api/rec/candidates/${id}/offer`, { method: 'POST', body }),
+  recOffer: (id) => request(`/api/rec/offers/${id}`),
+  recWithdrawOffer: (id, note) => request(`/api/rec/offers/${id}/withdraw`, { method: 'POST', body: { note } }),
+  recResendOffer: (id, body) => request(`/api/rec/offers/${id}/send`, { method: 'POST', body }),
   recAddSlots: (body) => request('/api/rec/slots', { method: 'POST', body }),
   // Finding a place on the map. The key stays on the server; the browser asks
   // this app, which asks Google.

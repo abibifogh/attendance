@@ -1,4 +1,7 @@
 import { welcomeNewStarter } from './new-starter.js';
+import { acceptedOffer, carryOffer, offersFor, sendSignedCopy } from './offers.js';
+import { countersignNow } from './people.js';
+import { reauthenticate } from './correspondence.js';
 import { sealToken, tellCandidate } from '../lib/interview-mail.js';
 import { siteOrigin } from '../lib/site.js';
 import {
@@ -58,15 +61,18 @@ async function audit(ctx, action, entity, detail) {
 
 /** One line on a candidate's trail. Everything that happens to them lands here. */
 export async function trail(db, {
-  candidateId, inviteId = null, kind, fromStage = null, toStage = null,
+  candidateId, inviteId = null, offerId = null, kind, fromStage = null, toStage = null,
   detail = null, actor = null, ip = null, agent = null,
 }) {
-  await db.prepare(
-    `INSERT INTO rec_event (candidate_id, invite_id, kind, from_stage, to_stage, detail,
-                            actor, ip, agent)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
-  ).bind(candidateId, inviteId, kind, fromStage, toStage, detail, actor, ip, agent)
-    .run().catch(() => {});
+  const sql = offerId
+    ? `INSERT INTO rec_event (candidate_id, invite_id, kind, from_stage, to_stage, detail,
+                              actor, ip, agent, offer_id)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`
+    : `INSERT INTO rec_event (candidate_id, invite_id, kind, from_stage, to_stage, detail,
+                              actor, ip, agent)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)`;
+  const values = [candidateId, inviteId, kind, fromStage, toStage, detail, actor, ip, agent];
+  await db.prepare(sql).bind(...(offerId ? [...values, offerId] : values)).run().catch(() => {});
 }
 
 async function setting(db, key, fallback) {
@@ -823,6 +829,9 @@ export async function candidate(ctx, id) {
     })),
     // What is still free, so a time can be booked for somebody who rang up.
     free: offerable(slots.results ?? [], { now: at }).map(shapeSlot),
+    // Every offer made to them, newest first, with where each one stands.
+    offers: await offersFor(ctx.db, row.id),
+    canCountersign: allows('hr_manage', ctx.session.permissions),
     events: (events.results ?? []).map((e) => ({
       id: e.id,
       kind: e.kind,
@@ -2502,10 +2511,11 @@ export async function revokeInvite(ctx, id) {
  * person, and it has to match what somebody sets up on the terminal. There is
  * no version of guessing it that is safe.
  *
- * What it deliberately does NOT do is issue the contract. That is the next
- * press, on their new record, using the templates and the signing that are
- * already there — so a contract from a hire and a contract from anywhere else
- * are the same document with the same trail.
+ * What it deliberately does NOT do is write a contract of its own. Where they
+ * accepted an offer, the contract they signed with it is carried across, the
+ * same words with the same trail; otherwise a template chosen here is issued
+ * through the same door every other contract uses, so a contract from a hire
+ * and a contract from anywhere else are the same document.
  */
 export async function hire(ctx, id) {
   if (!allows('att_setup', ctx.session.permissions)) {
@@ -2519,7 +2529,23 @@ export async function hire(ctx, id) {
   const body = await readJson(ctx.request);
   const employeeNo = str(body.employeeNo, 'Employee number', { required: true, max: 40 });
   const name = str(body.name, 'Name', { max: 120, fallback: row.name });
+
+  // An offer they accepted brings its signed contract with it, and its start
+  // date and job where the dialog left them empty. Countersigning it in the
+  // same press is the property's signature, so it asks for the PIN or
+  // password first: a wrong one stops here, before anybody is on the books.
+  const offer = await acceptedOffer(ctx.db, row.id);
+  const countersign = Boolean(offer) && bool(body.countersign, false);
+  if (countersign) {
+    if (!allows('hr_manage', ctx.session.permissions)) {
+      throw forbidden('Countersigning a contract needs the staff records permission. Untick it and somebody who has it can countersign on their record.');
+    }
+    str(body.signAs, 'Signing as', { required: true, max: 120 });
+    await reauthenticate(ctx, body);
+  }
+
   const hiredOn = readDayOrNull(body.hiredOn, 'Start date')
+    || offer?.start_date
     || (await nowIn(ctx.db)).today;
 
   const role = row.role_id
@@ -2529,8 +2555,8 @@ export async function hire(ctx, id) {
   // What the email to the records team says they are, read the same way the
   // insert below reads it but without refusing anything a second time.
   const said = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
-  const jobTitle = said(body.jobTitle) ?? role?.title ?? null;
-  const department = said(body.department) ?? role?.department ?? null;
+  const jobTitle = said(body.jobTitle) ?? offer?.job_title ?? role?.title ?? null;
+  const department = said(body.department) ?? offer?.department ?? role?.department ?? null;
 
   let staff;
   try {
@@ -2539,8 +2565,8 @@ export async function hire(ctx, id) {
        VALUES (?1,?2,?3,?4,?5,?6,?7) RETURNING id`,
     ).bind(
       employeeNo, name,
-      str(body.department, 'Department', { max: 80, fallback: role?.department ?? null }),
-      str(body.jobTitle, 'Job title', { max: 80, fallback: role?.title ?? null }),
+      str(body.department, 'Department', { max: 80, fallback: department }),
+      str(body.jobTitle, 'Job title', { max: 80, fallback: jobTitle }),
       hiredOn,
       bool(body.onRota, true) ? 1 : 0,
       bool(body.onClock, true) ? 1 : 0,
@@ -2608,6 +2634,24 @@ export async function hire(ctx, id) {
   // Their time in the diary is finished with, and somebody else may want it.
   await releaseSlots(ctx.db, row.id, actorOf(ctx));
 
+  // The contract they signed with their offer, onto their record, and the
+  // property's signature on it where that was asked for. Their copy, signed
+  // by both sides, goes to them by email.
+  let carried = null;
+  if (offer) {
+    try {
+      const contract = await carryOffer(ctx, offer, staff.id);
+      carried = { contractId: contract.id, countersigned: false, copySent: false };
+      if (countersign) {
+        const copy = await countersignNow(ctx, contract, { name: body.signAs, ink: body.ink });
+        carried.countersigned = true;
+        carried.copySent = (await sendSignedCopy(ctx, { email: row.email, name, copy })).sent;
+      }
+    } catch (err) {
+      carried = { error: `The signed contract did not come across: ${err.message}` };
+    }
+  }
+
   // And their welcome, in one go: the first week started, a link for their
   // details (and contract, if one was chosen) sent to their phone and email,
   // and a login. Each is optional, and anything that could not be done is
@@ -2616,7 +2660,7 @@ export async function hire(ctx, id) {
   const welcome = await welcomeNewStarter(ctx, staff.id, {
     start: true,
     sendLink: bool(body.sendLink, true),
-    contractTemplateId: body.contractTemplateId ? Number(body.contractTemplateId) : null,
+    contractTemplateId: !offer && body.contractTemplateId ? Number(body.contractTemplateId) : null,
     values: body.values && typeof body.values === 'object' ? body.values : {},
     login: bool(body.login, true),
   }).catch((err) => ({ notDone: [`Welcome not finished: ${err.message}`] }));
@@ -2682,6 +2726,7 @@ export async function hire(ctx, id) {
     filesMoved: moved,
     claimedPunches: claimed.claimed,
     welcome,
+    contract: carried,
   });
 }
 

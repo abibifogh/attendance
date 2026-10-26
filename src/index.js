@@ -25,6 +25,7 @@ import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
 import { watchReminders } from './lib/reminders.js';
 import { watchInterviews } from './lib/interview-mail.js';
+import { watchOffers } from './routes/offers.js';
 import { watchTerminals } from './lib/terminal-watch.js';
 import { nightlyCopy } from './lib/backup.js';
 import * as birthday from './routes/birthdays.js';
@@ -44,6 +45,7 @@ import * as invite from './routes/invite.js';
 import * as joining from './routes/joining.js';
 import * as rec from './routes/recruitment.js';
 import * as hiring from './routes/hiring.js';
+import * as offers from './routes/offers.js';
 import * as places from './routes/places.js';
 import * as corr from './routes/correspondence.js';
 import * as signoff from './routes/signoff.js';
@@ -648,6 +650,12 @@ export const ROUTES = [
   ['POST', '/api/rec/candidates/:id/tell', 'rec_manage', rec.tellAbout],
   ['POST', '/api/rec/invites/:id/revoke', 'rec_manage', rec.revokeInvite],
   ['POST', '/api/rec/candidates/:id/hire', 'rec_manage', rec.hire],
+  ['GET', '/api/rec/candidates/:id/offer', 'rec_view', offers.offerSetup],
+  ['POST', '/api/rec/candidates/:id/offer/preview', 'rec_manage', offers.previewOffer],
+  ['POST', '/api/rec/candidates/:id/offer', 'rec_manage', offers.makeOffer],
+  ['GET', '/api/rec/offers/:id', 'rec_view', offers.readOffer],
+  ['POST', '/api/rec/offers/:id/withdraw', 'rec_manage', offers.withdrawOffer],
+  ['POST', '/api/rec/offers/:id/send', 'rec_manage', offers.resendOffer],
   ['POST', '/api/rec/slots', 'rec_manage', rec.addSlots],
 
   // Asking Google where somewhere is, on the browser's behalf, so the billable
@@ -674,6 +682,11 @@ export const ROUTES = [
   ['GET', '/api/c/:token/interview.ics', 'public', hiring.calendar],
   ['POST', '/api/c/:token/details', 'public', hiring.details],
   ['POST', '/api/c/:token/cv', 'public', hiring.file],
+  ['GET', '/api/o/:token', 'public', offers.offerHead],
+  ['POST', '/api/o/:token/open', 'public', offers.offerOpen],
+  ['POST', '/api/o/:token/code', 'public', offers.offerCode],
+  ['POST', '/api/o/:token/accept', 'public', offers.offerAccept],
+  ['POST', '/api/o/:token/decline', 'public', offers.offerDecline],
 
   // made for — see the note at the top of routes/invite.js.
   // The other side of an invitation to join. Public, because the person
@@ -974,6 +987,12 @@ export default {
       return servePage(env, url, request, '/hiring.html');
     }
 
+    // And a job offer, with the contract to read and sign. Its own page: the
+    // person opening it is not on the staff list yet.
+    if (url.pathname.startsWith('/o/')) {
+      return servePage(env, url, request, '/offer.html');
+    }
+
     // And somebody setting up the login that has been made for them. Its own
     // page again: it is opened by a person with no session, on a phone, from a
     // link in their email, and the only thing it can reach is the account that
@@ -1142,6 +1161,16 @@ export default {
         return { reminded: 0 };
       });
       if (interviews.reminded) console.log(`Interviews: ${interviews.reminded} reminded`);
+
+      // And a job offer about to run out, reminded once, two days before.
+      const offered = await watchOffers(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Offer reminders failed', err);
+        return { reminded: 0 };
+      });
+      if (offered.reminded) console.log(`Offers: ${offered.reminded} reminded`);
 
       // And whether the terminal is still being heard, which is the one fact
       // every other line on the attendance screens quietly depends on.

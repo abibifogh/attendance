@@ -59,7 +59,7 @@ async function setting(db, key, fallback) {
 }
 
 /** The registered name of the company that employs somebody. */
-async function employerName(db, person) {
+export async function employerName(db, person) {
   const company = Number(person?.company_id) || MAIN;
   if (company !== MAIN) {
     const row = await db.prepare('SELECT legal_name FROM company WHERE id = ? AND main = 0')
@@ -1200,26 +1200,30 @@ export async function countersignContract(ctx, id) {
   // the property's signature, and it should not be possible to make one from a
   // screen somebody walked away from.
   await reauthenticate(ctx, body);
+  await countersignNow(ctx, contract, body);
+  return json({ ok: true });
+}
 
+/**
+ * The countersignature itself, once whoever is signing has shown it is them.
+ * Shared with taking somebody on, where the contract they signed with their
+ * offer is countersigned in the same press.
+ */
+export async function countersignNow(ctx, contract, body) {
+  const name = str(body.name, 'Name', { required: true, max: 120 });
   await ctx.db.prepare(
     `UPDATE hr_contract SET employer_name = ?2, employer_ink = ?3, employer_at = datetime('now')
       WHERE id = ?1`,
-  ).bind(
-    contract.id,
-    str(body.name, 'Name', { required: true, max: 120 }),
-    str(body.ink, 'Signature', { max: 200_000 }),
-  ).run();
+  ).bind(contract.id, name, str(body.ink, 'Signature', { max: 200_000 })).run();
 
   await logEvent(ctx, {
-    staffId: contract.staff_id, contractId: contract.id, kind: 'countersigned',
-    detail: str(body.name, 'Name', { max: 120 }),
+    staffId: contract.staff_id, contractId: contract.id, kind: 'countersigned', detail: name,
   });
   await audit(ctx, 'people.contract_countersign', contract.id, null);
   // Both sides have signed: the signed copy is made now and its fingerprint
   // kept, so it can be handed out and checked.
   const { signedContract } = await import('./signed-copies.js');
-  await signedContract(ctx, contract.id).catch((err) => console.error('Signed copy failed', err));
-  return json({ ok: true });
+  return signedContract(ctx, contract.id).catch((err) => { console.error('Signed copy failed', err); return null; });
 }
 
 export async function voidContract(ctx, id) {

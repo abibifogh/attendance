@@ -4,6 +4,10 @@ import { navigate } from '../app.js';
 import { confirmAction, fmtDay, h, mount, toast, todayISO } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { field, formDialog } from './att-shared.js';
+import { OFFER_SAYS, acceptedBanner, offerCard } from './rec-offer.js';
+import { confirmItIsYou } from './letter-signing.js';
+import { proofFrom } from './letter.js';
+import { signaturePad } from '../fields.js';
 
 /**
  * One candidate, and everything anybody has to decide about them.
@@ -16,11 +20,11 @@ import { field, formDialog } from './att-shared.js';
  *
  * TAKING SOMEBODY ON IS THE ONLY DOOR TO THE BOOKS, and it is deliberately
  * heavy: an employee number typed in by hand, a start date, and the setup
- * permission. It makes the staff record, carries their phone number and their
- * CV across, and then stops — the contract goes out from their new record,
- * through the templates and the signing that already exist. A contract from a
- * hire and a contract from anywhere else have to be the same document with the
- * same trail, or the trail is worth nothing.
+ * permission. It makes the staff record and carries their phone number and
+ * their CV across. Where they accepted an offer, the contract they signed with
+ * it comes too, with its trail, and is countersigned in the same press; for
+ * somebody who signed on paper, it is taken on anyway and the contract goes out
+ * from their new record like anybody else's.
  */
 
 export async function renderRecCandidate(params) {
@@ -68,6 +72,9 @@ export async function renderRecCandidate(params) {
       interviewCard(data, reload),
       scoresCard(data, reload),
     ),
+
+    !person.staffId && (['interview', 'offer'].includes(person.stage) || (data.offers ?? []).length)
+      ? offerCard(data, reload) : null,
 
     person.stage === 'offer' && !person.staffId ? handover(data, reload) : null,
 
@@ -551,29 +558,41 @@ async function correct(data, sheet, reload) {
  */
 function handover(data, reload) {
   const person = data.candidate;
+  const offer = (data.offers ?? []).find((o) => o.state === 'accepted' && !o.contractId) ?? null;
+  const name = person.name.split(' ')[0];
+
+  // Without an accepted offer this waits, small, for somebody who signed on
+  // paper or was offered the job some other way.
+  if (!offer) {
+    return card('Take them on', { wide: true, cls: 'rec-hire is-waiting', note: 'After they accept' },
+      h('p.muted', 'Waits for the offer. You can still take them on without one, for somebody who signed on paper, '
+        + 'from “Take them on anyway”. Their contract then goes out from their record afterwards.'),
+      data.canHire
+        ? h('div', h('button.btn-sm', { onclick: () => hire(data, reload, null) }, 'Take them on anyway'))
+        : null);
+  }
 
   return card('Take them on', {
     wide: true,
     cls: 'rec-hire',
     note: data.canHire ? 'The last step' : 'Needs an administrator',
   },
-  h('p',
-    h('strong', `${person.name} has been offered the job. `),
-    'Taking them on makes their staff record, moves their CV onto it, and carries across '
-    + 'the phone number and email the pipeline already holds. Their contract goes out from '
-    + 'their record afterwards, the same way it does for anybody else.'),
-
+  acceptedBanner(offer, person.name),
+  h('div.rec-offer-facts',
+    h('div', h('b', 'Starts on'), h('span', offer.startDate ? fmtDay(offer.startDate, { withYear: true }) : '')),
+    h('div', h('b', 'Job'), h('span', offer.jobTitle ?? '')),
+    h('div', h('b', 'Department'), h('span', offer.department ?? '')),
+    h('div', h('b', 'Contract'), h('span.pill.good', `Signed by ${name}`))),
+  h('p.muted', `Taking ${name} on makes their staff record with these details, files the signed contract on it, `
+    + 'moves their CV across and starts their first week. You countersign for the property as part of it, with your PIN.'),
   h('ul.rec-next',
     h('li', 'Their employee number has to match what is set up on the terminal, exactly. '
       + 'It is the join between a punch and a person.'),
-    h('li', 'Their interview time goes back into the diary for somebody else.'),
-    h('li', 'Nothing is sent to them by this. The contract and the details form go out on '
-      + 'one link from their record.')),
+    h('li', 'Their interview time goes back into the diary for somebody else.')),
 
   data.canHire
     ? h('div.btn-row',
-      h('button.btn.btn-primary', { onclick: () => hire(data, reload) },
-        `Take ${person.name.split(' ')[0]} on`))
+      h('button.btn.btn-primary', { onclick: () => hire(data, reload, offer) }, `Take ${name} on`))
     : h('div.alert.info',
       h('span.alert-icon', 'ℹ️'),
       h('div',
@@ -584,9 +603,14 @@ function handover(data, reload) {
   );
 }
 
-async function hire(data, reload) {
+async function hire(data, reload, offer = null) {
   const person = data.candidate;
   const role = data.role;
+  // The property's side of the contract they signed, in the same press. Your
+  // own PIN or password, as for any countersignature.
+  const canSign = Boolean(offer) && data.canCountersign;
+  const me = canSign ? await api.hrSignCheck().catch(() => ({ method: 'pin' })) : null;
+  const pad = canSign ? signaturePad({ height: 120 }) : null;
 
   const done = await formDialog({
     title: `Take ${person.name} on`,
@@ -602,20 +626,20 @@ async function hire(data, reload) {
 
       field('Employee number', h('input', {
         type: 'text', name: 'employeeNo', maxlength: 40, required: true,
-        placeholder: 'HSK006', autocapitalize: 'characters',
+        placeholder: 'HSK006', autocapitalize: 'characters', value: offer?.employeeNo ?? '',
       })),
       field('Name', h('input', {
         type: 'text', name: 'name', maxlength: 120, value: person.name, required: true,
       }), 'As it should read on a payslip.'),
       h('div.grid.grid-2',
         field('Department', h('input', {
-          type: 'text', name: 'department', maxlength: 80, value: role?.department ?? '',
+          type: 'text', name: 'department', maxlength: 80, value: offer?.department ?? role?.department ?? '',
         })),
         field('Job title', h('input', {
-          type: 'text', name: 'jobTitle', maxlength: 80, value: role?.title ?? '',
+          type: 'text', name: 'jobTitle', maxlength: 80, value: offer?.jobTitle ?? role?.title ?? '',
         }))),
       field('Starts on', h('input', {
-        type: 'date', name: 'hiredOn', value: todayISO(), required: true,
+        type: 'date', name: 'hiredOn', value: offer?.startDate ?? todayISO(), required: true,
       }), 'Leave accrues from this date, and a mid-year joiner is pro-rated from it.'),
 
       h('label.tickline',
@@ -628,6 +652,21 @@ async function hire(data, reload) {
         'Untick both for somebody who is only ever paid: a director, a consultant on a '
         + 'retainer. Everything about attendance then stops applying to them.'),
 
+      offer
+        ? h('div.hire-countersign',
+          h('h3.hire-welcome-head', 'Their contract'),
+          canSign
+            ? h('div',
+              h('label.tickline',
+                h('input', { type: 'checkbox', name: 'countersign', checked: true }),
+                h('span', 'Countersign it for the property now. Their signed copy is emailed to them.')),
+              field('Signing as', h('input', { type: 'text', name: 'signAs', maxlength: 120 })),
+              pad.element,
+              confirmItIsYou(me))
+            : h('p.muted', { style: { fontSize: '.82rem' } },
+              'The contract they signed is filed on their record. Somebody with the staff records permission countersigns it there.'))
+        : null,
+
       h('h3.hire-welcome-head', 'Welcome them'),
       h('p.muted', { style: { fontSize: '.82rem', marginTop: 0 } },
         'Their first week starts as soon as they are on the books.'),
@@ -639,6 +678,9 @@ async function hire(data, reload) {
         h('span', person.email ? `Give them a login, invited at ${person.email}` : 'Give them a login (needs an email address)')),
     ),
     onSubmit: async (form) => api.recHire(person.id, {
+      ...(canSign && form.get('countersign') === 'on'
+        ? { countersign: true, signAs: form.get('signAs'), ink: pad.read(), ...(await proofFrom(form, me)) }
+        : {}),
       sendLink: form.get('sendLink') === 'on',
       login: form.get('login') === 'on',
       employeeNo: form.get('employeeNo'),
@@ -653,8 +695,8 @@ async function hire(data, reload) {
   if (!done) return;
 
   toast(`${person.name} is on the books.`, 'good');
-  await welcomeSummary(person.name, done.welcome ?? {});
-  if (confirmAction('Open their record now to issue their contract?')) {
+  await welcomeSummary(person.name, done.welcome ?? {}, done.contract);
+  if (confirmAction(done.contract?.contractId ? 'Open their record now?' : 'Open their record now to issue their contract?')) {
     navigate('person', { id: done.staffId });
     return;
   }
@@ -662,11 +704,15 @@ async function hire(data, reload) {
 }
 
 /** What the welcome did, and anything it could not, with the link to copy. */
-export function welcomeSummary(name, w) {
+export function welcomeSummary(name, w, contract = null) {
   const first = name.split(' ')[0];
   const sentTo = [w.link?.delivered?.emailed ? w.link.delivered.email : null,
     w.link?.delivered?.texted ? w.link.delivered.phone : null].filter(Boolean);
   const lines = [
+    contract?.contractId ? ['good', contract.countersigned
+      ? `Their signed contract is on their record, countersigned${contract.copySent ? ', and their copy is emailed to them' : ''}`
+      : 'Their signed contract is on their record, waiting to be countersigned'] : null,
+    contract?.error ? ['warn', contract.error] : null,
     w.started ? ['good', `${first}'s first week has started`] : null,
     w.link ? (sentTo.length
       ? ['good', `Details link sent to ${sentTo.join(' and ')}`]
@@ -938,6 +984,7 @@ const SAYS = {
   told_changed: 'New time sent',
   told_cancelled: 'Cancellation sent',
   hired: 'Taken on',
+  ...OFFER_SAYS,
 };
 
 function trailCard(data) {

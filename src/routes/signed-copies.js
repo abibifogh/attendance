@@ -19,6 +19,7 @@ const EVENT_WORDS = {
   contract_issued: 'Issued', link_created: 'Link made', link_sent: 'Link sent', link_reminded: 'Reminder sent',
   link_opened: 'Link opened', contract_viewed: 'Opened the document', code_sent: 'Code sent', signed: 'Signed',
   countersigned: 'Countersigned', declined: 'Declined', link_revoked: 'Link withdrawn',
+  offer_made: 'Offered', offer_sent: 'Offer sent', offer_reminded: 'Reminder sent', offer_opened: 'Opened the offer',
 };
 
 async function propertyOf(db) {

@@ -485,6 +485,22 @@ export const KINDS = [
     ways: ['email', 'text'],
   },
   {
+    key: 'recruitment.offer',
+    group: 'people',
+    label: 'A job offer, to the candidate',
+    who: 'The person being offered the job',
+    when: 'The offer is sent, two days before it runs out, and their signed copy',
+    ways: ['email', 'text'],
+  },
+  {
+    key: 'recruitment.offer_answer',
+    group: 'people',
+    label: 'A candidate answered an offer',
+    who: 'Whoever manages recruitment',
+    when: 'They accept and sign, or decline',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'recruitment.interview',
     group: 'people',
     label: 'Interview details, to the candidate',
