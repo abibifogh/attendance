@@ -549,7 +549,7 @@ function showContract(contract) {
     ),
     // Joined back into paragraphs for a phone. The words are the stored ones,
     // and the hash sent with the signature is of those, not of this layout.
-    h('div.card', contractFlow(h, contract.body)),
+    h('div.card', contractFlow(h, contract.body, { own: true })),
     h('div.card',
       h('h3', 'Sign here'),
       h('label.tickline',

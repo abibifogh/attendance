@@ -771,6 +771,43 @@ function contractsTab(data, model, reload) {
       return;
     }
 
+    // Their details on this contract: ticked as the template says, each with
+    // what their record holds, and changeable for this one person.
+    const known = await api.hrPersonParticulars(data.person.id).catch(() => ({ details: [], groups: [] }));
+    const picked = new Set();
+    let template0 = usable[0];
+    const particulars = h('div.issue-particulars');
+    const drawParticulars = (template, reset = true) => {
+      if (template) template0 = template;
+      if (reset) { picked.clear(); for (const k of template0?.particulars ?? []) picked.add(k); }
+      const on = known.details.filter((d) => picked.has(d.key) || d.always && picked.size);
+      const offList = known.details.filter((d) => !on.includes(d));
+      const line = (d) => h(`label.ip-row${picked.has(d.key) || (d.always && picked.size) ? '' : '.is-off'}`,
+        h('input', {
+          type: 'checkbox',
+          checked: picked.has(d.key) || (d.always && picked.size > 0),
+          disabled: d.always,
+          onchange: (e) => {
+            if (e.target.checked) { picked.add(d.key); picked.add('name'); } else picked.delete(d.key);
+            if ([...picked].every((k) => k === 'name')) picked.clear();
+            drawParticulars(null, false);
+          },
+        }),
+        h('span.ip-label', d.label),
+        d.value ? h('span.ip-value', d.value) : h('span.ip-missing', 'Not on their record yet, so it reads “To be given”.'),
+        (template0?.particulars ?? []).includes(d.key) === picked.has(d.key) || d.always ? null : h('span.pill.info', 'Changed for them'));
+      mount(particulars,
+        h('h4', { style: { margin: '.9rem 0 .2rem', fontSize: '.9rem' } }, 'Their details on this contract'),
+        h('p.muted', { style: { fontSize: '.8rem', margin: '0 0 .4rem' } }, picked.size
+          ? 'Printed in an Employee particulars box at the start, and signed with the rest. Change them for this person only.'
+          : 'This template shows none. Tick any to add an Employee particulars box at the start.'),
+        h('div.ip-list', on.map(line)),
+        offList.length
+          ? h('details.ip-more', h('summary', `Other details (${offList.length})`), h('div.ip-list', offList.map(line)))
+          : null);
+    };
+    drawParticulars(usable[0]);
+
     const asked = h('div');
     const drawAsked = (template) => {
       const uses = (template?.uses ?? []).filter((p) => p.ask);
@@ -794,13 +831,18 @@ function contractsTab(data, model, reload) {
           + 'template afterwards cannot change what this person is asked to sign.'),
         field('Template', h('select', {
           name: 'templateId',
-          onchange: (e) => drawAsked(usable.find((t) => String(t.id) === e.target.value)),
+          onchange: (e) => {
+            const chosen = usable.find((t) => String(t.id) === e.target.value);
+            drawAsked(chosen);
+            drawParticulars(chosen);
+          },
         }, usable.map((t) => h('option', { value: t.id }, t.name)))),
         field('Call it', h('input', {
           type: 'text', name: 'title', maxlength: 160,
           value: usable[0].name,
         }), 'What they will see at the top'),
         asked,
+        particulars,
         h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
           'Nothing is sent yet. Issue it, then send them a link carrying it.'),
       ),
@@ -813,6 +855,7 @@ function contractsTab(data, model, reload) {
           templateId: Number(form.get('templateId')),
           title: form.get('title'),
           values,
+          particulars: [...picked],
         });
       },
     });

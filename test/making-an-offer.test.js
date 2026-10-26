@@ -396,3 +396,13 @@ test('the offer page carries the contract’s cover, from the company making the
     await assert.rejects(offerLogo(pub(t.db), token), /No logo/);
   } finally { t.restore(); }
 });
+
+test('an offer’s contract shows only the work details from the template’s particulars', async () => {
+  const t = await setup();
+  try {
+    t.raw.prepare(`UPDATE hr_template SET particulars = '["employee_no","job_title","start_date","ssnit_number","home_address"]' WHERE id = 7`).run();
+    const { offer } = await offered(t, { terms: { employeeNo: 'T300' } });
+    assert.match(offer.body, /^EMPLOYEE PARTICULARS\nFull name: Ama Owusu\nEmployee number: T300\nJob title: Front desk agent\nStart date: \d{1,2} \w+ \d{4}\n\nCONTRACT OF EMPLOYMENT/);
+    assert.doesNotMatch(offer.body, /SSNIT|Home address/);
+  } finally { t.restore(); }
+});

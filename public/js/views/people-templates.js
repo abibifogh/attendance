@@ -32,7 +32,7 @@ const KIND_LABEL = Object.fromEntries(KINDS);
  */
 export async function renderPeopleTemplates() {
   const host = h('div');
-  const { rows, placeholders, missing = [], companies = [] } = await api.hrTemplates();
+  const { rows, placeholders, missing = [], companies = [], details = [], detailGroups = [] } = await api.hrTemplates();
   const companyName = new Map(companies.map((c) => [c.id, c.name]));
   const reload = async () => mount(host, await renderPeopleTemplates());
 
@@ -58,6 +58,8 @@ export async function renderPeopleTemplates() {
             companies.map((c) => h('option', { value: c.id, selected: existing?.company_id === c.id }, `${c.name} only`))),
           'One company’s template is only offered for the people it employs, and names it as the employer')
           : null,
+
+        particularsPicker(details, detailGroups, existing?.particulars ?? []),
 
         h('details', { open: !existing },
           h('summary', { style: { cursor: 'pointer', fontSize: '.88rem', margin: '.4rem 0' } },
@@ -88,6 +90,7 @@ export async function renderPeopleTemplates() {
                 kind: form.querySelector('[name="kind"]').value,
                 body: form.querySelector('[name="body"]').value,
                 companyId: form.querySelector('[name="companyId"]')?.value || null,
+                particulars: tickedParticulars(form),
               });
             },
           }, 'Preview as staff see it')),
@@ -110,6 +113,7 @@ export async function renderPeopleTemplates() {
           body: form.get('body'),
           active: form.get('active') !== 'false',
           ...(companies.length > 1 ? { companyId: form.get('companyId') || null } : {}),
+          particulars: [...form.keys()].filter((k) => k.startsWith('pt_')).map((k) => k.slice(3)),
         };
         return existing ? api.hrUpdateTemplate(existing.id, payload) : api.hrCreateTemplate(payload);
       },
@@ -261,7 +265,7 @@ export async function renderPeopleTemplates() {
  */
 let staffList = null;
 
-async function previewTemplate({ templateId = null, name = '', kind = 'contract', body = null, companyId = null }) {
+async function previewTemplate({ templateId = null, name = '', kind = 'contract', body = null, companyId = null, particulars }) {
   const frame = h('div.tpl-frame.is-phone');
   const who = h('select', { 'aria-label': 'Show it for' }, h('option', { value: '' }, 'A sample person'));
   // Phone and computer show the page they sign on; Cover page shows the
@@ -290,7 +294,7 @@ async function previewTemplate({ templateId = null, name = '', kind = 'contract'
     mount(frame, h('p.muted', { style: { padding: '1rem' } }, 'Filling it in…'));
     try {
       last = await api.hrPreviewTemplate({
-        templateId, name, body, kind, companyId, staffId: who.value || null,
+        templateId, name, body, kind, companyId, particulars, staffId: who.value || null,
       });
       show();
     } catch (err) {
@@ -354,6 +358,74 @@ function staffView(out, kind) {
         h('button.btn-sm.btn-wide', { ...inert, style: { marginTop: '.6rem' } }, 'I do not want to sign this'),
         h('p.fineprint', 'When you sign, the time, your network address and a fingerprint of these exact words '
           + 'are recorded, so both you and the property can show later what was agreed.'))));
+}
+
+// ---------------------------------------------------------------------------
+// Employee particulars
+// ---------------------------------------------------------------------------
+
+/** The details ticked in the editor, read straight from its boxes. */
+const tickedParticulars = (form) => [...form.querySelectorAll('input[name^="pt_"]:checked')].map((i) => i.name.slice(3));
+
+/**
+ * The opening most templates start with names the person and their address
+ * and ID in the sentence. With a particulars box above it, that says them
+ * twice; this is the same sentence pointing at the box instead.
+ */
+const OPENING = /\{\{\s*name\s*\}\}\s+of\s+\{\{\s*address\s*\}\},\s+holder\s+of\s+\{\{\s*id_type\s*\}\},\s+employee\s+number\s+\{\{\s*employee_no\s*\}\}/;
+const POINTED = 'the person named in the Employee Particulars above';
+
+/**
+ * Which of the employee's details the template prints, in a box at the
+ * start of the contract. The office can change them for one person when it
+ * issues one.
+ */
+function particularsPicker(details, groups, chosen) {
+  if (!details.length) return null;
+  const on = new Set(chosen);
+  const tidy = h('div.pt-tidy');
+  const drawTidy = (form) => {
+    const box = form?.querySelector('[name="body"]');
+    const show = box && OPENING.test(box.value) && tickedParticulars(form).length;
+    mount(tidy, show
+      ? h('p.muted', { style: { fontSize: '.82rem', margin: '.4rem 0 0' } },
+        'The opening names them, their address and ID as well. ',
+        h('button.link-button', {
+          type: 'button',
+          onclick: () => {
+            box.value = box.value.replace(OPENING, POINTED);
+            drawTidy(form);
+            toast('The opening now points at the particulars box. Save to keep it.', 'good');
+          },
+        }, 'Point it at the box instead'))
+      : null);
+  };
+  const picker = h('fieldset.pt-picker',
+    h('legend', 'Employee details on the contract'),
+    h('p.muted', { style: { fontSize: '.8rem', margin: '0 0 .5rem' } },
+      'Ticked details are filled in from their record and printed in an Employee particulars box at the start. '
+      + 'They are signed with the rest. You can change them for one person when you issue it.'),
+    h('div.pt-groups', groups.map(([key, label]) => {
+      const mine = details.filter((d) => d.group === key);
+      if (!mine.length) return null;
+      return h('div.pt-group',
+        h('h4', label),
+        mine.map((d) => h('label.tickline',
+          h('input', {
+            type: 'checkbox',
+            name: d.always ? '' : `pt_${d.key}`,
+            checked: d.always ? on.size > 0 : on.has(d.key),
+            disabled: Boolean(d.always),
+            onchange: (e) => drawTidy(e.target.form),
+          }),
+          h('span', d.label, d.always ? h('small.muted', ' (whenever any are ticked)') : null,
+            d.private ? h('span.pill.warn', { style: { marginLeft: '.4rem' } }, 'Private') : null)))
+      );
+    })),
+    tidy);
+  picker.addEventListener('input', () => drawTidy(picker.form));
+  requestAnimationFrame(() => drawTidy(picker.form));
+  return picker;
 }
 
 /** The nudge on an empty screen, which is where everybody starts. */

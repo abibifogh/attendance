@@ -31,5 +31,36 @@ export function flowParagraphs(text) {
   }).filter(Boolean);
 }
 
-/** The same, as an element, with `h` from util.js. */
-export const contractFlow = (h, text) => h('div.contract-flow', flowParagraphs(text).map((p) => h('p', p)));
+/**
+ * The employee's particulars, where a contract starts with them: the lines
+ * under EMPLOYEE PARTICULARS up to the first blank line, each "Label: value".
+ * The same reading as the server's, in src/lib/particulars.js.
+ */
+export function splitParticulars(text) {
+  const body = String(text ?? '').replace(/\r\n?/g, '\n');
+  if (!body.startsWith('EMPLOYEE PARTICULARS\n')) return { rows: [], rest: body };
+  const end = body.indexOf('\n\n');
+  const block = end === -1 ? body : body.slice(0, end);
+  const rows = block.split('\n').slice(1).map((line) => {
+    const at = line.indexOf(': ');
+    return at === -1 ? { label: line, value: '' } : { label: line.slice(0, at), value: line.slice(at + 2) };
+  });
+  return { rows, rest: end === -1 ? '' : body.slice(end + 2) };
+}
+
+/** The particulars as a box. `own` is the person reading their own, who is told what to do if one is wrong. */
+export function particularsBox(h, rows, { own = false } = {}) {
+  if (!rows?.length) return null;
+  return h('section.particulars-box',
+    h('div.pb-head', own ? 'YOUR PARTICULARS' : 'EMPLOYEE PARTICULARS'),
+    h('dl.pb-rows', ...rows.flatMap((r) => [h('dt', r.label), h('dd', r.value || '—')])),
+    own ? h('p.pb-note', 'Something wrong here? Tell the office before you sign, and they will send it again.') : null);
+}
+
+/** The same, as an element, with `h` from util.js: the particulars box first, where there is one. */
+export const contractFlow = (h, text, { own = false } = {}) => {
+  const { rows, rest } = splitParticulars(text);
+  return h('div.contract-flow',
+    particularsBox(h, rows, { own }),
+    flowParagraphs(rest).map((p) => h('p', p)));
+};

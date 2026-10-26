@@ -13,6 +13,9 @@ import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate } from '..
 import { siteOrigin } from '../lib/site.js';
 import { seal, unseal } from '../lib/seal.js';
 import {
+  blockText, detailValues, readKeys, rowsFor,
+} from '../lib/particulars.js';
+import {
   companyNames, coverOf, employerAddress, employerName, logoResponse,
 } from './people.js';
 import { trail } from './recruitment.js';
@@ -194,7 +197,20 @@ async function renderFor(ctx, candidate, input) {
   for (const asked of ASKED_PLACEHOLDERS) {
     values[asked.key] = str(given[asked.key], asked.label, { max: 300 }) || asked.fallback || '';
   }
-  const body = renderTemplate(template.body, values);
+  // The template's particulars box, with only the work details: a candidate
+  // has no record yet, and a box full of "to be given" says nothing.
+  const work = ['name', 'employee_no', 'job_title', 'department', 'start_date'];
+  const keys = readKeys(template.particulars).filter((k) => work.includes(k));
+  const rows = keys.length
+    ? rowsFor(keys, await detailValues(ctx.db, null, {
+      name: candidate.name,
+      employee_no: str(input.employeeNo, 'Employee number', { max: 40 }) || null,
+      job_title: values.job_title,
+      department: values.department || null,
+      start_date: values.start_date,
+    }))
+    : [];
+  const body = blockText(rows) + renderTemplate(template.body, values);
   return { template, values, body, hash: await hashBody(body) };
 }
 

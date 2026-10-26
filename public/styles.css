@@ -8066,3 +8066,37 @@ button.lp-row:disabled { cursor: default; }
 .tpl-frame.is-cover { background: var(--surface-2); padding: 1rem; }
 .tpl-cover { display: flex; justify-content: center; }
 .offer .cover-mast { max-width: 46rem; width: 100%; margin: 0 auto; box-sizing: border-box; }
+
+/* The employee's particulars, at the start of a contract. */
+.particulars-box { border: 1.5px solid #1f3a5f; border-radius: 4px; margin: 0 0 1rem; background: #fff; color: #1a1d23; font-family: "Times New Roman", Times, serif; overflow: hidden; }
+.pb-head { background: #1f3a5f; color: #fff; font-family: Helvetica, Arial, sans-serif; font-size: .7rem; font-weight: 700; letter-spacing: .14em; padding: .45rem .75rem; }
+.pb-rows { display: grid; grid-template-columns: minmax(8rem, 13rem) minmax(0, 1fr); margin: 0; }
+.pb-rows dt, .pb-rows dd { margin: 0; padding: .45rem .75rem; border-top: 1px solid #d6dae1; }
+.pb-rows dt:first-of-type, .pb-rows dd:first-of-type { border-top: 0; }
+.pb-rows dt { font-family: Helvetica, Arial, sans-serif; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: #5a6170; padding-top: .6rem; }
+.pb-rows dd { font-size: .95rem; overflow-wrap: anywhere; }
+.pb-note { margin: 0; padding: .55rem .75rem; border-top: 1px solid #d6dae1; font-family: inherit; font-size: .8rem; color: #5a6170; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+/* Stacked wherever the box itself is narrow, a phone or the phone preview. */
+.particulars-box { container-type: inline-size; }
+@container (max-width: 440px) {
+  .pb-rows { grid-template-columns: minmax(0, 1fr); }
+  .pb-rows dt { border-top: 1px solid #d6dae1; padding-bottom: 0; }
+  .pb-rows dd { border-top: 0; padding-top: .15rem; }
+  .pb-rows dt:first-of-type { border-top: 0; }
+}
+.ip-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.ip-row { display: grid; grid-template-columns: 22px minmax(8rem, 12rem) minmax(0, 1fr) auto; gap: .5rem; align-items: center; padding: .45rem .7rem; border-top: 1px solid var(--border); font-size: .88rem; }
+.ip-row:first-child { border-top: 0; }
+.ip-row input { margin: 0; width: 16px; height: 16px; }
+.ip-row.is-off { background: var(--surface-2); }
+.ip-row.is-off .ip-label, .ip-row.is-off .ip-value { color: var(--text-dim); }
+.ip-value { overflow-wrap: anywhere; }
+.ip-missing { color: var(--warn); font-size: .82rem; }
+.ip-more { margin-top: .5rem; }
+.ip-more summary { cursor: pointer; font-size: .85rem; margin-bottom: .4rem; }
+@media (max-width: 560px) { .ip-row { grid-template-columns: 22px minmax(0, 1fr); } .ip-row .ip-value, .ip-row .ip-missing, .ip-row .pill { grid-column: 2; } }
+.pt-picker { border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem .8rem; margin: .6rem 0; }
+.pt-picker legend { font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); padding: 0 .3rem; }
+.pt-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .6rem 1rem; }
+.pt-group h4 { margin: 0 0 .2rem; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.pt-group .tickline { padding-block: .15rem; font-size: .88rem; }

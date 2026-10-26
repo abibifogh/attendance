@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 import { PAGE, faceOf, textOf } from './paper.js';
+import { splitParticulars } from './particulars.js';
 
 /**
  * The finished, signed copy of a document, as a PDF.
@@ -305,7 +306,26 @@ export async function contractPdf({ contract, events = [], property, reference, 
     y += 22;
   }
   y += 8;
-  for (const l of wrap(contract.body, f.serif, 10.5, A4[0] - 2 * M)) {
+  // The employee's particulars, where the contract has them, as a box.
+  const { rows: particulars, rest } = splitParticulars(contract.body);
+  if (particulars.length) {
+    const w = A4[0] - 2 * M;
+    const labelW = 150;
+    page.drawRectangle({ x: M, y: A4[1] - y - 18, width: w, height: 18, color: FRAME });
+    page.drawText('EMPLOYEE PARTICULARS', { x: M + 9, y: A4[1] - y - 12.5, size: 8, font: f.bold, color: rgb(1, 1, 1) });
+    let ry = y + 18;
+    for (const [i, row] of particulars.entries()) {
+      const lines = wrap(row.value || '-', f.serif, 10.5, w - labelW - 18);
+      const hgt = 9 + lines.length * 13;
+      if (i) page.drawLine({ start: { x: M, y: A4[1] - ry }, end: { x: M + w, y: A4[1] - ry }, thickness: 0.5, color: RULE });
+      page.drawText(plain(row.label).toUpperCase(), { x: M + 9, y: A4[1] - ry - 13, size: 7, font: f.regular, color: DIM });
+      lines.forEach((l, j) => page.drawText(l, { x: M + labelW, y: A4[1] - ry - 13.5 - j * 13, size: 10.5, font: f.serif, color: INK }));
+      ry += hgt;
+    }
+    page.drawRectangle({ x: M, y: A4[1] - ry, width: w, height: ry - y, borderColor: FRAME, borderWidth: 1 });
+    y = ry + 22;
+  }
+  for (const l of wrap(particulars.length ? rest : contract.body, f.serif, 10.5, A4[0] - 2 * M)) {
     if (y > A4[1] - 70) { page = doc.addPage(A4); y = 64; }
     if (l) page.drawText(l, { x: M, y: A4[1] - y, size: 10.5, font: f.serif, color: INK });
     y += 14.5;

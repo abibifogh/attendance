@@ -579,6 +579,7 @@ export const api = {
   hrPreviewTemplate: (body) => request('/api/hr/templates/preview', { method: 'POST', body }),
 
   hrIssueContract: (id, body) => request(`/api/hr/people/${id}/contracts`, { method: 'POST', body }),
+  hrPersonParticulars: (id) => request(`/api/hr/people/${id}/particulars`),
   hrFileContract: (id, body) => request(`/api/hr/people/${id}/contracts/file`, { method: 'POST', body }),
   hrLoadStandardTemplates: () => request('/api/hr/templates/standard', { method: 'POST' }),
   hrContract: (id) => request(`/api/hr/contracts/${id}`),

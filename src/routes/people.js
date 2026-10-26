@@ -14,6 +14,9 @@ import {
 } from '../lib/ghana-templates.js';
 import { asBytes } from '../lib/files.js';
 import { MAIN } from '../lib/companies.js';
+import {
+  DETAILS, GROUPS, blockText, detailValues, readKeys, rowsFor,
+} from '../lib/particulars.js';
 import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 import { reauthenticate } from './correspondence.js';
@@ -1005,8 +1008,13 @@ export async function listTemplates(ctx) {
   const held = new Set((rows.results ?? []).map((t) => t.code).filter(Boolean));
 
   return json({
-    rows: (rows.results ?? []).map((t) => ({ ...t, company_id: Number(t.company_id) || null, uses: placeholdersIn(t.body) })),
+    rows: (rows.results ?? []).map((t) => ({
+      ...t, company_id: Number(t.company_id) || null, uses: placeholdersIn(t.body), particulars: readKeys(t.particulars),
+    })),
     placeholders: PLACEHOLDERS,
+    // The employee details a template can show, for its tick list.
+    details: DETAILS,
+    detailGroups: GROUPS,
     companies: await companyNames(ctx.db),
     // What the standard set would add that is not here. A property that loaded
     // the set a year ago has no way of knowing a new one has been written
@@ -1029,21 +1037,26 @@ export async function saveTemplate(ctx, id) {
     throw badRequest('That company does not exist.');
   }
 
+  // Which employee details it shows; empty is none.
+  const particulars = body.particulars === undefined ? undefined : readKeys(body.particulars);
+  const keep = id && (body.companyId === undefined || particulars === undefined)
+    ? await ctx.db.prepare('SELECT company_id, particulars FROM hr_template WHERE id = ?').bind(Number(id)).first()
+    : null;
+
   if (id) {
     await ctx.db.prepare(
-      `UPDATE hr_template SET name = ?2, body = ?3, kind = ?4, active = ?5, company_id = ?6,
+      `UPDATE hr_template SET name = ?2, body = ?3, kind = ?4, active = ?5, company_id = ?6, particulars = ?7,
               updated_at = datetime('now') WHERE id = ?1`,
     ).bind(Number(id), name, text, kind, bool(body.active, true) ? 1 : 0,
-      body.companyId === undefined
-        ? (await ctx.db.prepare('SELECT company_id FROM hr_template WHERE id = ?').bind(Number(id)).first())?.company_id ?? null
-        : companyId).run();
+      body.companyId === undefined ? keep?.company_id ?? null : companyId,
+      particulars === undefined ? keep?.particulars ?? null : (particulars.length ? JSON.stringify(particulars) : null)).run();
     await audit(ctx, 'people.template_save', id, { name, companyId });
     return json({ ok: true, id: Number(id) });
   }
 
   const created = await ctx.db.prepare(
-    'INSERT INTO hr_template (name, body, kind, created_by, company_id) VALUES (?1,?2,?3,?4,?5) RETURNING id',
-  ).bind(name, text, kind, actorOf(ctx), companyId).first();
+    'INSERT INTO hr_template (name, body, kind, created_by, company_id, particulars) VALUES (?1,?2,?3,?4,?5,?6) RETURNING id',
+  ).bind(name, text, kind, actorOf(ctx), companyId, particulars?.length ? JSON.stringify(particulars) : null).first();
 
   await audit(ctx, 'people.template_new', created.id, { name });
   return json({ ok: true, id: created.id });
@@ -1147,17 +1160,23 @@ export async function issueContractFor(ctx, person, body = {}) {
   const source = template?.body ?? str(body.body, 'The words', { required: true, max: 60_000 });
   const values = await contractValues(ctx, person, body);
 
-  const rendered = renderTemplate(source, values);
+  // The employee's particulars, as the template says unless the office
+  // changed them for this person, written into the words ahead of them so
+  // they are signed with everything else.
+  const keys = body.particulars !== undefined ? readKeys(body.particulars) : readKeys(template?.particulars);
+  const rows = keys.length ? rowsFor(keys, await detailValues(ctx.db, person)) : [];
+  const rendered = blockText(rows) + renderTemplate(source, values);
   const hash = await hashBody(rendered);
 
   const created = await ctx.db.prepare(
     `INSERT INTO hr_contract (staff_id, template_id, title, body, body_hash, status, fields,
-                              satisfies, issued_by, issued_at)
-     VALUES (?1,?2,?3,?4,?5,'draft',?6,?7,?8,datetime('now')) RETURNING id`,
+                              satisfies, issued_by, issued_at, particulars)
+     VALUES (?1,?2,?3,?4,?5,'draft',?6,?7,?8,datetime('now'),?9) RETURNING id`,
   ).bind(
     staffId, template?.id ?? null,
     str(body.title, 'Title', { max: 160, fallback: template?.name || 'Contract of employment' }),
     rendered, hash, JSON.stringify(values), template?.satisfies ?? null, actorOf(ctx),
+    rows.length ? JSON.stringify(rows.map((r) => ({ key: r.key, label: r.label, given: r.value != null }))) : null,
   ).first();
 
   await logEvent(ctx, { staffId, contractId: created.id, kind: 'contract_issued', detail: hash.slice(0, 16) });
@@ -1241,9 +1260,21 @@ export async function previewTemplate(ctx) {
     if (!String(given[asked.key] ?? '').trim() && !asked.fallback) values[asked.key] = `[${asked.label}: typed in when it is issued]`;
   }
   const title = str(body.name, 'Name', { max: 160 }) || template?.name || 'Untitled';
+  // The particulars box, as the editor's ticks (or the saved template) say,
+  // for the real person or a sample one whose personal details are marked.
+  const keys = body.particulars !== undefined ? readKeys(body.particulars) : readKeys(template?.particulars);
+  const known = person
+    ? await detailValues(ctx.db, person)
+    : {
+      ...Object.fromEntries(DETAILS.map((d) => [d.key, `[${d.label}]`])),
+      ...await detailValues(ctx.db, null, {
+        name: values.name, employee_no: values.employee_no, job_title: values.job_title,
+        department: values.department, start_date: values.start_date,
+      }).then((v) => Object.fromEntries(['name', 'employee_no', 'job_title', 'department', 'start_date'].map((k) => [k, v[k]]))),
+    };
   return json({
     title,
-    body: renderTemplate(source, values),
+    body: blockText(rowsFor(keys, known)) + renderTemplate(source, values),
     person: person ? { id: person.id, name: person.name } : null,
     property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
     // Its cover page, for the person it is shown for.
@@ -1381,6 +1412,21 @@ export async function coverOf(db, {
     issued: String(issued ?? '').slice(0, 10) || null,
     employeeNo,
   };
+}
+
+/**
+ * Every detail a contract could show for this person, with its value from
+ * their record, for the Issue dialog's tick list. Read only by whoever may
+ * issue contracts, which is who sees their full record anyway.
+ */
+export async function personParticulars(ctx, id) {
+  const person = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(Number(id)).first();
+  if (!person) throw notFound('No such member of staff.');
+  const values = await detailValues(ctx.db, person);
+  return json({
+    groups: GROUPS,
+    details: DETAILS.map((d) => ({ ...d, value: values[d.key] ?? null })),
+  });
 }
 
 /** A company's logo as a response, for a page reached by a link rather than a login. */

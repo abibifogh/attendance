@@ -8,6 +8,7 @@ import { can, navigate } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { printButton } from '../print.js';
 import { contractCover } from './contract-cover.js';
+import { particularsBox, splitParticulars } from '../contract-flow.js';
 import { signaturePad } from '../fields.js';
 
 /**
@@ -185,7 +186,13 @@ export async function renderContract(params) {
               }), '.')
               : null),
         )
-        : h('div.contract-body', contract.body),
+        : (() => {
+          // The employee's particulars as a box, then the words.
+          const { rows, rest } = splitParticulars(contract.body);
+          return rows.length
+            ? h('div', particularsBox(h, rows), h('div.contract-body', rest))
+            : h('div.contract-body', contract.body);
+        })(),
 
       contract.origin === 'paper'
         ? h('p.muted', { style: { marginTop: '.8rem' } },

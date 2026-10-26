@@ -593,6 +593,7 @@ export const ROUTES = [
   ['POST', '/api/hr/people/:id/contracts/file', 'hr_manage', people.fileSignedContract],
   ['POST', '/api/hr/templates/standard', 'hr_manage', people.loadStandardTemplates],
   ['POST', '/api/hr/templates/preview', 'hr_manage', people.previewTemplate],
+  ['GET', '/api/hr/people/:id/particulars', 'hr_manage', people.personParticulars],
   ['GET', '/api/hr/contracts/:id', 'hr_view', people.getContract],
   ['POST', '/api/hr/contracts/:id/countersign', 'hr_manage', people.countersignContract],
   ['POST', '/api/hr/contracts/:id/void', 'hr_manage', people.voidContract],
