@@ -1223,7 +1223,7 @@ export async function previewTemplate(ctx) {
   // contract names the employer it would.
   const companyId = Number(body.companyId ?? template?.company_id) || null;
   const values = await contractValues(ctx, person ?? { ...SAMPLE_PERSON, company_id: companyId }, { values: body.values ?? {} });
-  if (!person) Object.assign(values, SAMPLE_VALUES);
+  if (!person) Object.assign(values, sampleValues());
   const given = body.values && typeof body.values === 'object' ? body.values : {};
   for (const asked of ASKED_PLACEHOLDERS) {
     if (!String(given[asked.key] ?? '').trim() && !asked.fallback) values[asked.key] = `[${asked.label}: typed in when it is issued]`;
@@ -1238,11 +1238,13 @@ export async function previewTemplate(ctx) {
 
 /** Somebody who does not exist, for previewing a template without a real person behind it. */
 const SAMPLE_PERSON = { id: 0, name: 'Ama Sample', employee_no: 'SAMPLE-01', job_title: 'Front desk agent', department: 'Front office' };
-const SAMPLE_VALUES = {
+// Worked out when asked rather than when the file loads: a Worker's clock
+// reads zero until a request is being handled.
+const sampleValues = () => ({
   address: '[their home address]',
   id_type: '[their ID document]',
   start_date: new Date().toISOString().slice(0, 10),
-};
+});
 
 export async function contractWithTrail(db, id) {
   const contract = await db.prepare(

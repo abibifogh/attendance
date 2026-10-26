@@ -7996,5 +7996,5 @@ button.lp-row:disabled { cursor: default; }
 .tpl-frame { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; height: 65vh; overflow-y: auto; margin: 0 auto; width: 100%; box-sizing: border-box; transition: width .2s; }
 .tpl-frame.is-phone { width: 390px; max-width: 100%; border-radius: 28px; border-width: 8px; border-color: #1b1f27; }
 .tpl-frame .invite { padding-bottom: 1.5rem; }
-.tpl-frame.is-phone .contract-text { font-size: .86rem; }
+.tpl-frame.is-phone .contract-flow { font-size: .88rem; }
 .tpl-preview-who span { white-space: nowrap; }

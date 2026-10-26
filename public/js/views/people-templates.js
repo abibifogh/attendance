@@ -3,6 +3,7 @@ import { h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { signaturePad } from '../fields.js';
+import { contractFlow } from '../contract-flow.js';
 
 /**
  * What each kind is for, in the words the screen uses.
@@ -322,7 +323,7 @@ function staffView(out, kind) {
       h('div.card',
         h('h2', out.title),
         h('p.muted', kind === 'correspondence' ? 'A letter.' : 'Read all of it. Scroll to the bottom to sign.')),
-      h('div.card', h('pre.contract-text', out.body)),
+      h('div.card', contractFlow(h, out.body)),
       kind === 'correspondence' ? null : h('div.card',
         h('h3', 'Sign here'),
         h('label.tickline',

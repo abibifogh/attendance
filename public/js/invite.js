@@ -1,5 +1,6 @@
 import { h, mount, toast } from './util.js';
 import { control, listEditor, signaturePad } from './fields.js';
+import { contractFlow } from './contract-flow.js';
 
 /**
  * The page somebody opens on their phone.
@@ -542,7 +543,9 @@ function showContract(contract) {
       h('h2', contract.title),
       h('p.muted', 'Read all of it. Scroll to the bottom to sign.'),
     ),
-    h('div.card', h('pre.contract-text', contract.body)),
+    // Joined back into paragraphs for a phone. The words are the stored ones,
+    // and the hash sent with the signature is of those, not of this layout.
+    h('div.card', contractFlow(h, contract.body)),
     h('div.card',
       h('h3', 'Sign here'),
       h('label.tickline',

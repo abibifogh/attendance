@@ -1,5 +1,6 @@
 import { h, mount, toast } from './util.js';
 import { signaturePad } from './fields.js';
+import { contractFlow } from './contract-flow.js';
 
 /**
  * A job offer, opened on the candidate's phone.
@@ -43,29 +44,7 @@ async function call(path, body = null, method = body ? 'POST' : 'GET') {
   return data;
 }
 
-/**
- * The contract's words, set for a phone.
- *
- * Templates are written with hard line breaks at eighty characters, which on
- * a narrow screen wrap twice and read as ragged half-lines. For reading, the
- * lines of a paragraph are joined again, except where a line starts a new
- * clause. The words themselves are untouched: what was signed, and its
- * fingerprint, are the stored text exactly.
- */
-const CLAUSE = /^\s*(\d+(\.\d+)*\.?|\([a-z0-9]+\)|[a-z]\)|[-•*])\s/i;
-function contractText(text) {
-  return h('div.contract-flow', String(text ?? '').split(/\n\s*\n/).map((para) => {
-    const lines = para.split('\n');
-    const out = [];
-    for (const line of lines) {
-      const before = out.length ? out[out.length - 1].trim() : '';
-      const alone = (text) => /^[A-Z0-9 ,.'"&()\-]{3,}$/.test(text) || /:$/.test(text) || /^[._\s-]{4,}$/.test(text);
-      if (!out.length || CLAUSE.test(line) || alone(before) || /^[._\s-]{4,}$/.test(line.trim())) out.push(line.trim());
-      else out[out.length - 1] += ` ${line.trim()}`;
-    }
-    return h('p', out.join('\n'));
-  }));
-}
+const contractText = (text) => contractFlow(h, text);
 
 function shell(property, subtitle, ...body) {
   return h('div.sv2.offer',
