@@ -8,7 +8,8 @@ import { advanceDetail, advanceStatus, advanceOpen, advanceWhen, elsewhereCard }
 import { state } from '../app.js';
 import { npReviewBox } from './np-review.js';
 import { proofBox, sendCard } from './proof.js';
-import { COLUMNS as DIFF_COLUMNS, monthLines, byPerson, toCsv } from '../difftable.js';
+import { COLUMNS as DIFF_COLUMNS, monthLines, byPerson, toCsv, columnOf, signedAmount } from '../difftable.js';
+import { LAYOUTS as RECON_LAYOUTS, reportHtml, fileName as reconFile } from '../recon.js';
 
 /**
  * Shifts: the front desk's control sheet, done from the source records.
@@ -1141,6 +1142,7 @@ export async function renderShifts(root, { range }) {
               s.sessions ? h('span.sh-chip.none', { title: 'ASSD hand-overs inside this shift, in order. Their counts, sales and movements add up as one shift.' },
                 `${s.sessions.length} ASSD sessions: ${s.sessions.map((x) => nameOf(x.user)).join(' → ')}`) : null))),
         h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
+        may('money') ? h('button.btn.sh-reconbtn', { type: 'button', onclick: () => openRecon(s) }, '⤓ Reconciliation report') : null,
         h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›')));
     // Without the amounts, the drawer's story is nothing but blanks: the
     // closing report and what does not agree are what there is to see.
@@ -1710,6 +1712,163 @@ export async function renderShifts(root, { range }) {
           line('At the end', x.end ?? null, assdEnd, assdEnd != null && s.stockEndSeq ? `ASSD: count ${s.stockEndSeq}` : ''),
           line(`${x.label || 'Items'} out, net`, hiveNet, assdNet, `HIVE: start less end. ASSD: ${g.out} deposit${g.out === 1 ? '' : 's'} taken, ${g.back} given back`)))),
       x.gap != null && x.gap !== 0 ? h('p.small', `By the closing report's own count, ${Math.abs(x.gap)} ${x.unit || 'item'}${Math.abs(x.gap) === 1 ? '' : 's'} ${x.gap > 0 ? 'more' : 'fewer'} at the end than its start less the deposits in ASSD.`) : null);
+  }
+
+  // ------------------------------------------------ reconciliation report --
+
+  /**
+   * The shift's figures for its reconciliation report (see recon.js): the
+   * same numbers this screen shows, the drawer, card and MoMo, expenses, the
+   * desk's stock, the laundry, and every difference with where it stands.
+   */
+  function reconOf(s) {
+    const r = s.register || {};
+    const n = numbers(s);
+    const xs = exceptionsOf(s);
+    const stateOf = (x) => (x.proposed || x.pending ? 'approve' : x.answer ? 'done' : x.severity === 'info' ? 'info' : 'answer');
+    const saidOf = (x) => (x.proposed ? `Waiting for an admin: “${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''}” (${x.proposed.by})`
+      : x.answer ? `${x.answer.link ? 'Reconciled with others' : x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by})` : ''}` : '');
+    const text = (x) => { const t = describe(x); return typeof t === 'string' ? t : (t?.textContent || ''); };
+    const ref = (seq) => (seq ? `ASSD ${seq}` : '');
+    const shown = xs.filter((x) => x.severity !== 'info' || x.kind === 'keyed-no-cash');
+    const diffs = shown.map((x) => ({
+      kind: x.kind, title: (KIND[x.kind] || [x.kind])[0], amount: x.amount ?? null, ref: ref(x.seq), text: text(x), state: stateOf(x), said: saidOf(x),
+    }));
+
+    // The drawer, step by step, as it is drawn above.
+    let drawer = null;
+    if (r.expected != null || r.opening != null) {
+      const kinds = {};
+      for (const c of s.cashLines || []) {
+        const k = { Reservation: 'Stays (rooms and beds)', 'Cash Register': 'At the till (water, items, services)', 'Items Correction': 'Item corrections' }[c.kind] || c.kind;
+        kinds[k] = (kinds[k] || 0) + c.amount;
+      }
+      const rc = r.receipts || {};
+      const steps = [{ kind: 'start', label: 'Opening count', amount: r.opening ?? 0, ref: r.openingFrom === 'typed' ? 'typed' : r.openingFrom === 'carried' ? 'last shift’s closing' : ref(s.opening?.seq) }];
+      steps.push({ kind: 'in', label: 'Cash taken, as ASSD has it', amount: s.cash, ref: `${(s.cashLines || []).length} lines`, parts: Object.keys(kinds).length > 1 ? Object.entries(kinds).map(([label, amount]) => ({ label, amount })) : [] });
+      if (r.putBack) steps.push({ kind: 'in', label: 'Put back', amount: r.putBack, ref: 'a movement the other way' });
+      if (rc.reconciled?.amount) steps.push({ kind: 'in', label: 'Cash for receipts swapped', amount: rc.reconciled.amount, ref: rc.reconciled.by ? `by ${rc.reconciled.by}` : '' });
+      if (n.expenses) steps.push({ kind: 'out', label: 'Expenses', amount: n.expenses, ref: (s.moves || []).filter((m) => m.direct > 0).map((m) => ref(m.seq)).join(', ') || 'receipts in the counts' });
+      if (n.toSafe) steps.push({ kind: 'out', label: 'Cash to the safe', amount: n.toSafe });
+      if (n.unlabelled) steps.push({ kind: 'out', label: 'Moved out with no label', amount: n.unlabelled });
+      const settled = n.variance && !n.recounted ? drawerSettled(s) : null;
+      const still = xs.find((x) => x.kind === 'keyed-no-cash');
+      const gap = r.handoverGap;
+      drawer = {
+        steps, expected: r.expected ?? null, counted: n.closing ?? null, countedRef: n.recounted ? 'a recount' : ref(s.closing?.seq), recounted: n.recounted,
+        variance: n.variance, settled: settled ? settledWords(settled).replace(/^./, (c) => c.toUpperCase()) : null,
+        handover: r.opening != null && previousOf(s) ? { from: nameOf(gap?.from || previousOf(s).user), before: gap ? (r.opening - gap.amount) : r.opening, first: r.opening, gap: gap ? gap.amount : 0 } : null,
+        notes: [
+          rc.open || rc.close ? `Receipts in the counts: ${money(rc.open || 0)} at the start, ${money(rc.close || 0)} at the end. They are expenses, not cash.` : '',
+          still ? `${money(Math.abs(still.amount))} of the cash taken was keyed while the drawer’s counts did not move: see “${KIND['keyed-no-cash'][0]}” below.` : '',
+          r.corrected && r.assdVariance !== n.variance ? `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.` : '',
+        ].filter(Boolean),
+      };
+    }
+
+    // Card and MoMo: ASSD's lines against what was taken.
+    let card = null;
+    const lines = s.lines || [];
+    if (lines.length || xs.some((x) => ['card', 'bank'].includes(columnOf(x)) && x.severity !== 'info')) {
+      const seen = new Set();
+      let found = 0;
+      let foundCount = 0;
+      const take = (e) => { if (!e || seen.has(e.id || `${e.at}|${e.amount}`)) return; seen.add(e.id || `${e.at}|${e.amount}`); found += e.amount; foundCount += 1; };
+      for (const l of lines) for (const e of l.events || []) take(e);
+      for (const x of xs.filter((o) => ['not-recorded', 'double-charge', 'laundry-card'].includes(o.kind))) take(x.event);
+      const matched = lines.filter((l) => (l.events || []).length && !l.exception);
+      const items = shown.filter((x) => ['card', 'bank'].includes(columnOf(x))).map((x) => {
+        const v = signedAmount(x) ?? 0;
+        const sides = x.paid != null && x.assd != null ? [x.assd, x.paid] : v > 0 ? [x.amount < 0 ? x.amount : 0, x.amount < 0 ? 0 : Math.abs(x.amount)] : [Math.abs(x.amount ?? 0), 0];
+        return { label: (KIND[x.kind] || [x.kind])[0], ref: ref(x.seq), amount: v, assd: sides[0], found: sides[1], state: stateOf(x), text: text(x), said: saidOf(x) };
+      });
+      const assd = lines.reduce((t, l) => t + (l.amount || 0), 0);
+      card = { assd, assdLines: lines.length, found, foundCount, difference: found - assd, items, matched: matched.length, matchedAmount: matched.reduce((t, l) => t + l.amount, 0) };
+    }
+
+    // Expenses against their POs.
+    const exp = s.expense || {};
+    const orders = (exp.odoo?.orders || []).map((o) => ({ name: o.name, vendor: o.vendor || '', total: o.total, ok: o.state === 'purchase' || o.state === 'done' }));
+    const expenses = n.expenses || orders.length ? {
+      amount: n.expenses || 0, ref: (s.moves || []).filter((m) => m.direct > 0).map((m) => ref(m.seq)).join(', '),
+      orders, poTotal: exp.odooTotal ?? null, difference: exp.odooTotal == null ? null : exp.odooTotal - (n.expenses || 0),
+    } : null;
+
+    // What the desk counts: water, padlocks.
+    const start = s.stockStart || {};
+    const end = s.stockEndSeq && s.stockEndSeq !== s.stockStartSeq ? s.stockEnd || {} : {};
+    const counted = new Set(['405', '718', ...shifts.flatMap((o) => [...Object.keys(o.stockStart || {}), ...Object.keys(o.stockEnd || {})])]);
+    const codes = [...new Set([...Object.keys(start), ...Object.keys(s.stockEnd || {}), ...Object.keys(s.goods || {}).filter((c) => counted.has(c))])].sort();
+    const goods = codes.map((code) => {
+      const g = s.goods?.[code] || { out: 0, back: 0 };
+      const should = start[code] == null ? null : start[code] - g.out + g.back;
+      const atEnd = end[code] ?? null;
+      return { name: s.stockNames?.[code] || s.goods?.[code]?.name || { 405: 'Padlocks', 718: 'Water' }[code] || `Article ${code}`,
+        start: start[code] ?? null, out: g.out, back: g.back, should, end: atEnd, diff: should == null || atEnd == null ? null : atEnd - should };
+    });
+    const laundry = s.laundry || s.laundrySystem ? {
+      assd: s.laundry || 0, system: s.laundrySystem ? s.laundrySystem.collected : null, difference: s.laundrySystem ? s.laundrySystem.collected - (s.laundry || 0) : null,
+    } : null;
+
+    const now = new Date();
+    return {
+      who: nameOf(s.user), day: s.day, when: dayText(s.day, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
+      slot: SLOT[s.slot].label, hours: SLOT[s.slot].hours, seqs: s.startSeq ? `ASSD ${s.startSeq} to ${s.endSeq}` : '', open: Boolean(s.open),
+      made: `${now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}, ${now.toTimeString().slice(0, 5)}`,
+      drawer, card, expenses, goods, laundry, diffs,
+    };
+  }
+
+  /** The shift before this one on screen: whose closing count this one's first is held against. */
+  const previousOf = (s) => { const i = shifts.indexOf(s); return i > 0 ? shifts[i - 1] : null; };
+
+  /** Choose a layout, see it, and print it (or save it as a PDF) or download it. */
+  function openRecon(s) {
+    const m = reconOf(s);
+    let layout = (() => { try { return localStorage.getItem('reconLayout') || 'statement'; } catch { return 'statement'; } })();
+    if (!RECON_LAYOUTS.some((x) => x.id === layout)) layout = 'statement';
+    const inner = h('div.po-in.rc-dialog', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Reconciliation report' });
+    const sheet = h('div.po-sheet', inner);
+    const close = () => { sheet.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    sheet.addEventListener('click', (e) => { if (e.target === sheet) close(); });
+    document.addEventListener('keydown', onKey);
+    document.body.append(sheet);
+    const frame = h('iframe.rc-preview', { title: 'The report', sandbox: 'allow-same-origin allow-modals' });
+    const said = h('p.small');
+    const picks = h('div.rc-layouts', { role: 'radiogroup', 'aria-label': 'Layout' });
+    const draw = () => {
+      frame.srcdoc = reportHtml(m, layout);
+      mount(picks, RECON_LAYOUTS.map((x) => h(`button.rc-layout${x.id === layout ? '.on' : ''}`, {
+        type: 'button', role: 'radio', 'aria-checked': String(x.id === layout),
+        onclick: () => { layout = x.id; try { localStorage.setItem('reconLayout', layout); } catch { /* not kept */ } draw(); },
+      }, h('b', x.name), h('small', x.about))));
+    };
+    const print = () => {
+      // In a window of its own, so it prints as the page it is (and "Save as PDF" makes the file).
+      const w = window.open('', '_blank');
+      if (!w) { frame.contentWindow?.print(); return; }
+      w.document.open(); w.document.write(reportHtml(m, layout)); w.document.close();
+      w.addEventListener('load', () => { w.focus(); w.print(); });
+      setTimeout(() => { try { w.focus(); w.print(); } catch { /* already printing */ } }, 600);
+    };
+    const download = () => {
+      const url = URL.createObjectURL(new Blob([reportHtml(m, layout)], { type: 'text/html' }));
+      const a = h('a', { href: url, download: reconFile(m, layout) });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      said.textContent = `Downloaded as ${reconFile(m, layout)}.`;
+    };
+    mount(inner,
+      h('h2', 'Reconciliation report'),
+      h('p.sh-sub', `${nameOf(s.user)} · ${SLOT[s.slot].label} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}. Choose a layout; the report below changes with it.`),
+      picks, frame,
+      h('div.po-acts',
+        h('button.btn', { type: 'button', onclick: close }, 'Close'),
+        h('button.btn', { type: 'button', onclick: download }, 'Download (.html)'),
+        h('button.btn.primary', { type: 'button', onclick: print }, 'Print or save as PDF')),
+      said);
+    draw();
   }
 
   /** What makes "Cash taken": every cash payment ASSD has on the shift, money given back as minus. */

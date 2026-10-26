@@ -2038,3 +2038,17 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .po-mres .po-mwhy { white-space: normal; color: var(--ink-2); font-size: .74rem; text-align: right; }
 .po-macts { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; align-items: center; }
 .po-macts .btn { padding: .3rem .6rem; font-size: .8rem; }
+
+/* A shift's reconciliation report: choose a layout, see it, print or download it */
+.sh-reconbtn { white-space: nowrap; }
+.po-sheet .po-in.rc-dialog { width: min(980px, 100vw); max-width: 980px; max-height: 94vh; display: flex; flex-direction: column; }
+.rc-layouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin: .4rem 0 .7rem; }
+.rc-layout { text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); padding: .55rem .7rem; font: inherit; cursor: pointer; display: grid; gap: .15rem; }
+.rc-layout small { color: var(--ink-2); font-size: .78rem; line-height: 1.3; }
+.rc-layout.on { border-color: var(--series-1); box-shadow: 0 0 0 2px color-mix(in srgb, var(--series-1) 35%, transparent); }
+.rc-preview { width: 100%; flex: 1; min-height: 46vh; border: 1px solid var(--border); border-radius: 10px; background: #f9f9f7; }
+@media (max-width: 640px) {
+  .rc-layout { padding: .45rem .4rem; text-align: center; font-size: .86rem; }
+  .rc-layout small { display: none; }
+  .po-sheet .po-in.rc-dialog .po-acts { flex-wrap: wrap; }
+}
