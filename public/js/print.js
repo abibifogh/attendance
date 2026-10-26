@@ -22,7 +22,7 @@ import { h, toast } from './util.js';
 
 let cleanup = null;
 
-export function printReport({ title, subtitle, note, footer, onePage = false }) {
+export function printReport({ title, subtitle, note, footer, onePage = false, cover = null }) {
   // A second click while the dialog is open would stack two headers.
   if (cleanup) cleanup();
 
@@ -60,12 +60,17 @@ export function printReport({ title, subtitle, note, footer, onePage = false }) 
         + 'was supplied by a supervisor and is noted as such.');
 
   document.body.prepend(header);
+  // A cover page, where the document has one, goes before everything else,
+  // the title block included, so it prints as the first sheet on its own.
+  const coverEl = typeof cover === 'function' ? cover() : cover;
+  if (coverEl) document.body.prepend(coverEl);
   if (footerEl) document.body.append(footerEl);
   document.body.classList.add('printing');
   if (onePage) document.body.classList.add('printing-one-page');
 
   cleanup = () => {
     header.remove();
+    coverEl?.remove();
     footerEl?.remove();
     document.body.classList.remove('printing', 'printing-one-page');
     cleanup = null;
@@ -117,10 +122,10 @@ function installed() {
 }
 
 /** The button every report screen carries. */
-export function printButton({ title, subtitle, note, footer, label, onePage }) {
+export function printButton({ title, subtitle, note, footer, label, onePage, cover }) {
   return h('button.btn-sm', {
     title: 'Opens your print dialog — choose “Save as PDF” as the destination',
-    onclick: () => printReport({ title, subtitle, note, footer, onePage }),
+    onclick: () => printReport({ title, subtitle, note, footer, onePage, cover }),
     // No emoji on the label. A phone draws it in full colour and it reads as
     // decoration on a button that is doing a job.
   }, label || 'Save as PDF');

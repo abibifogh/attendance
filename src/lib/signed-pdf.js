@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 import { PAGE, faceOf, textOf } from './paper.js';
 
 /**
@@ -113,9 +113,11 @@ async function signatureBlock(doc, page, f, x, yTop, w, { label, ink, name, at, 
   page.drawText(plain([stamp(at), how].filter(Boolean).join(' · ')), { x, y: A4[1] - yTop - 80, size: 8, font: f.regular, color: DIM });
 }
 
-function footers(doc, f, { reference, verifyUrl }) {
+function footers(doc, f, { reference, verifyUrl, skipFirst = false }) {
   const pages = doc.getPages();
   pages.forEach((page, i) => {
+    // A cover page carries its own foot.
+    if (skipFirst && i === 0) return;
     page.drawLine({ start: { x: M, y: 36 }, end: { x: A4[0] - M, y: 36 }, thickness: 0.5, color: RULE });
     page.drawText(plain(`${reference} · Check this copy at ${verifyUrl}`), { x: M, y: 24, size: 7.5, font: f.regular, color: DIM });
     const n = `Page ${i + 1} of ${pages.length}`;
@@ -183,16 +185,120 @@ async function finish(doc, at) {
   return doc.save();
 }
 
+// ---------------------------------------------------------------------------
+// The cover
+// ---------------------------------------------------------------------------
+
+const FRAME = rgb(0.12, 0.23, 0.37);
+const CX = A4[0] / 2;
+
+/** Text spaced out letter by letter, centred on x. y is from the top. */
+function tracked(page, text, { y, size, font, color = INK, tracking = 0 }) {
+  const chars = [...plain(text)];
+  const widths = chars.map((c) => font.widthOfTextAtSize(c, size));
+  const total = widths.reduce((a, b) => a + b, 0) + tracking * Math.max(0, chars.length - 1);
+  let x = CX - total / 2;
+  chars.forEach((c, i) => {
+    page.drawText(c, { x, y: A4[1] - y, size, font, color });
+    x += widths[i] + tracking;
+  });
+}
+
+function centred(page, text, { y, size, font, color = INK }) {
+  const t = plain(text);
+  page.drawText(t, { x: CX - font.widthOfTextAtSize(t, size) / 2, y: A4[1] - y, size, font, color });
+}
+
+/** Two short rules with a diamond between them. y is from the top. */
+function divider(page, y) {
+  const yy = A4[1] - y;
+  page.drawLine({ start: { x: CX - 130, y: yy }, end: { x: CX - 12, y: yy }, thickness: 0.75, color: FRAME });
+  page.drawLine({ start: { x: CX + 12, y: yy }, end: { x: CX + 130, y: yy }, thickness: 0.75, color: FRAME });
+  page.drawRectangle({ x: CX, y: yy - 4.2, width: 6, height: 6, rotate: degrees(45), color: FRAME });
+}
+
+const longDate = (day) => {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(day ?? ''))) return day ? String(day) : '';
+  return new Date(`${String(day).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+};
+
+/**
+ * The cover: a formal frame, the employer's logo in a ring (or its initials
+ * where it has none), its registered name, the document's name between two
+ * dividers, one sentence saying who it is between and what for, and the
+ * reference, the date it was issued and the employee number at the foot.
+ *
+ * `cover` is what contractCover() in the people routes works out; `logo` is
+ * {bytes, mime} or null.
+ */
+async function coverPage(doc, f, cover, logo, verifyUrl) {
+  const page = doc.addPage(A4);
+  page.drawRectangle({ x: 28, y: 28, width: A4[0] - 56, height: A4[1] - 56, borderColor: FRAME, borderWidth: 2.2 });
+  page.drawRectangle({ x: 34, y: 34, width: A4[0] - 68, height: A4[1] - 68, borderColor: FRAME, borderWidth: 0.6 });
+
+  // The logo, in a ring.
+  const ringTop = 92;
+  const r = 54;
+  page.drawCircle({ x: CX, y: A4[1] - ringTop - r, size: r, borderColor: rgb(0.72, 0.75, 0.79), borderWidth: 0.75 });
+  const img = logo ? await embedImage(doc, logo.bytes, logo.mime) : null;
+  if (img) {
+    const box = 72;
+    const scale = Math.min(box / img.width, box / img.height);
+    const w = img.width * scale;
+    const hgt = img.height * scale;
+    page.drawImage(img, { x: CX - w / 2, y: A4[1] - ringTop - r - hgt / 2, width: w, height: hgt });
+  } else {
+    const initials = String(cover.companyName ?? '').split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && !/^(and|of|the|ltd|limited)$/i.test(w))
+      .slice(0, 3).map((w) => w[0].toUpperCase()).join('') || '?';
+    centred(page, initials, { y: ringTop + r + 9, size: 26, font: f.serif, color: FRAME });
+  }
+
+  let y = ringTop + 2 * r + 34;
+  tracked(page, String(cover.companyName ?? '').toUpperCase(), { y, size: 14, font: f.serif, tracking: 3.2 });
+  y += 18;
+  const under = [cover.tradingAs ? `trading as ${cover.tradingAs}` : null, cover.address].filter(Boolean).join(' · ');
+  if (under) {
+    for (const line of wrap(under, f.italic, 10.5, 380)) { centred(page, line, { y, size: 10.5, font: f.italic, color: DIM }); y += 14; }
+  }
+
+  y += 30;
+  divider(page, y);
+  y += 46;
+  const titleLines = wrap(String(cover.title ?? '').toUpperCase(), f.serif, 31, 400);
+  for (const line of titleLines.slice(0, 3)) { tracked(page, line, { y, size: 31, font: f.serif, tracking: 2 }); y += 38; }
+  if (cover.subtitle) { centred(page, cover.subtitle, { y: y - 6, size: 14, font: f.italic, color: DIM }); y += 18; }
+  y += 6;
+  divider(page, y);
+
+  y += 48;
+  for (const line of wrap(cover.sentence ?? '', f.serif, 13, 360)) { centred(page, line, { y, size: 13, font: f.serif }); y += 21; }
+
+  // The foot: three facts, then a line.
+  const facts = [['REFERENCE', cover.reference], ['ISSUED', longDate(cover.issued)], ['EMPLOYEE NO.', cover.employeeNo || '-']];
+  const colW = (A4[0] - 2 * 76) / 3;
+  facts.forEach(([label, value], i) => {
+    const x = 76 + i * colW;
+    page.drawText(label, { x, y: 148, size: 7.5, font: f.regular, color: DIM });
+    page.drawText(plain(value || '-'), { x, y: 132, size: 11.5, font: f.serif, color: INK });
+  });
+  const host = String(verifyUrl ?? '').replace(/^https?:\/\//, '');
+  tracked(page, `PRIVATE AND CONFIDENTIAL · CHECK THIS COPY AT ${host}`.toUpperCase(), { y: A4[1] - 82, size: 7, font: f.regular, color: DIM, tracking: 0.9 });
+  return page;
+}
+
 /** A signed contract, from its words. */
-export async function contractPdf({ contract, events = [], property, reference, verifyUrl }) {
+export async function contractPdf({ contract, events = [], property, reference, verifyUrl, cover = null, logo = null }) {
   const doc = await PDFDocument.create();
   doc.setTitle(plain(`${contract.title} - ${contract.staff_name ?? ''}`));
-  doc.setAuthor(plain(property));
+  doc.setAuthor(plain(cover?.companyName || property));
   const f = await fonts(doc);
 
+  if (cover) await coverPage(doc, f, cover, logo, verifyUrl);
   let page = doc.addPage(A4);
   let y = 64;
-  page.drawText(plain(property), { x: M, y: A4[1] - y, size: 10, font: f.bold, color: DIM });
+  page.drawText(plain(cover?.companyName || property), { x: M, y: A4[1] - y, size: 10, font: f.bold, color: DIM });
   y += 26;
   for (const l of wrap(contract.title, f.serifBold, 17, A4[0] - 2 * M)) {
     page.drawText(l, { x: M, y: A4[1] - y, size: 17, font: f.serifBold, color: INK });
@@ -236,7 +342,7 @@ export async function contractPdf({ contract, events = [], property, reference, 
     ].filter(Boolean),
     events,
   });
-  footers(doc, f, { reference, verifyUrl });
+  footers(doc, f, { reference, verifyUrl, skipFirst: Boolean(cover) });
   return finish(doc, contract.employer_at || contract.signed_at);
 }
 

@@ -1260,7 +1260,7 @@ const sampleValues = () => ({
 
 export async function contractWithTrail(db, id) {
   const contract = await db.prepare(
-    `SELECT c.*, p.name staff_name, p.employee_no
+    `SELECT c.*, p.name staff_name, p.employee_no, p.company_id staff_company_id
        FROM hr_contract c JOIN att_staff p ON p.id = c.staff_id WHERE c.id = ?`,
   ).bind(Number(id)).first();
   if (!contract) return null;
@@ -1286,7 +1286,76 @@ export async function contractWithTrail(db, id) {
       intact: await hashBody(contract.body) === contract.body_hash,
     },
     events: events.results ?? [],
+    cover: contract.origin === 'paper' ? null : await contractCover(db, contract),
   };
+}
+
+export const contractRef = (id) => `HR-C-${String(id).padStart(5, '0')}`;
+
+/**
+ * What goes on a contract's cover page: the company that employs them (its
+ * registered name, the trading name where that is different, its address and
+ * whether it has a logo), the document's name, one sentence saying who it is
+ * between and for what, and the reference, the date it was issued and the
+ * employee number. Worked out from what is stored; nothing here changes the
+ * words that were signed.
+ */
+export async function contractCover(db, contract) {
+  const person = { company_id: contract.staff_company_id };
+  const companyId = Number(contract.staff_company_id) || MAIN;
+  const companyName = await employerName(db, person);
+  const tradingName = await setting(db, 'property_name', '');
+  const fields = (() => { try { return JSON.parse(contract.fields || '{}'); } catch { return {}; } })();
+  const template = contract.template_id
+    ? await db.prepare('SELECT kind FROM hr_template WHERE id = ?').bind(contract.template_id).first().catch(() => null)
+    : null;
+  const logo = companyId === MAIN
+    ? await db.prepare('SELECT 1 AS yes FROM company_logo WHERE id = 1').first().catch(() => null)
+    : await db.prepare('SELECT 1 AS yes, logo_at FROM company WHERE id = ? AND logo_content IS NOT NULL').bind(companyId).first().catch(() => null);
+  const stamp = companyId === MAIN ? await setting(db, 'company_logo_at', '') : (logo?.logo_at ?? '');
+
+  // "Contract of employment — permanent" reads as a title and a kind.
+  const [title, ...rest] = String(contract.title ?? '').split(/\s+[—–-]\s+/);
+  const subtitle = rest.join(' - ').trim();
+  const name = contract.staff_name ?? fields.name ?? '';
+  const job = String(fields.job_title ?? '').trim();
+  const department = String(fields.department ?? '').trim();
+  const start = String(fields.start_date ?? '').trim();
+  const sayDay = (day) => (/^\d{4}-\d{2}-\d{2}/.test(day)
+    ? new Date(`${day.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : day);
+  const isContract = (template?.kind ?? 'contract') === 'contract';
+  const sentence = isContract && job
+    ? `made between ${companyName} and ${name}, who is employed as ${job}`
+      + `${department ? ` in the ${department} department` : ''}${start ? ` from ${sayDay(start)}` : ''}, `
+      + 'under the Labour Act, 2003 (Act 651).'
+    : `made between ${companyName} and ${name}.`;
+
+  return {
+    companyId,
+    companyName,
+    tradingAs: companyId === MAIN && tradingName && tradingName.trim().toLowerCase() !== String(companyName).trim().toLowerCase()
+      ? tradingName : null,
+    address: (await employerAddress(db, person)) || null,
+    hasLogo: Boolean(logo?.yes),
+    logoUrl: logo?.yes ? `/api/company/logo?company=${companyId}${stamp ? `&v=${encodeURIComponent(stamp)}` : ''}` : null,
+    title: title || 'Contract',
+    subtitle: subtitle ? subtitle[0].toUpperCase() + subtitle.slice(1) : null,
+    sentence,
+    reference: contractRef(contract.id),
+    issued: String(contract.issued_at ?? contract.created_at ?? '').slice(0, 10),
+    employeeNo: contract.employee_no ?? null,
+  };
+}
+
+/** The bytes of a company's logo, for a PDF, or null. */
+export async function companyLogoBytes(db, companyId) {
+  const row = (Number(companyId) || MAIN) === MAIN
+    ? await db.prepare('SELECT mime, content FROM company_logo WHERE id = 1').first().catch(() => null)
+    : await db.prepare('SELECT logo_mime AS mime, logo_content AS content FROM company WHERE id = ? AND logo_content IS NOT NULL')
+      .bind(Number(companyId)).first().catch(() => null);
+  if (!row?.content) return null;
+  return { bytes: asBytes(row.content), mime: row.mime || '' };
 }
 
 export async function getContract(ctx, id) {

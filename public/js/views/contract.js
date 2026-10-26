@@ -7,6 +7,7 @@ import { card, emptyState, table } from './components.js';
 import { can, navigate } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { printButton } from '../print.js';
+import { contractCover } from './contract-cover.js';
 import { signaturePad } from '../fields.js';
 
 /**
@@ -38,7 +39,7 @@ export async function renderContract(params) {
   // worth less than the office copy, and the point of it is that it is worth
   // the same.
   const mine = Boolean(params.mine);
-  const { contract, events } = mine ? await api.myContract(id) : await api.hrContract(id);
+  const { contract, events, cover } = mine ? await api.myContract(id) : await api.hrContract(id);
   const reload = async () => mount(host, await renderContract({ id, mine: params.mine }));
   // The buttons follow the permission, not the caller. Whoever may read a
   // contract may not necessarily countersign one.
@@ -96,6 +97,8 @@ export async function renderContract(params) {
         printButton({
           title: contract.title,
           subtitle: `${contract.staff_name} · employee ${contract.employee_no}`,
+          // The same cover the signed PDF opens with, made fresh for each print.
+          cover: cover ? () => contractCover(cover) : null,
           footer: 'Signed electronically. The certificate of signature at the foot of this '
             + 'document records what was presented, when it was signed and from where.',
         }),

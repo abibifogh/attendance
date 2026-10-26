@@ -3,7 +3,9 @@ import { throttleCheck, throttleFail } from '../lib/auth.js';
 import { siteOrigin } from '../lib/site.js';
 import { contractPdf, fingerprint, letterPdf } from '../lib/signed-pdf.js';
 import { normaliseLayout } from '../lib/paper.js';
-import { contractWithTrail, readFile, storeFile } from './people.js';
+import {
+  companyLogoBytes, contractRef, contractWithTrail, readFile, storeFile,
+} from './people.js';
 import { readStoredFile, storeFile as storeCorrFile } from './correspondence.js';
 
 /**
@@ -27,7 +29,7 @@ async function propertyOf(db) {
   return row?.value || 'HIVE';
 }
 
-export const contractRef = (id) => `HR-C-${String(id).padStart(5, '0')}`;
+export { contractRef };
 
 async function remember(db, { hash, kind, id, reference, title, signers, at }) {
   await db.prepare(
@@ -55,6 +57,9 @@ export async function signedContract(ctx, id) {
     property,
     reference,
     verifyUrl,
+    // The cover, with the logo of the company that employs them.
+    cover: found.cover,
+    logo: found.cover?.hasLogo ? await companyLogoBytes(ctx.db, found.cover.companyId) : null,
     events: (found.events ?? []).map((e) => ({
       at: e.at_utc, what: EVENT_WORDS[e.kind] ?? e.kind, detail: e.detail, ip: e.ip,
     })),

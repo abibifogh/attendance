@@ -7998,3 +7998,35 @@ button.lp-row:disabled { cursor: default; }
 .tpl-frame .invite { padding-bottom: 1.5rem; }
 .tpl-frame.is-phone .contract-flow { font-size: .88rem; }
 .tpl-preview-who span { white-space: nowrap; }
+
+/* A contract's cover page, printed. Hidden on screen. */
+.print-cover { display: none; }
+@media print {
+  .print-cover { display: block; box-sizing: border-box; height: 262mm; padding: 0; break-after: page; page-break-after: always; color: #1a1d23; font-family: "Times New Roman", Times, serif; }
+  .pc-frame { height: 100%; box-sizing: border-box; border: 2.2pt solid #1f3a5f; padding: 6pt; }
+  .pc-inner { height: 100%; box-sizing: border-box; border: .6pt solid #1f3a5f; padding: 40pt 46pt 28pt; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .pc-ring { width: 108pt; height: 108pt; border-radius: 50%; border: .75pt solid #b8bec8; display: flex; align-items: center; justify-content: center; }
+  .pc-ring img { max-width: 72pt; max-height: 72pt; object-fit: contain; }
+  .pc-initials { font-size: 26pt; color: #1f3a5f; }
+  .pc-company { margin-top: 18pt; font-size: 14pt; letter-spacing: .24em; }
+  .pc-under { margin-top: 4pt; font-size: 10.5pt; font-style: italic; color: #5a6170; }
+  .pc-divider { margin-top: 30pt; display: flex; align-items: center; gap: 10pt; width: 260pt; }
+  .pc-divider span { flex: 1; height: .75pt; background: #1f3a5f; }
+  .pc-divider i { width: 6pt; height: 6pt; transform: rotate(45deg); background: #1f3a5f; }
+  .pc-title { margin: 24pt 0 0; font-size: 31pt; font-weight: 400; letter-spacing: .07em; line-height: 1.2; }
+  .pc-subtitle { margin-top: 6pt; font-size: 14pt; font-style: italic; color: #5a6170; }
+  .pc-sentence { margin: 34pt 0 0; max-width: 360pt; font-size: 13pt; line-height: 1.6; }
+  .pc-facts { margin-top: auto; width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12pt; text-align: left; }
+  .pc-facts div { display: flex; flex-direction: column; gap: 3pt; }
+  .pc-facts span { font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; letter-spacing: .12em; color: #5a6170; }
+  .pc-facts b { font-weight: 400; font-size: 11.5pt; }
+  .pc-foot { margin-top: 16pt; font-family: Helvetica, Arial, sans-serif; font-size: 7pt; letter-spacing: .1em; color: #5a6170; }
+}
+@media print {
+  /* The phone's menu bar is furniture too. */
+  .bottom-bar { display: none !important; }
+  /* A contract is longer than a page: let its card break rather than leave
+     a blank sheet under the title block. */
+  .card:has(.contract-body) { break-inside: auto; page-break-inside: auto; }
+  .contract-body { max-height: none; overflow: visible; }
+}

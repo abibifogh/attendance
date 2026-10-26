@@ -156,3 +156,59 @@ test('a letter has a copy once everybody has signed', async () => {
   assert.equal(doc.getPageCount(), 2);
   assert.ok(raw.prepare('SELECT final_hash FROM corr_letter').get().final_hash);
 });
+
+test('a signed contract opens with a cover page for the company that employs them', async () => {
+  const { raw, db } = setup();
+  raw.prepare("INSERT INTO settings (key, value) VALUES ('company_legal_name', 'Example Hotels Ltd') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
+  raw.prepare("INSERT INTO settings (key, value) VALUES ('property_name', 'Somewhere Example') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
+  signedContractRow(raw);
+  raw.prepare(`UPDATE hr_contract SET title = 'Contract of employment — permanent', issued_at = '2026-10-01 08:00:00',
+               fields = '{"job_title":"Cook","department":"Kitchen","start_date":"2026-11-02"}' WHERE id = 1`).run();
+
+  const { contractWithTrail } = await import('../src/routes/people.js');
+  const found = await contractWithTrail(db, 1);
+  assert.equal(found.cover.companyName, 'Example Hotels Ltd');
+  assert.equal(found.cover.tradingAs, 'Somewhere Example');
+  assert.equal(found.cover.title, 'Contract of employment');
+  assert.equal(found.cover.subtitle, 'Permanent');
+  assert.equal(found.cover.reference, 'HR-C-00001');
+  assert.equal(found.cover.issued, '2026-10-01');
+  assert.equal(found.cover.hasLogo, false);
+  assert.equal(found.cover.sentence,
+    'made between Example Hotels Ltd and New Starter, who is employed as Cook in the Kitchen department from 2 November 2026, under the Labour Act, 2003 (Act 651).');
+
+  const withCover = await contractPdf({
+    contract: found.contract, property: 'Somewhere Example', reference: 'HR-C-00001',
+    verifyUrl: 'https://staff.example.com/verify', cover: found.cover,
+  });
+  const without = await contractPdf({
+    contract: found.contract, property: 'Somewhere Example', reference: 'HR-C-00001',
+    verifyUrl: 'https://staff.example.com/verify',
+  });
+  assert.equal((await PDFDocument.load(withCover)).getPageCount(), (await PDFDocument.load(without)).getPageCount() + 1);
+
+  // With a logo, it is drawn in the ring.
+  const png = Uint8Array.from(atob(INK.split(',')[1]), (c) => c.charCodeAt(0));
+  const logoed = await contractPdf({
+    contract: found.contract, property: 'x', reference: 'HR-C-00001', verifyUrl: 'https://staff.example.com/verify',
+    cover: { ...found.cover, hasLogo: true }, logo: { bytes: png, mime: 'image/png' },
+  });
+  assert.ok(logoed.length > withCover.length, 'the logo is embedded');
+
+  // And the copy HIVE keeps and fingerprints has the cover too.
+  const made = await signedContract(ctx(db), 1);
+  assert.equal((await PDFDocument.load(made.bytes)).getPageCount(), (await PDFDocument.load(withCover)).getPageCount());
+});
+
+test('a contract for the second company has that company on its cover', async () => {
+  const { raw, db } = setup();
+  raw.prepare("INSERT INTO company (id, main, legal_name, address) VALUES (7, 0, 'Second Example Ltd', '2 Example Lane') ON CONFLICT (id) DO UPDATE SET legal_name = excluded.legal_name, address = excluded.address").run();
+  raw.prepare('UPDATE att_staff SET company_id = 7 WHERE id = 1').run();
+  signedContractRow(raw);
+  const { contractWithTrail } = await import('../src/routes/people.js');
+  const found = await contractWithTrail(db, 1);
+  assert.equal(found.cover.companyName, 'Second Example Ltd');
+  assert.equal(found.cover.address, '2 Example Lane');
+  assert.equal(found.cover.tradingAs, null);
+  assert.equal(found.cover.sentence, 'made between Second Example Ltd and New Starter.');
+});
