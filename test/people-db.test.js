@@ -94,6 +94,8 @@ async function setup() {
   // known numbers.
   raw.exec('DELETE FROM att_days; DELETE FROM att_punches; DELETE FROM att_roster;');
   raw.exec('DELETE FROM att_staff');
+  // And no templates: the cook's contract a migration adds is tested on its own.
+  raw.exec("DELETE FROM hr_template; DELETE FROM sqlite_sequence WHERE name = 'hr_template';");
   raw.prepare(
     `INSERT INTO att_staff (id, employee_no, name, department, job_title, hired_on)
      VALUES (1, '1001', 'Augustina Adjei Abla', 'Housekeeping', 'Housekeeper', '2026-09-01'),

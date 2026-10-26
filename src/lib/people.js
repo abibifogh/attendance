@@ -473,6 +473,9 @@ export const PLACEHOLDERS = [
   // because a blank party is worse than an imprecise one.
   { key: 'company_legal_name', label: 'Registered company name' },
   { key: 'property_address', label: 'Property address' },
+  // The address of the company that employs them, which for the main company
+  // is the property's and for another company is its own.
+  { key: 'company_address', label: 'Employer’s address' },
   { key: 'leave_days', label: 'Annual leave' },
   { key: 'today', label: 'Today’s date' },
 

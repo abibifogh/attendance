@@ -70,6 +70,17 @@ export async function employerName(db, person) {
     || setting(db, 'property_name', 'Somewhere Nice');
 }
 
+/** The address of the company that employs somebody, the property's where it is the main one or has none. */
+export async function employerAddress(db, person) {
+  const company = Number(person?.company_id) || MAIN;
+  if (company !== MAIN) {
+    const row = await db.prepare('SELECT address FROM company WHERE id = ? AND main = 0')
+      .bind(company).first().catch(() => null);
+    if (String(row?.address ?? '').trim()) return row.address.trim();
+  }
+  return setting(db, 'property_address', '');
+}
+
 /** Every company, by the name it is known by, the main one first. */
 export async function companyNames(db) {
   const rows = await db.prepare('SELECT id, main, legal_name FROM company ORDER BY main DESC, id')
@@ -1179,6 +1190,7 @@ async function contractValues(ctx, person, body = {}) {
     // them and not the trading name: the main company's from the Company form,
     // another company's from its own record.
     company_legal_name: await employerName(ctx.db, person),
+    company_address: await employerAddress(ctx.db, person),
     // Never less than the fifteen working days section 20 of Act 651 requires,
     // whatever the settings happen to say. A contract promising twelve would be
     // void as to that term and an embarrassment to have issued.

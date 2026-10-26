@@ -12,7 +12,7 @@ import { firstName, renderMail, sayDate } from '../lib/email-design.js';
 import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate } from '../lib/people.js';
 import { siteOrigin } from '../lib/site.js';
 import { seal, unseal } from '../lib/seal.js';
-import { companyNames, employerName } from './people.js';
+import { companyNames, employerAddress, employerName } from './people.js';
 import { trail } from './recruitment.js';
 
 /**
@@ -183,6 +183,7 @@ async function renderFor(ctx, candidate, input) {
     // The company the template is for makes the offer; one for every
     // company is the main one's.
     company_legal_name: await employerName(ctx.db, { company_id: template.company_id }),
+    company_address: await employerAddress(ctx.db, { company_id: template.company_id }),
     leave_days: `${Math.max(15, leaveDays)} working days`,
     today: new Date().toISOString().slice(0, 10),
   };
