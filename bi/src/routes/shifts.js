@@ -1,5 +1,6 @@
 import { all, first, run, writeAll } from '../lib/db.js';
 import { rebuildAssdRevenue } from './revenue.js';
+import { lockOf, keepLocked } from './lock.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { addDays, isDay, resolveRange, daysBetween, todayIn } from '../lib/dates.js';
 import { toMinor } from '../lib/money.js';
@@ -33,9 +34,15 @@ export async function uploadJournal(env, body, account) {
   if (lines.length > 200000) throw badRequest('That journal is too long for one upload. Export a month at a time.');
 
   const window = journalWindow(lines);
-  const entries = parseJournal(lines);
-  if (!entries.length) {
+  const read = parseJournal(lines);
+  if (!read.length) {
     throw badRequest('Nothing in that file reads as an ASSD detail journal. It should be "Detail Journal of every Transaction", printed to PDF.');
+  }
+  // Locked days stay as they were: their lines are not loaded again.
+  const lock = await lockOf(env);
+  const { rows: entries, left: lockedOut } = keepLocked(lock, 'journal', read);
+  if (!entries.length) {
+    return { ok: true, kind: 'journal', rows: 0, lockedOut, note: `Everything in this file is on locked days (up to ${lock.through}), so nothing was loaded.` };
   }
   const markers = entries.filter((e) => e.kind === MARKER);
 
@@ -71,7 +78,8 @@ export async function uploadJournal(env, body, account) {
   await rebuildAssdRevenue(env, { from: window?.from ?? dated[0], to: window?.to ?? dated[dated.length - 1] }).catch(() => {});
 
   const note = `${entries.length} transactions, ${markers.length} hand-overs`
-    + (window ? '' : '. No benefit-date header was found, so this file replaced what was there for these transactions.');
+    + (window ? '' : '. No benefit-date header was found, so this file replaced what was there for these transactions.')
+    + (lockedOut ? `. ${lockedOut} on locked days (up to ${lock.through}) were left as they were.` : '');
   await logUpload(env, 'journal', body?.name, window?.from ?? entries[0].date, window?.to ?? entries[entries.length - 1].date, entries.length, note, account);
   return { ok: true, kind: 'journal', window, entries: entries.length, handovers: markers.length, note };
 }
@@ -82,6 +90,9 @@ export async function uploadBank(env, body, account) {
   if (!rows?.length) throw badRequest('No rows came with the statement. Choose the file again.');
   const parsed = parseStatement(rows);
   if (parsed.error) throw badRequest(parsed.error);
+  const lock = await lockOf(env);
+  const { rows: kept, left: lockedOut } = keepLocked(lock, 'bank', parsed.rows);
+  parsed.rows = kept;
 
   const at = now();
   await upsertMany(env.DB, 'bank_card_txn',
@@ -97,7 +108,8 @@ export async function uploadBank(env, body, account) {
     + (parsed.counts.flagged
       ? ` ${parsed.counts.flagged} rows the bank itself marked deleted or unposted were ignored (${(parsed.flaggedAmount / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}).`
       : '')
-    + ` ${parsed.counts.other + (Number(body?.leftOut) || 0)} other rows (salaries, suppliers, transfers) were not kept.`;
+    + ` ${parsed.counts.other + (Number(body?.leftOut) || 0)} other rows (salaries, suppliers, transfers) were not kept.`
+    + (lockedOut ? ` ${lockedOut} rows on locked days (up to ${lock.through}) were left as they were.` : '');
   await logUpload(env, 'bank', body?.name, days[0] ?? null, days[days.length - 1] ?? null, parsed.rows.length, note, account);
   return { ok: true, kind: 'bank', rows: parsed.rows.length, from: days[0] ?? null, to: days[days.length - 1] ?? null, note };
 }
@@ -109,6 +121,10 @@ export async function uploadTerminal(env, body, account) {
   const parsed = parseTerminalCsv(text);
   if (parsed.error) throw badRequest(parsed.error);
   if (!parsed.rows.length) throw badRequest('No transactions could be read from that file.');
+  const lock = await lockOf(env);
+  const { rows: kept, left: lockedOut } = keepLocked(lock, 'terminal', parsed.rows);
+  parsed.rows = kept;
+  if (!kept.length) return { ok: true, kind: 'terminal', rows: 0, lockedOut, note: `Everything in this file is on locked days (up to ${lock.through}), so nothing was loaded.` };
 
   const at = now();
   await upsertMany(env.DB, 'terminal_txn',
@@ -119,7 +135,8 @@ export async function uploadTerminal(env, body, account) {
   const days = parsed.rows.map((r) => r.day).sort();
   const approved = parsed.rows.filter((r) => r.approved).length;
   const note = `${approved} approved, ${parsed.rows.length - approved} declined or incomplete`
-    + (parsed.skipped ? `, ${parsed.skipped} unreadable rows skipped` : '');
+    + (parsed.skipped ? `, ${parsed.skipped} unreadable rows skipped` : '')
+    + (lockedOut ? `, ${lockedOut} on locked days (up to ${lock.through}) left as they were` : '');
   await logUpload(env, 'terminal', body?.name, days[0], days[days.length - 1], parsed.rows.length, note, account);
   return { ok: true, kind: 'terminal', rows: parsed.rows.length, from: days[0], to: days[days.length - 1], note };
 }
@@ -1682,9 +1699,14 @@ export async function shifts(env, query, account) {
     open: exceptions.filter((x) => !x.answer && x.severity !== 'info').length,
   };
 
+  // Locked days: their differences stay as they are, and say so.
+  const lock = await lockOf(env).catch(() => null);
+  if (lock?.through) for (const x of exceptions) if (x.day && x.day <= lock.through) x.locked = true;
+
   return {
     ...base,
     days,
+    lock: lock?.through ? { through: lock.through, by: lock.by, at: lock.at } : null,
     formLive: Boolean(env.EXPENSE_FORM_SECRET),
     // Look-alike differences a person said are not related: not suggested again.
     notPairs: answers.filter((r) => String(r.key).startsWith('notpair:') && (r.status || 'applied') !== 'pending').map((r) => r.key),

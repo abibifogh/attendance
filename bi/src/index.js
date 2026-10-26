@@ -26,6 +26,7 @@ import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
 import * as np from './routes/niceplace.js';
+import * as lock from './routes/lock.js';
 import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
@@ -149,6 +150,11 @@ const ROUTES = [
   // parts an admin chose (see routes/till.js), and nothing else in the app.
   // `shifts` lets both in, and each handler checks what this one may do.
   ['GET', '/api/shifts', 'shifts', shiftsRead],
+  // Locked dates: anybody on Shifts may see where the lock stands; an admin sets it.
+  ['GET', '/api/shifts/lock', 'shifts', (env) => lock.lockOf(env)],
+  ['POST', '/api/shifts/lock', 'shifts', adminOnly(async (env, ctx) => lock.setLock(env, ctx.body, ctx.account, {
+    seqThrough: ctx.body?.through ? await lock.lastSeqOf(env, String(ctx.body.through), shiftRoutes.shifts) : null,
+  }))],
   ['POST', '/api/shifts/count', 'shifts', adminOnly((env, ctx) => shiftRoutes.saveCount(env, ctx.body, ctx.account))],
   // A PO a shift reported as paid from the drawer, paid (whole or part) from the big safe.
   ['POST', '/api/shifts/po-safe', 'shifts', adminOnly((env, ctx) => shiftRoutes.poFromSafe(env, ctx.body, ctx.account))],
@@ -250,6 +256,7 @@ const ROUTES = [
   ['POST', '/api/link/till/setup', 'link', (env) => till.linkSetup(env)],
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
+  ['POST', '/api/link/till/lock', 'link', (env) => lock.linkLock(env)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
   // A staff member sending the proof an admin asked for, from HIVE's To sort out.
   ['POST', '/api/link/till/proof', 'link', (env, ctx) => proof.linkSend(env, ctx.body)],
@@ -377,6 +384,32 @@ const ROUTES = [
   ['POST', '/api/report-pins', 'owner', (env, ctx) => reports.createPin(env, ctx.body, ctx.account)],
   ['POST', '/api/report-pins/:id/revoke', 'owner', (env, ctx) => reports.revokePin(env, ctx.params.id)],
 ];
+
+/**
+ * Changes to a shift, refused on a locked day (see routes/lock.js). Each
+ * names the body fields that hold a reconciliation, a staff-account move or
+ * a HIVE closing report by id; days, keys and ASSD numbers are read anyway.
+ * Notes, to-dos and proof requests are not changes to a shift and stay open.
+ */
+const LOCKED = {
+  '/api/shifts/count': {}, '/api/shifts/po-safe': {}, '/api/shifts/expense': {}, '/api/shifts/expense/pull': {}, '/api/shifts/expense/link': {},
+  '/api/shifts/form-match/apply': {}, '/api/shifts/receipts': {}, '/api/shifts/receipts-read': {}, '/api/shifts/answer': {}, '/api/shifts/answer-many': {},
+  '/api/shifts/payment-home': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
+  '/api/till/resolve': {}, '/api/till/reopen': { report: 'reportId' }, '/api/till/move': { report: 'reportId' }, '/api/till/owner': {},
+  '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
+  '/api/np/review': {}, '/api/np/reread': {}, '/api/np/move': {}, '/api/np/reading': {}, '/api/np/upload': {}, '/api/np/check': {}, '/api/np/answer': {},
+};
+for (const route of ROUTES) {
+  if (route[0] === 'POST' && LOCKED[route[1]]) route[3] = locked(route[3], LOCKED[route[1]]);
+}
+
+/** A change to a shift: refused when any day it touches is locked. */
+function locked(handler, ids = {}) {
+  return async (env, ctx) => {
+    await lock.assertOpen(env, await lock.daysOf(env, ctx.body, { dayOfKey: shiftRoutes.dayOfKey, ids }));
+    return handler(env, ctx);
+  };
+}
 ;
 
 /** The morning schedule in wrangler.toml: the daily till summary, at 06:45 in Accra (UTC). */

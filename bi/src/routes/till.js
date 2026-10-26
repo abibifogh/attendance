@@ -2,6 +2,7 @@ import { all, first, run, getSettings, setSetting } from '../lib/db.js';
 import { badRequest, forbidden, HttpError, str } from '../lib/http.js';
 import { addDays, daysBetween } from '../lib/dates.js';
 import { callLink } from '../lib/link.js';
+import { lockOf, isLocked } from './lock.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shifts/till.js';
@@ -394,7 +395,9 @@ export async function linkIssues(env, body) {
   const month = to.slice(0, 7);
   // Proof an admin asked for, on something they answered.
   const asked = await openForHive(env, userId).catch(() => new Map());
+  const lock = await lockOf(env);
   return {
+    lockedThrough: lock.through,
     issues: mine.filter((i) => i.status !== 'settled').map((i) => ({
       key: i.key, kind: i.kind, label: i.kind === 'moved' ? 'Moved to you' : KINDS[i.kind], day: i.day, slot: i.slot, amount: i.amount, qty: i.qty ?? null,
       rental: i.rental ?? null, text: i.text, status: i.status, answer: i.answer,
@@ -403,6 +406,8 @@ export async function linkIssues(env, body) {
       proof: asked.get(i.key) || null,
       // Checked: the amount is final. Not checked yet: it may change, and only a note can be added.
       checked: i.checked, checkedBy: i.checkedBy, checkedAt: i.checkedAt, note: i.note || null,
+      // A locked day: nothing more can be sent on it.
+      locked: isLocked(lock, i.day),
     })),
     cleared: mine.filter((i) => i.status === 'settled' && String(i.decision?.at || '').startsWith(month)).length,
   };
