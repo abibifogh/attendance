@@ -2294,3 +2294,6 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sb-card textarea { width: 100%; font: inherit; padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: .4rem; background: var(--surface); color: var(--ink); }
 @media (max-width: 900px) { .sb-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sb-dgrid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 480px) { .sb-fgrid { grid-template-columns: minmax(0, 1fr); } .sb-tile b { font-size: 1.15rem; } }
+/* A bar chart scales with its card, but not so far that its writing grows
+   large on a wide screen: past this it stays at its size, at the left. */
+.chart svg.bars { max-width: 880px; }

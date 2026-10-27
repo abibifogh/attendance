@@ -663,16 +663,16 @@ export async function whoAmI({ config: settings, token, fetchImpl = fetch }) {
 export async function vendorList({ config: settings, token, fetchImpl = fetch }) {
   const config = odooConfig(settings, token);
   const opts = { fetchImpl };
-  const base = ['name', 'phone', 'mobile', 'email', 'vat', 'street', 'city', 'is_company', 'user_ids', 'supplier_rank', 'active'];
-  let rows;
-  try {
-    rows = await searchRead(config, 'res.partner', [['supplier_rank', '>', 0]], [...base, 'property_supplier_payment_term_id'], opts);
-  } catch {
-    rows = await searchRead(config, 'res.partner', [['supplier_rank', '>', 0]], base, opts);
-  }
+  // Fields come and go between Odoo versions (17 has `mobile`, 18 does not),
+  // so Odoo is asked which of these it has, and only those are read.
+  const wanted = ['name', 'phone', 'mobile', 'email', 'vat', 'street', 'city', 'is_company', 'user_ids', 'supplier_rank', 'property_supplier_payment_term_id'];
+  const rows = await searchRead(config, 'res.partner', [['supplier_rank', '>', 0]], await fieldsIn(config, 'res.partner', wanted, opts), opts);
   let banks = [];
   try {
-    banks = await searchRead(config, 'res.partner.bank', [['partner_id', 'in', rows.map((r) => r.id)]], ['partner_id', 'acc_number', 'bank_id', 'acc_holder_name'], opts);
+    const fields = await fieldsIn(config, 'res.partner.bank', ['partner_id', 'acc_number', 'bank_id', 'acc_holder_name'], opts);
+    if (fields.includes('partner_id') && fields.includes('acc_number')) {
+      banks = await searchRead(config, 'res.partner.bank', [['partner_id', 'in', rows.map((r) => r.id)]], fields, opts);
+    }
   } catch { banks = []; }
   return rows.map((r) => ({
     id: r.id,
@@ -689,6 +689,18 @@ export async function vendorList({ config: settings, token, fetchImpl = fetch })
       bank: refName(b.bank_id) || null, number: String(b.acc_number || ''), holder: String(b.acc_holder_name || '') || null,
     })),
   })).filter((v) => v.name);
+}
+
+/** Which of these fields a model has in this Odoo; just `name` if Odoo will not say. */
+async function fieldsIn(config, model, wanted, opts) {
+  try {
+    const all = await call(config, model, 'fields_get', { attributes: ['type'] }, opts);
+    const have = new Set(Object.keys(all || {}));
+    const out = wanted.filter((f) => have.has(f));
+    return out.length ? out : ['name'];
+  } catch {
+    return ['name'];
+  }
 }
 
 /** The vendor the last PO for a product went to, if any. */

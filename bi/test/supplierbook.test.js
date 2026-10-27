@@ -13,12 +13,20 @@ const GM = { id: 4, name: 'Gina Manager', access: [{ systemId: 'insight', role: 
 
 function odoo() {
   return async (url, init) => {
-    const [, model] = String(url).match(/\/json\/2\/([^/]+)\/([^/]+)$/);
+    const [, model, method] = String(url).match(/\/json\/2\/([^/]+)\/([^/]+)$/);
     const body = JSON.parse(init.body);
+    if (method === 'fields_get') {
+      // Like Odoo 18: no `mobile` on a contact, so asking for it would be refused.
+      const fields = model === 'res.partner'
+        ? ['name', 'phone', 'email', 'vat', 'street', 'city', 'is_company', 'user_ids', 'supplier_rank', 'property_supplier_payment_term_id']
+        : ['partner_id', 'acc_number', 'bank_id', 'acc_holder_name'];
+      return Response.json(Object.fromEntries(fields.map((f) => [f, { type: 'char' }])));
+    }
+    if (model === 'res.partner' && body.fields.includes('mobile')) return Response.json({ message: "Invalid field 'mobile' on 'res.partner'" }, { status: 500 });
     if (model === 'res.partner') {
       return Response.json([
         { id: 11, name: 'A Poultry Farm Ltd', phone: '0240000001', email: false, vat: 'C0001', street: '1 Test Road', city: 'Accra', is_company: true, user_ids: [], supplier_rank: 4, property_supplier_payment_term_id: [1, '30 Days'] },
-        { id: 12, name: 'A Hardware Shop', phone: false, mobile: '0240000002', email: 'shop@example.test', vat: false, street: false, city: false, is_company: true, user_ids: [], supplier_rank: 2 },
+        { id: 12, name: 'A Hardware Shop', phone: '0240000002', email: 'shop@example.test', vat: false, street: false, city: false, is_company: true, user_ids: [], supplier_rank: 2 },
         { id: 13, name: 'Kofi Test', phone: false, email: false, vat: false, street: false, city: false, is_company: false, user_ids: [7], supplier_rank: 1 },
       ].slice(0, body.offset ? 0 : 3));
     }
@@ -52,7 +60,7 @@ test('Odoo is the list: refreshed in, with details, staff-looking names, and ban
   assert.deepEqual([farm.phone, farm.vat, farm.terms, farm.owed], ['0240000001', 'C0001', '30 Days', 50000]);
   assert.equal(farm.spend, 200000, 'the bill only: Odoo\'s own purchase lines are not counted twice');
   assert.equal(b.suppliers.find((s) => s.id === 13).staff, true, 'a login in Odoo');
-  assert.equal(b.suppliers.find((s) => s.id === 12).phone, '0240000002', 'the mobile when there is no phone');
+  assert.equal(b.suppliers.find((s) => s.id === 12).phone, '0240000002');
   assert.deepEqual(b.unlinked.map((u) => u.name).sort(), ['A Market Trader', 'Poultry Farm A']);
 });
 
