@@ -15,8 +15,8 @@ import { field, formDialog, monthLabel, signOffDialog } from './att-shared.js';
  */
 export async function renderAttLeave(params = {}) {
   const host = h('div');
-  // Recording leave is for whoever decides it. A rota planner sees leave once
-  // it is approved and has no part in the requests.
+  // Recording leave is for whoever decides it. A rota planner sees what is
+  // waiting as well as what is approved, to plan around, and answers none of it.
   const requests = can('att_manage');
   const decides = can('att_manage');
   // Closing a period off is its own permission, so a rota planner can be given
@@ -326,6 +326,7 @@ export async function renderAttLeave(params = {}) {
             h('button.btn-sm', { onclick: () => reject(r) }, 'Reject'),
           );
         }
+        if (kind === 'pending') return h('span.pill.warn', 'Waiting');
         if (v === 'approved' && decides && r.to_day >= todayISO()) {
           return h('div.btn-row',
             h('span.pill.good', 'Approved'),
@@ -351,6 +352,8 @@ export async function renderAttLeave(params = {}) {
 
     pending.length
       ? card('Waiting for a decision', { note: `${pending.length}`, wide: true },
+        decides ? null : h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+          'Shown so the rota can be planned around them. A supervisor or manager approves or rejects them.'),
         table(columns('pending'), pending))
       : null,
 

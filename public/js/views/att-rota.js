@@ -862,7 +862,9 @@ export async function renderAttRota(params) {
           availWindow || ' this day',
           avail.note ? `: ${avail.note}` : '',
           waiting
-            ? '. Agree or decline it under "asked for" on the toolbar.'
+            ? (can('att_manage')
+              ? '. Agree or decline it under "asked for" on the toolbar.'
+              : '. A supervisor or manager answers it.')
             : '. Set under the ⋯ button on their row, or sent in by them.',
         ].join(''),
       },
@@ -2386,10 +2388,13 @@ export async function renderAttRota(params) {
           onclick: () => navigate('att-workload', { from, to }),
           title: 'People this plan is overworking. The full picture is on Workload',
         }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`),
-      mayEdit && can('att_manage') && data.asked
+      mayEdit && data.asked
         ? h('button.btn-sm', {
-          onclick: () => answerRequests(reload),
-          title: 'Days people have asked about that nobody has answered yet',
+          // A planner sees the list, to plan around; a supervisor or above answers it.
+          onclick: () => answerRequests(reload, { answers: can('att_manage') }),
+          title: can('att_manage')
+            ? 'Days people have asked about that nobody has answered yet'
+            : 'Days people have asked about that a supervisor or manager has not answered yet',
         }, `⏳ ${data.asked} asked for`)
         : null,
 
@@ -2506,7 +2511,7 @@ export async function renderAttRota(params) {
  * here, and both halves of that are fixed — one press answers a whole run of
  * days, and whoever asked is told.
  */
-async function answerRequests(reload) {
+async function answerRequests(reload, { answers = true } = {}) {
   const { waiting } = await api.attWaitingAvailability().catch(() => ({ waiting: [] }));
   if (!waiting.length) {
     toast('Nothing is waiting for an answer.', 'good');
@@ -2554,6 +2559,9 @@ async function answerRequests(reload) {
       h('div.ask-when', `${said(row)} — ${when(row.days)}`
         + (row.fromTime ? `, ${row.fromTime} to ${row.toTime}` : '')),
       row.note ? h('div.ask-note', row.note) : null);
+
+    // Somebody who plans but does not decide reads the list and answers nothing.
+    if (!answers) return h('div.ask-row', head);
 
     if (!many) {
       return h('div.ask-row', head,
@@ -2632,17 +2640,20 @@ async function answerRequests(reload) {
     title: 'What people have asked for',
     submitLabel: 'Done',
     body: h('div',
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'A day somebody marks for themselves waits here until it is answered. Agreeing '
-        + 'leaves the mark on the grid for the rota to be built around; declining takes it '
-        + 'off, and the day is ordinary again. Where somebody asked for more than one day, '
-        + 'answer them all at once or open Day by day to agree some and decline others. '
-        + 'Either way they are told, in one message.'),
+      h('p.muted', { style: { fontSize: '.85rem' } }, answers
+        ? 'A day somebody marks for themselves waits here until it is answered. Agreeing '
+          + 'leaves the mark on the grid for the rota to be built around; declining takes it '
+          + 'off, and the day is ordinary again. Where somebody asked for more than one day, '
+          + 'answer them all at once or open Day by day to agree some and decline others. '
+          + 'Either way they are told, in one message.'
+        : 'Days people have asked about that a supervisor or manager has not answered yet. '
+          + 'They show on the grid with ⏳, so the week can be planned around them. Once one '
+          + 'is agreed the mark stays; once it is declined the day is ordinary again.'),
       list,
     ),
     onSubmit: async () => true,
   });
-  await reload();
+  if (answers) await reload();
 }
 
 async function clearPeriod(data, params, reload) {

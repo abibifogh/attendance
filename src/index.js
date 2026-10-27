@@ -334,7 +334,8 @@ export const ROUTES = [
   ['POST', '/api/me/medical/:id/withdraw', 'att_me', medical.withdrawClaim],
   ['POST', '/api/att/availability', 'att_manage', att.setAvailability],
   // What people have asked for and nobody has answered yet, and the answer.
-  ['GET', '/api/att/availability/waiting', 'att_manage', att.waitingAvailability],
+  // Seen by a rota planner too, to plan around; answered only by a supervisor or above.
+  ['GET', '/api/att/availability/waiting', ['att_manage', 'att_rota'], att.waitingAvailability],
   ['POST', '/api/att/availability/decide', 'att_manage', att.decideAvailability],
   ['GET', '/api/att/workload', ['att_rota', 'att_reports'], workload.workload],
 

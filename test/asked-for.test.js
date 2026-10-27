@@ -311,17 +311,21 @@ test('the grid says whether a mark has been answered', async () => {
   assert.equal(data.asked, 1, 'and the toolbar knows there is something to answer');
 });
 
-test('a planner sees agreed days on the rota, and no requests', async () => {
+test('a planner sees waiting and agreed days on the rota, never declined ones', async () => {
   const { db } = setup();
   await ask(db, { days: ['2099-09-14'], status: 'unavailable', note: 'Graduation' });
   await ask(db, { days: ['2099-09-16'], status: 'unavailable', note: 'Wedding' });
+  await ask(db, { days: ['2099-09-22'], status: 'unavailable', note: 'Funeral' });
   await decide(db, { staffId: 1, days: ['2099-09-16'], decision: 'approved' });
+  await decide(db, { staffId: 1, days: ['2099-09-22'], decision: 'declined' });
 
-  const data = await (await getRoster(ctx(db, { query: '?from=2099-09-14&to=2099-09-20', session: PLANNER }))).json();
+  const data = await (await getRoster(ctx(db, { query: '?from=2099-09-14&to=2099-09-27', session: PLANNER }))).json();
   const days = data.rows.find((r) => r.staff.name === 'Adjoa').days;
-  assert.equal(days.find((d) => d.day === '2099-09-14').availability, null, 'the waiting one is not shown');
+  assert.equal(days.find((d) => d.day === '2099-09-14').availability.decision, 'waiting', 'the waiting one is shown');
   assert.equal(days.find((d) => d.day === '2099-09-16').availability.decision, 'approved', 'the agreed one is');
-  assert.equal(data.asked, 0, 'and nothing to answer on the toolbar');
+  assert.equal(days.find((d) => d.day === '2099-09-22').availability, null, 'the declined one is not');
+  assert.equal(data.asked, 1, 'the toolbar says how many are waiting');
+  assert.equal(data.decides, false, 'but not that they answer them');
 });
 
 test('only supervisors and up can mark, list or answer requests', () => {

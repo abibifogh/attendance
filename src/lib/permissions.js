@@ -30,8 +30,9 @@ export const PERMISSIONS = [
   {
     key: 'att_rota',
     label: 'Build the rota',
-    detail: 'Set the rota. Sees leave and days off once they are agreed, but not the requests '
-      + 'behind them, and approves nothing. No balances',
+    detail: 'Set the rota. Sees leave and days off, agreed or still waiting on an answer, so the '
+      + 'week is not built over a request, but approves nothing and never sees what was turned '
+      + 'down. No balances',
   },
   {
     key: 'att_times',
@@ -142,10 +143,10 @@ export const ROLES = [
     key: 'planner',
     label: 'Rota planner',
     detail: 'Builds the rota and can put a wrong clock time right — recorded against their '
-      + 'name, with the administrators told each time. Does not see or answer leave or '
-      + 'availability requests, cannot settle a missing clock-out, and cannot see how much '
-      + 'leave anybody has left. Add "Sign off attendance" to let them close months off as well, still without '
-      + 'the balances.',
+      + 'name, with the administrators told each time. Sees the leave and the days people cannot '
+      + 'work that are still waiting on an answer, to plan around, but answers none of them. '
+      + 'Cannot settle a missing clock-out, and cannot see how much leave anybody has left. Add '
+      + '"Sign off attendance" to let them close months off as well, still without the balances.',
     defaults: ['att_view', 'att_rota', 'att_times'],
   },
   {

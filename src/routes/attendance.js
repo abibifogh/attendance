@@ -2234,9 +2234,11 @@ export async function getRoster(ctx) {
   // their Sundays, what is still waiting to be published. Stripped here rather
   // than in the screen, because the screen is a courtesy and this is the gate.
   const reader = !allows('att_rota', ctx.session.permissions);
-  // And whoever plans without deciding sees agreed days, not requests: a day
-  // somebody has asked about, or leave nobody has answered yet, is for a
-  // supervisor or above to see and settle.
+  // Whoever plans without deciding sees what is waiting as well as what is
+  // agreed, so the week is not built over a day somebody has asked about:
+  // the days people say they cannot work and the leave nobody has answered
+  // yet. They answer none of it, and what was turned down is not theirs to
+  // see. Only a supervisor or above sees that, and decides.
   const decides = allows('att_manage', ctx.session.permissions);
 
   const [ds, availability] = await Promise.all([
@@ -2249,7 +2251,7 @@ export async function getRoster(ctx) {
       ? { results: [] }
       : ctx.db.prepare(
         `SELECT * FROM att_availability WHERE day BETWEEN ?1 AND ?2
-            ${decides ? '' : "AND decision = 'approved'"}`,
+            ${decides ? '' : "AND decision IN ('approved', 'waiting')"}`,
       ).bind(from, to).all().catch(() => ({ results: [] })),
   ]);
 
@@ -2269,7 +2271,7 @@ export async function getRoster(ctx) {
   // How many days people have asked about that nobody has answered. Counted
   // over everything rather than over the window: a request for next month is
   // still waiting on somebody while they look at this week.
-  const asked = reader || !decides ? { n: 0 } : await ctx.db.prepare(
+  const asked = reader ? { n: 0 } : await ctx.db.prepare(
     "SELECT COUNT(*) AS n FROM att_availability WHERE decision = 'waiting'",
   ).first().catch(() => ({ n: 0 }));
 
@@ -2339,6 +2341,8 @@ export async function getRoster(ctx) {
     shifts,
     publish,
     asked: Number(asked?.n ?? 0),
+    // Whether this person answers what is asked, or only sees it.
+    decides,
     // Shifts wanted on a day with nobody on them yet. They belong to the day
     // rather than to a person, so they travel beside the rows rather than in
     // one of them.
@@ -2450,11 +2454,10 @@ export async function getRoster(ctx) {
           missedMeal: missedMeal.get(`${staff.id}|${day}`) ?? null,
           leave: leaveOnTheGrid(ds, staff.id, day),
           // Leave asked for and not answered yet. Shown to whoever plans the
-          // rota the way a day somebody says they cannot work is, so the week
-          // is not built over a request that is sitting in the Leave screen.
-          // A reader sees leave once it is approved, and not before: what
-          // somebody has asked for is between them and whoever decides.
-          leaveAsked: reader || !decides ? null : leaveAskedFor(ds, staff.id, day),
+          // rota, deciding or not, the way a day somebody says they cannot
+          // work is, so the week is not built over a request that is sitting
+          // in the Leave screen. A reader sees leave once it is approved.
+          leaveAsked: reader ? null : leaveAskedFor(ds, staff.id, day),
           holiday: ds.holidayBy.get(day)?.name ?? null,
         };
       }),
@@ -4459,10 +4462,16 @@ export async function listLeave(ctx) {
 
   const clauses = [];
   const binds = [];
-  // Requests are between the person and whoever decides them. Anybody who
-  // cannot decide, a rota planner included, sees leave once it is approved
-  // and nothing before: not what was asked for, not what was turned down.
-  if (!allows('att_manage', ctx.session.permissions)) clauses.push("l.status = 'approved'");
+  // Requests are between the person and whoever decides them. A rota
+  // planner sees what is waiting as well as what is approved, so a week is
+  // not planned over a request nobody has answered; what was turned down or
+  // cancelled stays with whoever decides. Anybody else sees leave once it is
+  // approved and nothing before.
+  if (!allows('att_manage', ctx.session.permissions)) {
+    clauses.push(allows('att_rota', ctx.session.permissions)
+      ? "l.status IN ('approved', 'pending')"
+      : "l.status = 'approved'");
+  }
   if (status && ['pending', 'approved', 'rejected', 'cancelled'].includes(status)) {
     clauses.push('l.status = ?');
     binds.push(status);

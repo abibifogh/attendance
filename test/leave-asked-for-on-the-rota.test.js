@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { getRoster } from '../src/routes/attendance.js';
+import { getRoster, listLeave } from '../src/routes/attendance.js';
 
 /**
  * Leave somebody has asked for, on the rota before it is decided.
@@ -81,13 +81,15 @@ test('leave waiting on an answer is on a supervisor’s rota, every day it cover
   assert.equal(dayOf(out, 'Adjoa', '2026-10-08').leave, null, 'and it is not leave yet');
 });
 
-test('a rota planner does not see leave somebody has asked for', async () => {
+test('a rota planner sees leave somebody has asked for, to plan around, and is not the one who answers', async () => {
   const { raw, db, code } = setup();
   raw.prepare(`INSERT INTO att_leave (id, staff_id, reason_code, from_day, to_day, days, status, reason)
                VALUES (7, 1, ?, '2026-10-07', '2026-10-09', 3, 'pending', 'Sister''s wedding')`).run(code);
   const out = await (await getRoster(planner(db))).json();
-  assert.equal(dayOf(out, 'Adjoa', '2026-10-08').leaveAsked, null);
-  assert.ok(!JSON.stringify(out).includes('wedding'), 'nor what it was for');
+  const asked = dayOf(out, 'Adjoa', '2026-10-08').leaveAsked;
+  assert.ok(asked, 'the waiting request is on the grid');
+  assert.equal(asked.id, 7);
+  assert.equal(out.decides, false, 'and the screen is told they do not decide');
 });
 
 test('once approved it is the leave itself, and a declined one is gone', async () => {
@@ -108,4 +110,17 @@ test('somebody who can only read the rota does not see what has been asked for',
                VALUES (1, ?, '2026-10-07', '2026-10-07', 1, 'pending')`).run(code);
   const out = await (await getRoster(reader(db))).json();
   assert.equal(dayOf(out, 'Adjoa', '2026-10-07').leaveAsked, null);
+});
+
+test('the leave list shows a planner what is waiting and approved, never what was turned down', async () => {
+  const { raw, db, code } = setup();
+  raw.prepare(`INSERT INTO att_leave (id, staff_id, reason_code, from_day, to_day, days, status)
+               VALUES (21, 1, ?, '2026-10-07', '2026-10-07', 1, 'pending'),
+                      (22, 1, ?, '2026-10-12', '2026-10-12', 1, 'approved'),
+                      (23, 2, ?, '2026-10-14', '2026-10-14', 1, 'rejected'),
+                      (24, 2, ?, '2026-10-15', '2026-10-15', 1, 'cancelled')`).run(code, code, code, code);
+  const seen = async (who) => (await (await listLeave(who)).json()).leave.map((l) => l.id).sort();
+  assert.deepEqual(await seen(planner(db)), [21, 22]);
+  assert.deepEqual(await seen(asWho(db, ['att_view'])), [22], 'somebody who does not plan sees approved leave only');
+  assert.deepEqual(await seen(asWho(db, ['att_view', 'att_manage', 'att_rota'])), [21, 22, 23, 24], 'whoever decides sees all of it');
 });
