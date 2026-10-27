@@ -23,6 +23,7 @@ import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
 import * as prepaid from './routes/prepaid.js';
 import * as mgmt from './routes/mgmt.js';
+import * as reportAccess from './routes/reportaccess.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
@@ -110,6 +111,9 @@ const ROUTES = [
     return prepaid.sendSummary(env, { month: ctx.body?.month, to: ctx.account.email, origin: ctx.url.origin });
   }],
   // The management report: a week or a month of breakfast and maintenance, from each app.
+  // Who sees which reports: an admin shares report pages with people who are not admins.
+  ['GET', '/api/report-access', 'session', adminOnly((env) => reportAccess.list(env))],
+  ['POST', '/api/report-access', 'session', adminOnly((env, ctx) => reportAccess.save(env, ctx.body, ctx.account))],
   ['GET', '/api/reports/management', 'insight', (env, ctx) => mgmt.managementReport(env, ctx.query)],
   ['GET', '/api/reports/management/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
@@ -121,13 +125,14 @@ const ROUTES = [
   }],
   ['POST', '/api/reports/management/send', 'insight', async (env, ctx) => {
     // To everybody it goes to (an admin), or to whoever presses it.
-    const { period, at } = ctx.body || {};
+    // The sections chosen on the page ride along: a section left out there is left out of the email.
+    const { period, at, skip } = ctx.body || {};
     if (ctx.body?.everyone) {
       await till.requireAdmin(ctx.account);
-      return mgmt.sendReport(env, { period, at, origin: ctx.url.origin });
+      return mgmt.sendReport(env, { period, at, skip, origin: ctx.url.origin });
     }
     if (!ctx.account?.email) throw badRequest('Your account has no email address to send it to.');
-    return mgmt.sendReport(env, { period, at, to: ctx.account.email, origin: ctx.url.origin });
+    return mgmt.sendReport(env, { period, at, skip, to: ctx.account.email, origin: ctx.url.origin });
   }],
   ['GET', '/api/money/articles', 'insight', (env, ctx) => revenue.articlesView(env, rangeOf(ctx.query))],
   ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
@@ -471,15 +476,22 @@ export default {
       else if (permission === 'shifts') {
         account = await requireInsight(request, env);
         // An uploader reaches the upload endpoints and nothing else.
-        if (till.roleOf(account) === 'uploader' && !UPLOADER_MAY.has(`${request.method} ${url.pathname}`)) {
+        // An uploader reaches the upload endpoints and nothing else; somebody
+        // with Reports only, nothing here. Either may read the reports'
+        // bootstrap when an admin has shared a report with them.
+        const role = till.roleOf(account);
+        const asked = `${request.method} ${url.pathname}`;
+        const boot = asked === 'GET /api/bootstrap' && (role === 'uploader' || role === 'reports')
+          && (await reportAccess.reportsOf(env, account)).length > 0;
+        if (role === 'uploader' && !UPLOADER_MAY.has(asked) && !boot) {
           throw new HttpError(403, 'Your account uploads files and nothing else here.');
         }
+        if (role === 'reports' && !boot) throw new HttpError(403, 'Your account opens the reports shared with you and nothing else.');
       } else if (permission === 'insight') {
         account = await requireInsight(request, env);
-        // A supervisor holds the reports grant for the Shifts screen alone, and an uploader for the files.
-        const role = till.roleOf(account);
-        if (role === 'supervisor') throw new HttpError(403, 'Your account opens Shifts and nothing else here.');
-        if (role === 'uploader') throw new HttpError(403, 'Your account uploads files and nothing else here.');
+        // Anybody who is not an admin reads only the report pages an admin
+        // shared with them (routes/reportaccess.js), and nothing else here.
+        if (till.roleOf(account) !== 'admin') await reportAccess.requireReport(env, account, request.method, url.pathname);
       } else if (permission === 'owner') account = await requireOwner(request, env);
       // Looking as somebody else is look only: nothing may change while it is on.
       if (account?.viewedBy && request.method !== 'GET' && request.method !== 'HEAD') {
@@ -676,6 +688,8 @@ async function me(env, { request }) {
       viewedBy: account.viewedBy || null,
       mayViewAs: mayViewAs(account.viewedBy ? await currentAccount(request, env, { real: true }) : account),
       canSeeReports: till.roleOf(account) === 'admin',
+      // The report pages they may open: every one for an admin, as shared for anybody else.
+      reports: await reportAccess.reportsOf(env, account),
       till: till.roleOf(account) ? { role: till.roleOf(account), access: await till.accessOf(env, account) } : null,
     },
   });

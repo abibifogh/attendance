@@ -24,19 +24,28 @@ const asked = () => {
   if (period !== 'week' && period !== 'month') {
     try { period = sessionStorage.getItem('insight-mgmt-period') || 'week'; } catch { period = 'week'; }
   }
-  return { period: period === 'month' ? 'month' : 'week', at: q.get('at') || '' };
+  // The sections left out, as chosen with "Include" (kept for the visit).
+  let skip = q.get('skip');
+  if (skip == null) { try { skip = sessionStorage.getItem('insight-mgmt-skip') || ''; } catch { skip = ''; } }
+  return { period: period === 'month' ? 'month' : 'week', at: q.get('at') || '', skip };
 };
 
 export async function renderMgmt(root) {
   const me = state.me?.account;
   const isAdmin = (me?.till?.role || (me?.isOwner || me?.bootstrap ? 'admin' : null)) === 'admin';
-  const { period, at } = asked();
+  const { period, at, skip } = asked();
   const view = h('div.mg');
-  mount(root, view, h('p.muted', 'Asking breakfast and maintenance…'));
-  const r = await api(`/reports/management?period=${period}${at ? `&at=${encodeURIComponent(at)}` : ''}`);
-  const go = (p, key) => {
-    try { sessionStorage.setItem('insight-mgmt-period', p); } catch { /* private mode */ }
-    location.hash = `#/management?period=${p}${key ? `&at=${key}` : ''}`;
+  mount(root, view, h('p.muted', 'Asking each system…'));
+  const r = await api(`/reports/management?period=${period}${at ? `&at=${encodeURIComponent(at)}` : ''}${skip ? `&skip=${encodeURIComponent(skip)}` : ''}`);
+  const go = (p, key, left = r.skip) => {
+    try { sessionStorage.setItem('insight-mgmt-period', p); sessionStorage.setItem('insight-mgmt-skip', left.join(',')); } catch { /* private mode */ }
+    location.hash = `#/management?period=${p}${key ? `&at=${key}` : ''}${left.length ? `&skip=${left.join(',')}` : ''}`;
+  };
+  // Include or leave out a section: the page, its PDF and Send all follow.
+  const toggle = (key) => {
+    const left = r.skip.includes(key) ? r.skip.filter((k) => k !== key) : [...r.skip, key];
+    if (left.length === r.sections.length) return;
+    go(r.period, r.key, left);
   };
   let mailBox = null;
   let mail = null;
@@ -56,8 +65,22 @@ export async function renderMgmt(root) {
             h('button.btn', { type: 'button', 'aria-label': r.period === 'week' ? 'Week before' : 'Month before', onclick: () => go(r.period, r.before) }, '‹'),
             h('b', r.title),
             h('button.btn', { type: 'button', 'aria-label': r.period === 'week' ? 'Week after' : 'Month after', disabled: r.latest, onclick: () => go(r.period, r.after) }, '›')),
+          h('div.mg-include', { role: 'group', 'aria-label': 'Sections to include' },
+            h('span', 'Include'),
+            r.sections.map((x) => {
+              const on = !r.skip.includes(x.key);
+              return h('button', {
+                type: 'button', class: on ? 'on' : '', 'aria-pressed': String(on),
+                title: on ? `Leave ${x.label} out of the page, its PDF and the email` : `Put ${x.label} back`,
+                disabled: on && r.skip.length === r.sections.length - 1,
+                onclick: () => toggle(x.key),
+              }, on ? `✓ ${x.label}` : x.label);
+            })),
           h('button.btn', { type: 'button', onclick: () => window.print() }, '⤓ PDF'),
-          h('button.btn', { type: 'button', 'aria-expanded': String(Boolean(mailBox)), onclick: () => { mailBox = mailBox ? null : true; paint(); } }, '✉ Email it'))),
+          // An admin goes to Sending the report; anybody else may send it to themselves.
+          isAdmin
+            ? h('button.btn', { type: 'button', onclick: () => document.getElementById('mg-mail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, '✉ Send')
+            : h('button.btn', { type: 'button', 'aria-expanded': String(Boolean(mailBox)), onclick: () => { mailBox = mailBox ? null : true; paint(); } }, '✉ Email it'))),
       mailBox ? sendBox() : null,
 
       h('div.mg-tiles', r.tiles.map((t) => h('div.mg-tile',
@@ -72,10 +95,11 @@ export async function renderMgmt(root) {
             h('span', a.text), h('span.src', a.source))))
           : h('p.muted', 'Nothing stands out.')),
 
-      breakfast(r.breakfast),
-      maintenance(r.maintenance),
+      r.breakfast?.skipped ? null : breakfast(r.breakfast),
+      r.maintenance?.skipped ? null : maintenance(r.maintenance),
+      r.skip.length ? h('p.small.muted.mg-left', `Left out of this report: ${r.sections.filter((x) => r.skip.includes(x.key)).map((x) => x.label).join(', ')}. Press it under Include to put it back.`) : null,
 
-      h('section.mg-src',
+      h('section.mg-src.mg-soonsec.mg-noprint',
         h('div.mg-srchead', h('h2', 'Coming next'), h('span', 'each a section like the two above, and lines in “Needs your attention”')),
         h('div.mg-soon',
           soon('Front desk & shifts', 'Drawer differences, card and MoMo, unpaid stays.'),
@@ -91,9 +115,9 @@ export async function renderMgmt(root) {
   // ------------------------------------------------------------ breakfast --
   function breakfast(b) {
     const head = h('div.mg-srchead', h('h2', '☕ Breakfast'), h('span', 'from the breakfast app · usage, deliveries, counts and the bakery'));
-    if (!b?.ok) return h('section.mg-src', head, h('div.card.mg-off', b?.error || 'Not linked.'));
+    if (!b?.ok) return h('section.mg-src.mg-bf', head, h('div.card.mg-off', b?.error || 'Not linked.'));
     const prevWord = r.prevName[0].toUpperCase() + r.prevName.slice(1);
-    return h('section.mg-src', head,
+    return h('section.mg-src.mg-bf', head,
       b.note ? h('p.mg-note', b.note) : null,
       h('div.mg-g2',
         h('div.card',
@@ -131,11 +155,11 @@ export async function renderMgmt(root) {
   // ---------------------------------------------------------- maintenance --
   function maintenance(m) {
     const head = h('div.mg-srchead', h('h2', '🔧 Maintenance'), h('span', 'from the maintenance app · rounds, jobs, plans and the store'));
-    if (!m?.ok) return h('section.mg-src', head, h('div.card.mg-off', m?.error || 'Not linked.'));
+    if (!m?.ok) return h('section.mg-src.mg-mx', head, h('div.card.mg-off', m?.error || 'Not linked.'));
     const ro = m.rounds;
     const j = m.jobs;
     const st = m.store;
-    return h('section.mg-src', head,
+    return h('section.mg-src.mg-mx', head,
       h('div.mg-g3',
         h('div.card', h('h3', 'Room rounds'),
           meter('Rooms visited', ro.rooms.done, ro.rooms.total),
@@ -221,20 +245,19 @@ export async function renderMgmt(root) {
     const send = async (button, everyone) => {
       button.disabled = true; said.textContent = 'Sending…'; said.className = 'small';
       try {
-        const out = await api('/reports/management/send', { method: 'POST', body: { period: r.period, at: r.key, everyone } });
+        const out = await api('/reports/management/send', { method: 'POST', body: { period: r.period, at: r.key, skip: r.skip, everyone } });
         said.textContent = out.sent ? `Sent to ${everyone ? `${out.sent} address${out.sent === 1 ? '' : 'es'}` : me?.email}.${out.failed?.length ? ` Not sent to: ${out.failed.join('; ')}` : ''}` : (out.failed?.[0] || out.reason || 'Not sent.');
         said.className = out.sent ? 'small' : 'small form-error';
       } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
       button.disabled = false;
     };
     const toMe = h('button.btn', { type: 'button', onclick: () => send(toMe, false) }, 'Send it to me');
-    const toAll = isAdmin ? h('button.btn.primary', { type: 'button', onclick: () => { if (window.confirm(`Send ${r.title} to everybody who gets the management report?`)) send(toAll, true); } }, 'Send it to everybody on the list') : null;
-    return h('div.card.mg-send', h('p.small', `${r.label}: the figures, what needs attention and both sections in short, with a link back here.`), h('div.mg-row', toMe, toAll, said));
+    return h('div.card.mg-send', h('p.small', `${r.label}: the figures, what needs attention and both sections in short, with a link back here.`), h('div.mg-row', toMe, said));
   }
 
-  /** Who gets it on Mondays and on the 1st. */
+  /** Sending it: now, by pressing Send; by itself only when switched on; and to whom. */
   function mailCard() {
-    const box = h('section.card.mg-mail', h('h2', 'Who gets it'), h('p.muted', 'Loading…'));
+    const box = h('section.card.mg-mail', { id: 'mg-mail' }, h('h2', 'Sending the report'), h('p.muted', 'Loading…'));
     const draw = () => {
       const emails = [...mail.emails];
       const typed = h('input', { type: 'email', placeholder: 'Add an email address', 'aria-label': 'Email address' });
@@ -249,22 +272,64 @@ export async function renderMgmt(root) {
         if (emails.includes(v)) { said.textContent = 'Already on the list.'; return; }
         save({ emails: [...emails, v] });
       };
-      const tick = (key, label) => h('label.mg-tick', h('input', { type: 'checkbox', checked: mail[key], onchange: (e) => save({ [key]: e.target.checked }) }), label);
+      const tick = (key, label, opts = {}) => h('label.mg-tick', h('input', { type: 'checkbox', checked: mail[key], disabled: opts.disabled, onchange: (e) => save({ [key]: e.target.checked }) }), label);
       const last = mail.lastSent || {};
+      const sendNow = h('button.btn.primary', {
+        type: 'button',
+        disabled: !emails.length && !mail.admins,
+        onclick: async () => {
+          if (!window.confirm(`Send ${r.title} now to everybody on the list?`)) return;
+          sendNow.disabled = true; said.textContent = 'Sending…'; said.className = 'small';
+          try {
+            const out = await api('/reports/management/send', { method: 'POST', body: { period: r.period, at: r.key, skip: r.skip, everyone: true } });
+            said.textContent = out.sent ? `Sent ${r.title} to ${out.sent} address${out.sent === 1 ? '' : 'es'}.${out.failed?.length ? ` Not sent to: ${out.failed.join('; ')}` : ''}` : (out.failed?.[0] || out.reason || 'Not sent.');
+            said.className = out.sent ? 'small' : 'small form-error';
+            if (out.sent) mail = await api('/reports/management/mail');
+          } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+          sendNow.disabled = false;
+        },
+      }, `✉ Send ${r.title} now`);
+      const toMe = h('button.btn', {
+        type: 'button',
+        onclick: async () => {
+          toMe.disabled = true; said.textContent = 'Sending…'; said.className = 'small';
+          try {
+            const out = await api('/reports/management/send', { method: 'POST', body: { period: r.period, at: r.key, skip: r.skip } });
+            said.textContent = out.sent ? `Sent ${r.title} to ${me?.email}.` : (out.failed?.[0] || out.reason || 'Not sent.');
+            said.className = out.sent ? 'small' : 'small form-error';
+          } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+          toMe.disabled = false;
+        },
+      }, 'Send a test to me');
+      const auto = h('input', { type: 'checkbox', role: 'switch', checked: mail.auto, 'aria-label': 'Send by itself', onchange: (e) => save({ auto: e.target.checked }) });
       mount(box,
-        h('h2', 'Who gets it'),
-        h('p.sub', 'Every Monday morning, last week’s report; on the 1st, last month’s. The figures, what needs attention and both sections in short, with a link to this page. Any address works, not only people with an account.'),
-        h('div.mg-row', tick('weekly', 'Weekly, on Mondays'), tick('monthly', 'Monthly, on the 1st')),
+        h('h2', 'Sending the report'),
+        h('p.sub', `The figures, what needs attention and each section in short, with a link to this page. Send sends the sections included above${r.skip.length ? ` (without ${r.sections.filter((x) => r.skip.includes(x.key)).map((x) => x.label).join(', ')})` : ''}. Nothing is sent until you press Send, unless sending by itself is switched on.`),
+        h('div.mg-row', sendNow, toMe),
+        h('div.mg-auto',
+          h('label.mg-switch', auto, h('span.track', h('span.knob')), h('b', mail.auto ? 'Sending by itself: on' : 'Sending by itself: off')),
+          h('p.small.muted', mail.auto ? 'Sent by itself at 06:45 for the ticked ones below. Each week or month goes once.' : 'Off: it goes only when somebody presses Send.'),
+          h('div.mg-row', tick('weekly', 'Every Monday: last week', { disabled: !mail.auto }), tick('monthly', 'On the 1st: last month', { disabled: !mail.auto })),
+          h('div.mg-row', h('span.small', 'With:'), r.sections.map((x) => h('label.mg-tick',
+            h('input', {
+              type: 'checkbox', checked: !(mail.skip || []).includes(x.key), disabled: !mail.auto,
+              onchange: (e) => {
+                const left = e.target.checked ? (mail.skip || []).filter((k) => k !== x.key) : [...(mail.skip || []), x.key];
+                if (left.length === r.sections.length) { e.target.checked = true; said.textContent = 'At least one section has to go.'; return; }
+                save({ skip: left });
+              },
+            }), x.label)))),
+        h('h3', 'Who gets it'),
         h('div.mg-row', tick('admins', `Insight’s admins${mail.adminEmails?.length ? ` (${mail.adminEmails.join(', ')})` : ''}`)),
         h('div.mg-emails', emails.length ? emails.map((e) => h('span.mg-email', e,
           h('button', { type: 'button', 'aria-label': `Remove ${e}`, title: 'Remove', onclick: () => save({ emails: emails.filter((x) => x !== e) }) }, '×')))
-          : h('span.muted', 'Nobody else yet.')),
+          : h('span.muted', 'Nobody else yet. Any address works, not only people with an account.')),
         h('div.mg-row', typed, h('button.btn', { type: 'button', onclick: add }, 'Add')),
         h('p.small.muted', `Last sent: ${last.week ? `week of ${day(last.week)}` : 'no week yet'} · ${last.month ? new Date(`${last.month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : 'no month yet'}.`),
         said);
     };
     if (mail) { draw(); return box; }
-    api('/reports/management/mail').then((m) => { mail = m; draw(); }).catch((err) => mount(box, h('h2', 'Who gets it'), h('p.form-error', err.message)));
+    api('/reports/management/mail').then((m) => { mail = m; draw(); }).catch((err) => mount(box, h('h2', 'Sending the report'), h('p.form-error', err.message)));
     return box;
   }
 }

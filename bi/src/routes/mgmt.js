@@ -26,8 +26,10 @@ import { adminEmails } from './prepaid.js';
  * Then the few things worth a decision, from every system, most serious
  * first: "Needs your attention". More systems join as sections of their own.
  *
- * The email goes on Monday morning for the week before and on the 1st for
- * the month before, to Insight's admins and whoever else an admin adds.
+ * The email goes when an admin presses Send. Sending by itself (Monday
+ * morning for the week before, the 1st for the month before) is off until an
+ * admin switches it on. It goes to Insight's admins and whoever else an admin
+ * adds.
  */
 
 const SETTING = 'mgmt_report';
@@ -259,7 +261,7 @@ export function tilesOf(p, bf, mx) {
         tone: bf.days.missing.length ? 'warn' : bf.days.due ? 'good' : 'none', source: 'Breakfast',
       },
     );
-  } else {
+  } else if (!bf?.skipped) {
     const why = bf?.error ? 'could not be read' : 'not linked';
     out.push(off('Breakfast food cost', 'Breakfast', why), off('Food cost per guest', 'Breakfast', why), off('Guests at breakfast', 'Breakfast', why), off('Breakfast days recorded', 'Breakfast', why));
   }
@@ -280,7 +282,7 @@ export function tilesOf(p, bf, mx) {
       },
       { label: 'Store parts used', value: cedis(mx.store?.usedValue), sub: `${plural(mx.store?.issues ?? 0, 'part', 'parts')} issued`, tone: 'none', source: 'Maintenance' },
     );
-  } else {
+  } else if (!mx?.skipped) {
     const why = mx?.error ? 'could not be read' : 'not linked';
     out.push(off(p.period === 'week' ? 'Rooms on the rounds' : 'Rounds coverage', 'Maintenance', why), off('Jobs done', 'Maintenance', why), off('Team score', 'Maintenance', why), off('Store parts used', 'Maintenance', why));
   }
@@ -291,7 +293,7 @@ export function tilesOf(p, bf, mx) {
 export function attentionOf(p, bf, mx) {
   const out = [];
   const add = (level, text, source) => out.push({ level, text, source });
-  if (bf && !bf.ok) add('warn', `Breakfast could not be read: ${bf.error}`, 'Breakfast');
+  if (bf && !bf.ok && !bf.skipped) add('warn', `Breakfast could not be read: ${bf.error}`, 'Breakfast');
   if (bf?.ok) {
     if (bf.perGuestChange != null && bf.perGuestChange >= 5) {
       const top = bf.movers.find((m) => m.change > 0);
@@ -307,7 +309,7 @@ export function attentionOf(p, bf, mx) {
     if (low.length) add('warn', `${plural(low.length, 'breakfast item')} below the reorder level or running out: ${listWords(low.map((r) => r.name), 4)}.`, 'Breakfast');
     if (bf.short.value <= -50) add('warn', `The last counts came out ${cedis(-bf.short.value)} short of the books (${listWords(bf.short.names, 3)}).`, 'Breakfast');
   }
-  if (mx && !mx.ok) add('warn', `Maintenance could not be read: ${mx.error}`, 'Maintenance');
+  if (mx && !mx.ok && !mx.skipped) add('warn', `Maintenance could not be read: ${mx.error}`, 'Maintenance');
   if (mx?.ok) {
     const late = mx.jobs?.late || [];
     if (late.length) add('bad', `${plural(late.length, 'time-sensitive job')} past due: ${listWords(late.map((j) => `${j.room} ${String(j.description || j.category).toLowerCase()} (${plural(j.daysLate, 'day')})`), 3)}.`, 'Maintenance');
@@ -332,19 +334,35 @@ export function attentionOf(p, bf, mx) {
 // ------------------------------------------------------------- the report --
 
 /** The whole report for a period. Never throws for a system that cannot be reached. */
+/** The sections a report can leave out, in the order they are shown. */
+export const SECTIONS = [{ key: 'breakfast', label: 'Breakfast' }, { key: 'maintenance', label: 'Maintenance' }];
+
+/** The sections to leave out: a list or "a,b", only ones that exist. */
+export function skipOf(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  const known = new Set(SECTIONS.map((x) => x.key));
+  return [...new Set(list.map((x) => String(x).trim()).filter((x) => known.has(x)))];
+}
+
+const SKIPPED = { ok: false, skipped: true };
+
 export async function managementReport(env, query = {}, { fetchImpl = fetch, today = todayIn('UTC'), now = new Date() } = {}) {
   const p = periodOf({ period: query.period, at: query.at }, today);
+  // A section left out is not asked for at all.
+  const skip = skipOf(query.skip);
   const [bfRaw, mxRaw, mxBefore] = await Promise.all([
-    settle(askBreakfast(env, p, fetchImpl)),
-    settle(askMaintenance(env, { from: p.from, to: p.to, today }, fetchImpl)),
-    settle(askMaintenance(env, { from: p.prevFrom, to: p.prevTo, today }, fetchImpl)),
+    skip.includes('breakfast') ? null : settle(askBreakfast(env, p, fetchImpl)),
+    skip.includes('maintenance') ? null : settle(askMaintenance(env, { from: p.from, to: p.to, today }, fetchImpl)),
+    skip.includes('maintenance') ? null : settle(askMaintenance(env, { from: p.prevFrom, to: p.prevTo, today }, fetchImpl)),
   ]);
-  const breakfast = bfRaw.ok ? breakfastSection(bfRaw.data, p, today) : { ok: false, error: bfRaw.error };
-  const maintenance = mxRaw.ok ? maintenanceSection(mxRaw.data, mxBefore.ok ? mxBefore.data : null) : { ok: false, error: mxRaw.error };
+  const breakfast = !bfRaw ? SKIPPED : bfRaw.ok ? breakfastSection(bfRaw.data, p, today) : { ok: false, error: bfRaw.error };
+  const maintenance = !mxRaw ? SKIPPED : mxRaw.ok ? maintenanceSection(mxRaw.data, mxBefore.ok ? mxBefore.data : null) : { ok: false, error: mxRaw.error };
   return {
     ...p,
     today,
     made: now.toISOString(),
+    skip,
+    sections: SECTIONS,
     tiles: tilesOf(p, breakfast, maintenance),
     attention: attentionOf(p, breakfast, maintenance),
     breakfast,
@@ -360,6 +378,10 @@ export async function mailSettings(env) {
   try { s = JSON.parse((await getSettings(env.DB).catch(() => ({})))[SETTING] || '{}'); } catch { s = {}; }
   return {
     admins: s.admins !== false,
+    // Sending by itself: off until an admin switches it on.
+    auto: s.auto === true,
+    // The sections sending by itself leaves out.
+    skip: skipOf(s.skip),
     weekly: s.weekly !== false,
     monthly: s.monthly !== false,
     emails: Array.isArray(s.emails) ? s.emails : [],
@@ -376,7 +398,7 @@ export async function saveMailSettings(env, body, { origin = null } = {}) {
   const current = await mailSettings(env);
   const flag = (k) => (body?.[k] === undefined ? current[k] : Boolean(body[k]));
   await setSetting(env.DB, SETTING, JSON.stringify({
-    ...current, emails, admins: flag('admins'), weekly: flag('weekly'), monthly: flag('monthly'), origin: origin || current.origin || null,
+    ...current, emails, admins: flag('admins'), auto: flag('auto'), skip: body?.skip === undefined ? current.skip : skipOf(body.skip), weekly: flag('weekly'), monthly: flag('monthly'), origin: origin || current.origin || null,
   }));
   return { ...(await mailSettings(env)), adminEmails: await adminEmails(env) };
 }
@@ -385,7 +407,8 @@ export async function saveMailSettings(env, body, { origin = null } = {}) {
 export function reportEmail(r, link) {
   const cell = 'padding:6px 8px;border-bottom:1px solid #ecebe6;font-size:13px';
   const num = `${cell};text-align:right;white-space:nowrap`;
-  const head = (t) => `<h2 style="margin:20px 0 8px;font-size:16px;color:#111110">${t}</h2>`;
+  // Each part under a rule of its own, so the sections read apart.
+  const head = (t) => `<h2 style="margin:24px 0 10px;padding-top:14px;border-top:2px solid #e1e0d9;font-size:16px;color:#111110">${t}</h2>`;
   const colour = { bad: '#a32121', warn: '#8a5a00', good: '#006300', none: '#4e4d49' };
   const tilesHtml = [0, 2, 4, 6].map((n) => `<tr>${r.tiles.slice(n, n + 2).map((t) => `<td width="50%" style="padding:10px 12px;background:#f2f1ed;border-radius:10px;vertical-align:top">
       <span style="display:block;font-size:12px;color:#4e4d49">${esc(t.label)}</span><strong style="font-size:17px;color:#111110">${esc(t.value)}</strong><br>
@@ -416,8 +439,9 @@ export function reportEmail(r, link) {
     <p style="margin:0 0 14px;color:#4e4d49">${esc(r.label)} · ${esc(r.vs)}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin:0 0 6px">${tilesHtml}</table>
     ${head('Needs your attention')}${attention}
-    ${head('☕ Breakfast')}${breakfast}
-    ${head('🔧 Maintenance')}${maintenance}
+    ${bf?.skipped ? '' : `${head('☕ Breakfast')}${breakfast}`}
+    ${mx?.skipped ? '' : `${head('🔧 Maintenance')}${maintenance}`}
+    ${r.skip?.length ? `<p style="margin:16px 0 0;font-size:13px;color:#6b6a64">Left out of this report: ${esc(r.sections.filter((x) => r.skip.includes(x.key)).map((x) => x.label).join(', '))}.</p>` : ''}
     ${link ? `<p style="margin:18px 0 0"><a href="${esc(link)}" style="display:inline-block;background:#2a78d6;color:#ffffff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 20px">Open the full report</a></p>` : ''}
     <p style="margin:18px 0 0;padding-top:12px;border-top:1px solid #ecebe6;font-size:12px;color:#6b6a64">You get this because you are an admin in Insight, or an admin added this address under Reports › Management. The full report, with the charts, opens in Insight and prints to PDF from there.</p>`);
   const text = [
@@ -437,15 +461,16 @@ export function reportEmail(r, link) {
 /**
  * Send a period's report.
  *
- * - `auto`: Monday's run (the week before) or the 1st's (the month before).
- *   A period already sent is skipped, and so is one switched off.
+ * - `auto`: Monday's run (the week before) or the 1st's (the month before),
+ *   only when an admin switched sending by itself on. A period already sent
+ *   is skipped.
  * - `to`: one address, somebody trying it. Always goes.
  * - otherwise: everybody it goes to, pressed by an admin.
  */
-export async function sendReport(env, { period = 'week', at: asked, to = null, auto = false, origin = null, fetchImpl = fetch, today = todayIn('UTC'), now = new Date() } = {}) {
+export async function sendReport(env, { period = 'week', at: asked, skip = null, to = null, auto = false, origin = null, fetchImpl = fetch, today = todayIn('UTC'), now = new Date() } = {}) {
   const settings = await mailSettings(env);
   const p = periodOf({ period, at: asked }, today);
-  if (auto && !settings[p.period === 'week' ? 'weekly' : 'monthly']) return { sent: 0, key: p.key, reason: 'switched off' };
+  if (auto && (!settings.auto || !settings[p.period === 'week' ? 'weekly' : 'monthly'])) return { sent: 0, key: p.key, reason: 'switched off' };
   if (auto && settings.lastSent?.[p.period] === p.key) return { sent: 0, key: p.key, reason: 'already sent' };
   const recipients = to
     ? [String(to).trim().toLowerCase()]
@@ -453,9 +478,11 @@ export async function sendReport(env, { period = 'week', at: asked, to = null, a
   if (!recipients.length) return { sent: 0, key: p.key, reason: 'nobody gets the management report' };
   if (recipients.some((e) => !EMAIL.test(e))) throw badRequest('That is not an email address.');
 
-  const report = await managementReport(env, { period: p.period, at: p.key }, { fetchImpl, today, now });
+  // Pressed: the sections chosen on the page. By itself: the ones saved for it.
+  const left = skipOf(auto ? settings.skip : skip);
+  const report = await managementReport(env, { period: p.period, at: p.key, skip: left }, { fetchImpl, today, now });
   const base = origin || settings.origin || null;
-  const mail = reportEmail(report, base ? `${base}/#/management?period=${p.period}&at=${p.key}` : null);
+  const mail = reportEmail(report, base ? `${base}/#/management?period=${p.period}&at=${p.key}${left.length ? `&skip=${left.join(',')}` : ''}` : null);
   let sent = 0;
   const failed = [];
   for (const one of recipients) {

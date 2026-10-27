@@ -175,6 +175,15 @@ test('the email: to the admins and the addresses added, each week once, with the
 
   const { calls, fetchImpl } = world();
   const env2 = { ...env, HIVE: null };
+  // Sending by itself is off until an admin switches it on: Monday sends nothing.
+  assert.equal(saved.auto, false);
+  assert.equal((await mgmt.sendDue(env2, { day: '2026-10-26', fetchImpl }))[0].reason, 'switched off');
+  assert.equal(calls.length, 0);
+  // Pressing Send goes whether or not it is on.
+  const pressed = await mgmt.sendReport(env2, { period: 'week', at: '2026-10-12', fetchImpl, today: '2026-10-26' });
+  assert.equal(pressed.sent, 2);
+  calls.length = 0;
+  assert.equal((await mgmt.saveMailSettings(env, { emails: ['gm@example.test'], auto: true })).auto, true);
   const out = await mgmt.sendDue(env2, { day: '2026-10-26', fetchImpl });
   assert.deepEqual(out.map((x) => [x.sent, x.key]), [[2, '2026-10-19']]);
   const mails = calls.filter(([who]) => who === 'hive').map(([, b]) => b);
@@ -193,4 +202,28 @@ test('the email: to the admins and the addresses added, each week once, with the
   assert.equal((await mgmt.sendDue(env2, { day: '2026-11-01', fetchImpl }))[0].reason, 'switched off');
   const mine = await mgmt.sendReport(env2, { period: 'month', at: '2026-10', to: 'me@example.test', fetchImpl, today: '2026-11-01' });
   assert.equal(mine.sent, 1);
+});
+
+test('a section left out is not asked for, has no figures or lines, and is left out of the email', async () => {
+  const env = await linked();
+  const { calls, fetchImpl } = world();
+  const r = await mgmt.managementReport(env, { period: 'week', at: '2026-10-21', skip: 'maintenance,nonsense' }, { fetchImpl, today: '2026-10-27' });
+  assert.deepEqual(r.skip, ['maintenance']);
+  assert.deepEqual(calls.map(([who]) => who), ['breakfast'], 'maintenance is not asked');
+  assert.equal(r.maintenance.skipped, true);
+  assert.ok(r.tiles.length === 4 && r.tiles.every((t) => t.source === 'Breakfast'));
+  assert.ok(r.attention.every((a) => a.source === 'Breakfast'));
+  const mail = mgmt.reportEmail(r, 'https://insight.example.test/#/management');
+  assert.doesNotMatch(mail.html, /🔧 Maintenance/);
+  assert.match(mail.html, /Left out of this report: Maintenance/);
+
+  // Pressed: the sections chosen on the page. By itself: the ones saved for it.
+  await mgmt.saveMailSettings(env, { emails: ['gm@example.test'], admins: false, auto: true, skip: ['breakfast'] });
+  calls.length = 0;
+  const env2 = { ...env, HIVE: null };
+  await mgmt.sendReport(env2, { period: 'week', at: '2026-10-19', skip: ['maintenance'], to: 'me@example.test', fetchImpl, today: '2026-10-27' });
+  assert.deepEqual(calls.filter(([who]) => who !== 'hive').map(([who]) => who), ['breakfast']);
+  calls.length = 0;
+  await mgmt.sendDue(env2, { day: '2026-10-26', fetchImpl });
+  assert.deepEqual([...new Set(calls.filter(([who]) => who !== 'hive').map(([who]) => who))], ['maintenance']);
 });
