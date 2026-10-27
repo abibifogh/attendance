@@ -56,6 +56,36 @@ async function person(env, id) {
   return p;
 }
 
+// ------------------------------------------------------------ short links --
+// Their link is /float/<slug>: the first four letters of their name (igna for
+// Ignacio), with a number when that is taken, unless an admin changes it.
+
+const SLUG = /^[a-z0-9-]{2,30}$/;
+
+/** The first four letters of a name, as plain letters: igna. */
+export function slugFrom(name, code = '') {
+  const letters = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+  return (letters.length >= 2 ? letters : String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'float').slice(0, 4);
+}
+
+/** A slug nobody else has: igna, then igna2, igna3… */
+async function freeSlug(env, base, exceptId = -1) {
+  for (let n = 1; n < 100; n += 1) {
+    const slug = n === 1 ? base : `${base}${n}`;
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await first(env.DB, 'SELECT id FROM float_person WHERE slug = ?1 AND id <> ?2', slug, exceptId))) return slug;
+  }
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+/** Give a slug to anybody who has none yet (people added before short links). */
+async function withSlug(env, p) {
+  if (p.slug) return p;
+  const slug = await freeSlug(env, slugFrom(p.name, p.code), p.id);
+  await run(env.DB, 'UPDATE float_person SET slug = ?2 WHERE id = ?1', p.id, slug);
+  return { ...p, slug };
+}
+
 /** Their receipts, each with what was read and its PO. */
 async function receiptsOf(env, personIds) {
   if (!personIds.length) return [];
@@ -145,12 +175,12 @@ export async function list(env, { fetchImpl } = {}) {
 
 /** One person: what they were given and gave back, every receipt and its PO, newest first. */
 export async function detail(env, id, { fetchImpl } = {}) {
-  const p = await person(env, id);
+  const p = await withSlug(env, await person(env, id));
   const moves = await all(env.DB, 'SELECT * FROM float_move WHERE person_id = ?1 ORDER BY day DESC, id DESC', p.id);
   const receipts = await receiptsOf(env, [p.id]);
   await settleFromOdoo(env, receipts, { fetchImpl });
   return {
-    person: { id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), token: p.token },
+    person: { id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), token: p.token, slug: p.slug },
     ...totals(moves, receipts),
     moves: moves.map((m) => ({ id: m.id, kind: m.kind, amount: m.amount, day: m.day, source: m.source, sourceText: SOURCES[m.source] || null, note: m.note, by: m.by_name })),
     receipts: receipts.map(receiptView),
@@ -175,12 +205,12 @@ export async function give(env, body, account) {
     const code = String(body?.code || codeFrom(name)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
     if (!code) throw badRequest('Their reference: letters or numbers, like KOFI.');
     if (await first(env.DB, 'SELECT id FROM float_person WHERE code = ?1', code)) throw badRequest(`FLT/${code} is somebody else’s already: choose another reference.`);
-    p = await first(env.DB, `INSERT INTO float_person (name, code, note, token, created_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING *`,
-      name, code, note, newToken(), now(), who(account));
+    p = await first(env.DB, `INSERT INTO float_person (name, code, note, token, slug, created_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING *`,
+      name, code, note, newToken(), await freeSlug(env, slugFrom(name, code)), now(), who(account));
   }
   await run(env.DB, `INSERT INTO float_move (person_id, kind, amount, day, source, note, by_name, at) VALUES (?1, 'given', ?2, ?3, ?4, ?5, ?6, ?7)`,
     p.id, amount, day, source, note, who(account), now());
-  return { ok: true, personId: p.id, token: p.token };
+  return { ok: true, personId: p.id, token: p.token, slug: p.slug || null };
 }
 
 /** Money given back: off what they hold. */
@@ -214,14 +244,26 @@ export async function decide(env, body, account) {
   return { ok: true };
 }
 
-/** A new link for them: the old one stops working. Or switched off (no more receipts), or on again. */
+/**
+ * Their link: switched off (no more receipts) or on again, or changed. A
+ * change takes the ending an admin typed (or a new one from their name) and
+ * a new long link, so every link they had before stops working.
+ */
 export async function setLink(env, body) {
   const p = await person(env, body?.personId);
   if (body?.active === false) { await run(env.DB, 'UPDATE float_person SET active = 0 WHERE id = ?1', p.id); return { ok: true }; }
   if (body?.active === true) { await run(env.DB, 'UPDATE float_person SET active = 1 WHERE id = ?1', p.id); return { ok: true }; }
+  let slug;
+  if (body?.slug != null && String(body.slug).trim()) {
+    slug = String(body.slug).trim().toLowerCase().replace(/\s+/g, '-');
+    if (!SLUG.test(slug)) throw badRequest('The link’s ending: 2 to 30 letters, numbers or dashes, like igna.');
+    if (await first(env.DB, 'SELECT id FROM float_person WHERE slug = ?1 AND id <> ?2', slug, p.id)) throw badRequest(`/float/${slug} is somebody else’s already: choose another ending.`);
+  } else {
+    slug = await freeSlug(env, slugFrom(p.name, p.code), p.id);
+  }
   const token = newToken();
-  await run(env.DB, 'UPDATE float_person SET token = ?2 WHERE id = ?1', p.id, token);
-  return { ok: true, token };
+  await run(env.DB, 'UPDATE float_person SET token = ?2, slug = ?3 WHERE id = ?1', p.id, token, slug);
+  return { ok: true, token, slug };
 }
 
 /**
@@ -258,7 +300,14 @@ export async function adminAdd(env, body, account, { fetchImpl } = {}) {
 
 // ------------------------------------------------------------ their link --
 
-async function byToken(env, t) {
+/** Whose link this is: by its short ending (s) or its long key (t). */
+async function byToken(env, t, s) {
+  const slug = String(s || '').toLowerCase();
+  if (slug) {
+    const p = SLUG.test(slug) ? await first(env.DB, 'SELECT * FROM float_person WHERE slug = ?1', slug) : null;
+    if (!p || !p.active) throw new HttpError(404, 'This link is no longer in use. Ask for the new one.');
+    return p;
+  }
   const token = String(t || '');
   const p = token ? await first(env.DB, 'SELECT * FROM float_person WHERE token = ?1', token) : null;
   if (!p || !same(token, p.token) || !p.active) throw new HttpError(404, 'This link is no longer in use. Ask for the new one.');
@@ -267,7 +316,7 @@ async function byToken(env, t) {
 
 /** Their page: what they hold, and what they sent and where each stands. */
 export async function linkView(env, query, { fetchImpl } = {}) {
-  const p = await byToken(env, query?.t);
+  const p = await byToken(env, query?.t, query?.s);
   const moves = await all(env.DB, 'SELECT * FROM float_move WHERE person_id = ?1', p.id);
   const receipts = await receiptsOf(env, [p.id]);
   await settleFromOdoo(env, receipts, { fetchImpl });
@@ -282,7 +331,7 @@ export async function linkView(env, query, { fetchImpl } = {}) {
 }
 
 export async function linkSend(env, body, { fetchImpl } = {}) {
-  const p = await byToken(env, body?.t);
+  const p = await byToken(env, body?.t, body?.s);
   const out = await addFor(env, p, body, `${p.name} (float)`, { fetchImpl });
   const r = out.receipt;
   return {

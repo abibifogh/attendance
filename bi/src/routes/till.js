@@ -70,8 +70,10 @@ export const PRESETS = [
 ];
 
 /**
- * Admin, supervisor or uploader. An owner is an admin; so is anybody given the
- * reports without a role. A supervisor holds the reports grant with the role
+ * Admin, supervisor, uploader or reports only. An owner is an admin; so is
+ * anybody given the reports without a role. Reports only holds the grant with
+ * the role `reports`: the report pages an admin ticked for them
+ * (reportaccess.js), nothing else. A supervisor holds the reports grant with the role
  * `supervisor`, and sees only the Shifts screen. An uploader holds it with
  * `uploader`, and may load the three shift files and see nothing else.
  */
@@ -80,7 +82,7 @@ export function roleOf(account) {
   if (account.isOwner || account.bootstrap) return 'admin';
   const grant = (account.access || []).find((a) => a.systemId === 'insight');
   if (!grant) return null;
-  if (grant.role === 'supervisor' || grant.role === 'uploader') return grant.role;
+  if (grant.role === 'supervisor' || grant.role === 'uploader' || grant.role === 'reports') return grant.role;
   return 'admin';
 }
 

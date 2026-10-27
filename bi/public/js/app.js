@@ -18,6 +18,7 @@ import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
 import { renderPrepaid } from './views/prepaid.js';
 import { renderMgmt } from './views/mgmt.js';
+import { renderReportAccess } from './views/reportaccess.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
@@ -67,6 +68,8 @@ const ROUTES = [
   // Money given to people to spend; their receipts become POs with their reference. Admins.
   { path: 'floats', label: 'Floats', render: renderFloats, needs: 'admin' },
   { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
+  // Which report pages each person who is not an admin may open. Admins.
+  { path: 'report-access', label: 'Who sees which reports', render: renderReportAccess, needs: 'admin' },
   { path: 'reports', label: 'Shared reports', render: renderReports, needs: 'owner' },
   { path: 'setup', label: 'Setup', render: renderSetup, needs: 'owner' },
   // Every system's approvals, decided here. Its own button on the menu bar, with the count.
@@ -83,7 +86,7 @@ const NAV_GROUPS = [
   ['Front desk', ['shifts', 'niceplace', 'upload']],
   ['Money', ['safe', 'floats', 'receipts']],
   ['Reports', ['management', 'money', 'yardstick', 'prepaid', 'cash', 'labour', 'guests', 'buying', 'reports']],
-  ['Admin', ['accounts', 'setup']],
+  ['Admin', ['accounts', 'report-access', 'setup']],
 ];
 
 /** Everything on the reports side needs the reports grant. */
@@ -101,7 +104,8 @@ function allowed(route) {
   if (route.needs === 'admin') return me.till?.role === 'admin';
   // The safe book is the admins'; a supervisor given Envelopes received sees that tab.
   if (route.needs === 'safe') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.envelopes || 0) >= 1);
-  return me.canSeeReports === true;
+  // A report page: every one for an admin, the ones shared with them for anybody else.
+  return me.canSeeReports === true || (me.reports || []).includes(route.path);
 }
 
 const root = document.getElementById('app');
@@ -269,7 +273,8 @@ async function renderApp() {
     // The hub for anybody whose account is only a way into the other systems;
     // the brief for anybody who came here for the numbers.
     return visible.some((r) => r.path === 'brief') ? 'brief' : visible.some((r) => r.path === 'shifts') ? 'shifts'
-      : visible.some((r) => r.path === 'upload') ? 'upload' : 'hub';
+      : visible.some((r) => r.path === 'upload') ? 'upload'
+        : visible.find((r) => r.needs === 'insight')?.path || 'hub';
   }
 
   async function go(path) {

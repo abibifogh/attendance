@@ -3,7 +3,10 @@
  * each receipt sent in, and where each stands. No sign-in: the link is the key.
  */
 
-const t = new URLSearchParams(location.search).get('t') || '';
+// Their short link (/float/igna) or the long one (?t=…).
+const s = (/^\/float\/([A-Za-z0-9-]+)\/?$/.exec(location.pathname) || [])[1] || '';
+const t = s ? '' : new URLSearchParams(location.search).get('t') || '';
+const key = s ? `s=${encodeURIComponent(s)}` : `t=${encodeURIComponent(t)}`;
 const page = document.getElementById('page');
 const who = document.getElementById('who');
 const ghs = (minor) => `GH₵${(Number(minor || 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -12,7 +15,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 async function call(path, body) {
   const res = await fetch(`/api/float/${path}`, body
-    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t, ...body }) }
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t, s, ...body }) }
     : { headers: { Accept: 'application/json' } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong. Try again in a minute.');
@@ -41,7 +44,7 @@ let message = '';
 
 async function paint() {
   let d;
-  try { d = await call(`me?t=${encodeURIComponent(t)}`); } catch (err) {
+  try { d = await call(`me?${key}`); } catch (err) {
     who.textContent = '';
     page.innerHTML = `<p class="err">${esc(err.message)}</p>`;
     return;
@@ -86,5 +89,5 @@ async function paint() {
   };
 }
 
-if (!t) page.innerHTML = '<p class="err">This link is not complete. Open the whole link you were sent.</p>';
+if (!t && !s) page.innerHTML = '<p class="err">This link is not complete. Open the whole link you were sent.</p>';
 else paint();

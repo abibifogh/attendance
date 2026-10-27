@@ -141,3 +141,43 @@ test('a statement for a period: held at the start, every line, held at the end, 
   assert.match(html, /Print or save as PDF/);
   await assert.rejects(floats.statement(env, personId, { from: '2026-11-01', to: '2026-10-01' }), /start is after the end/);
 });
+
+test('short links: the first four letters of their name, a number when taken, and an ending an admin can change', async () => {
+  const { env } = await setUp();
+  assert.equal(floats.slugFrom('Ignacio Test'), 'igna');
+  assert.equal(floats.slugFrom('Éfua Test'), 'efua', 'accents dropped');
+  assert.equal(floats.slugFrom('Yé', 'YE1'), 'ye');
+  const a = await floats.give(env, { name: 'Ignacio Test', amount: '100' }, OWNER);
+  const b = await floats.give(env, { name: 'Ignatius Test', code: 'IGNT', amount: '100' }, OWNER);
+  assert.deepEqual([a.slug, b.slug], ['igna', 'igna2']);
+  assert.equal((await floats.linkView(env, { s: 'IGNA' })).name, 'Ignacio Test', 'any case');
+  assert.equal((await floats.linkView(env, { t: a.token })).name, 'Ignacio Test', 'the long link still works');
+
+  await assert.rejects(floats.setLink(env, { personId: b.personId, slug: 'igna' }), /somebody else/);
+  await assert.rejects(floats.setLink(env, { personId: b.personId, slug: 'no/way' }), /letters, numbers or dashes/);
+  const changed = await floats.setLink(env, { personId: a.personId, slug: 'Nacho K' });
+  assert.equal(changed.slug, 'nacho-k');
+  await assert.rejects(floats.linkView(env, { s: 'igna' }), /no longer in use/, 'the old short link stops');
+  await assert.rejects(floats.linkView(env, { t: a.token }), /no longer in use/, 'and the old long one');
+  assert.equal((await floats.linkView(env, { s: 'nacho-k' })).name, 'Ignacio Test');
+
+  // Somebody added before short links gets one the first time they are opened.
+  await env.DB.prepare('UPDATE float_person SET slug = NULL WHERE id = ?1').bind(b.personId).run();
+  assert.equal((await floats.detail(env, b.personId)).person.slug, 'igna');
+});
+
+test('/float/igna opens the float page, even when the files answer /float.html with a redirect', async () => {
+  const { default: insight } = await import('../src/index.js');
+  const asked = [];
+  const ASSETS = { fetch: async (req) => {
+    const path = new URL(req.url).pathname;
+    asked.push(path);
+    if (path === '/float.html') return new Response(null, { status: 307, headers: { Location: '/float' } });
+    if (path === '/float') return new Response('<title>float</title>', { headers: { 'Content-Type': 'text/html' } });
+    return new Response('index');
+  } };
+  const res = await insight.fetch(new Request('https://insight.example.test/float/igna'), { ASSETS }, { waitUntil() {} });
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /float/);
+  assert.deepEqual(asked, ['/float.html', '/float']);
+});

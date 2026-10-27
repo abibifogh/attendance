@@ -25,6 +25,7 @@ function roleWords(row, access) {
   if (!grant) return 'Hub only: the other systems, no Insight screens';
   if (grant.role === 'supervisor') return 'Supervisor';
   if (grant.role === 'uploader') return 'Uploader: upload files only';
+  if (grant.role === 'reports') return 'Reports only: the reports an admin chose';
   return 'Admin';
 }
 

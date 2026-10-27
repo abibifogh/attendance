@@ -8,9 +8,8 @@ Nice Place are to follow, each as a section of its own.
 
 - **Week / Month**, and ‹ › for the one before or after. With nothing chosen:
   the last week that is over, or this month so far.
-- **⤓ PDF** prints the page (the buttons are left off).
-- **✉ Email it** sends the period on screen to you; an admin can also send it
-  to everybody on the list.
+- **⤓ PDF** prints the page (the buttons are left off; breakfast and maintenance each start a page).
+- **✉ Send**: see *The email* below.
 
 ## Where the figures come from
 
@@ -28,12 +27,25 @@ in *Needs your attention*; the rest of the report is still made.
 
 ## The email
 
-Every Monday morning (06:45, with the daily till summary) last week's report;
-on the 1st, last month's. To Insight's admins and any address added under
-*Who gets it* at the bottom of the page; either can be switched off. Each
-period goes once. The email carries the figures, what needs attention, both
-sections in short and a link back to the page; it is HTML, not a PDF
-attachment (HIVE, which sends Insight's email, attaches only CSV files).
+Nothing is sent until an admin presses **✉ Send** (it takes you to *Sending
+the report* at the bottom of the page) and then **Send … now**. *Send a test
+to me* sends it to whoever presses it; anybody who can open the report may
+send it to themselves.
+
+**Sending by itself** is a switch on the same card, off until an admin
+switches it on. When on, the ticked ones go at 06:45 (with the daily till
+summary): every Monday last week's report, on the 1st last month's, each
+period once.
+
+It goes to Insight's admins (unless unticked) and any address added there. It
+carries the figures, what needs attention, both sections in short and a link
+back to the page; it is HTML, not a PDF attachment (HIVE, which sends
+Insight's email, attaches only CSV files).
+
+## Who can open it
+
+Admins see it. Anybody else sees it when an admin ticks *Management* for them
+under Admin › Who sees which reports (see `src/routes/reportaccess.js`).
 
 Code: `src/routes/mgmt.js`, `public/js/views/mgmt.js`, tested in
 `test/mgmt.test.js`.

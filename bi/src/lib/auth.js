@@ -176,7 +176,7 @@ export function mayViewAs(account) {
   if (!account || account.id == null || account.bootstrap) return false;
   if (account.isOwner) return true;
   const grant = (account.access || []).find((a) => a.systemId === 'insight');
-  return Boolean(grant) && grant.role !== 'supervisor' && grant.role !== 'uploader';
+  return Boolean(grant) && !['supervisor', 'uploader', 'reports'].includes(grant.role);
 }
 
 /** Whether `viewer` may look as the account in `row` (id, is_owner, active). */
