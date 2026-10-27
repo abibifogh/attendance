@@ -328,7 +328,7 @@ export function coverageWords(coverage, name) {
 }
 
 /** The admins: owners, and anybody given Insight who is not a supervisor or an uploader. */
-async function adminEmails(env) {
+export async function adminEmails(env) {
   const rows = await all(env.DB, `SELECT DISTINCT a.email FROM accounts a
     LEFT JOIN account_access x ON x.account_id = a.id AND x.system_id = 'insight'
     WHERE a.active = 1 AND (a.is_owner = 1 OR (x.account_id IS NOT NULL AND COALESCE(x.role, '') NOT IN ('supervisor', 'uploader')))`).catch(() => []);
