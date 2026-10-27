@@ -24,6 +24,7 @@ import * as cashpo from './routes/cashpo.js';
 import * as prepaid from './routes/prepaid.js';
 import * as mgmt from './routes/mgmt.js';
 import * as reportAccess from './routes/reportaccess.js';
+import * as supplierBook from './routes/supplierbook.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
@@ -168,6 +169,13 @@ const ROUTES = [
   ['GET', '/api/demand', 'insight', (env, ctx) => panels.demand(env, ctx.query)],
   ['GET', '/api/cash', 'insight', (env, ctx) => panels.cash(env, ctx.query)],
   ['GET', '/api/suppliers', 'insight', (env, ctx) => panels.suppliers(env, ctx.query)],
+  // Buying › Suppliers: Odoo's vendors, with key suppliers in groups, other spellings and how each is paid.
+  // Seen by whoever has Buying; changed (and payment details seen) by admins and supervisors only.
+  ['GET', '/api/suppliers/book', 'insight', (env, ctx) => supplierBook.book(env, ctx.query, ctx.account)],
+  ['GET', '/api/suppliers/one', 'insight', (env, ctx) => supplierBook.one(env, ctx.query, ctx.account)],
+  ['POST', '/api/suppliers/refresh', 'insight', (env, ctx) => supplierBook.refresh(env, ctx.account)],
+  ['POST', '/api/suppliers/save', 'insight', (env, ctx) => supplierBook.save(env, ctx.body, ctx.account)],
+  ['POST', '/api/suppliers/link', 'insight', (env, ctx) => supplierBook.link(env, ctx.body, ctx.account)],
   ['GET', '/api/findings', 'insight', (env, ctx) => panels.findings(env, ctx.query)],
   ['POST', '/api/findings/:id', 'insight', (env, ctx) => admin.decideFinding(env, ctx.params.id, ctx.body)],
   ['GET', '/api/export', 'insight', exportCsv],
@@ -572,6 +580,9 @@ export default {
     execution.waitUntil(admin.refresh(env, { trigger: 'schedule' }).catch((err) => {
       console.error('Scheduled refresh failed', err);
     }));
+    // Odoo's suppliers, for Buying › Suppliers, and on to the breakfast app and the maintenance store.
+    execution.waitUntil(supplierBook.refreshFromOdoo(env).then(() => supplierBook.pushSuppliers(env))
+      .catch((err) => console.error('Suppliers from Odoo', err)));
   },
 };
 

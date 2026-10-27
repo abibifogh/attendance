@@ -652,6 +652,45 @@ export async function whoAmI({ config: settings, token, fetchImpl = fetch }) {
   return out;
 }
 
+/**
+ * Every vendor in Odoo, for Buying › Suppliers: Odoo is the list, Insight
+ * only adds to it. Anybody a PO or bill has gone to (supplier_rank), with
+ * their contact details, tax number, whether they are a login in Odoo (staff
+ * often are: a refund to a person is raised to them as a vendor), and their
+ * bank accounts. Fields an Odoo without accounting does not have are asked
+ * for only if the first try refuses them.
+ */
+export async function vendorList({ config: settings, token, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const base = ['name', 'phone', 'mobile', 'email', 'vat', 'street', 'city', 'is_company', 'user_ids', 'supplier_rank', 'active'];
+  let rows;
+  try {
+    rows = await searchRead(config, 'res.partner', [['supplier_rank', '>', 0]], [...base, 'property_supplier_payment_term_id'], opts);
+  } catch {
+    rows = await searchRead(config, 'res.partner', [['supplier_rank', '>', 0]], base, opts);
+  }
+  let banks = [];
+  try {
+    banks = await searchRead(config, 'res.partner.bank', [['partner_id', 'in', rows.map((r) => r.id)]], ['partner_id', 'acc_number', 'bank_id', 'acc_holder_name'], opts);
+  } catch { banks = []; }
+  return rows.map((r) => ({
+    id: r.id,
+    name: String(r.name || '').trim(),
+    phone: String(r.phone || r.mobile || '').trim() || null,
+    email: String(r.email || '').trim() || null,
+    vat: String(r.vat || '').trim() || null,
+    address: [r.street, r.city].filter((x) => x && String(x).trim()).join(', ') || null,
+    terms: refName(r.property_supplier_payment_term_id) || null,
+    company: Boolean(r.is_company),
+    staff: Array.isArray(r.user_ids) && r.user_ids.length > 0,
+    rank: Number(r.supplier_rank) || 0,
+    banks: banks.filter((b) => refId(b.partner_id) === r.id).map((b) => ({
+      bank: refName(b.bank_id) || null, number: String(b.acc_number || ''), holder: String(b.acc_holder_name || '') || null,
+    })),
+  })).filter((v) => v.name);
+}
+
 /** The vendor the last PO for a product went to, if any. */
 export async function lastVendorFor({ config: settings, token, productId, fetchImpl = fetch }) {
   const config = odooConfig(settings, token);

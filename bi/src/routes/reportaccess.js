@@ -31,7 +31,7 @@ export const REPORTS = [
   { key: 'cash', label: 'Tills & collections', note: 'Takings by till and how they were collected.' },
   { key: 'labour', label: 'Labour', note: 'Hours worked and wages against revenue.' },
   { key: 'guests', label: 'Guests', note: 'Guests in house and demand.' },
-  { key: 'buying', label: 'Buying', note: 'Suppliers and purchases.' },
+  { key: 'buying', label: 'Buying', note: 'Spend by supplier, and the suppliers list (supervisors may also change it).' },
   { key: 'niceplace', label: 'Nice Place', note: 'The washroom counters against takings.' },
 ];
 const KEYS = new Set(REPORTS.map((r) => r.key));
@@ -52,6 +52,12 @@ const ENDPOINTS = {
   'GET /api/labour': 'labour',
   'GET /api/demand': 'guests',
   'GET /api/suppliers': 'buying',
+  'GET /api/suppliers/book': 'buying',
+  'GET /api/suppliers/one': 'buying',
+  // Changing a supplier: Buying, and then an admin or a supervisor (supplierbook.js).
+  'POST /api/suppliers/refresh': 'buying',
+  'POST /api/suppliers/save': 'buying',
+  'POST /api/suppliers/link': 'buying',
   'GET /api/np': 'niceplace',
 };
 

@@ -2,6 +2,7 @@ import { add, h, money, num, percent, dayRange } from '../util.js';
 import { api } from '../api.js';
 import { barChart } from '../charts.js';
 import { table, banner, caveats } from './components.js';
+import { renderSupplierBook } from './supplierbook.js';
 
 /**
  * What the group buys, as one account rather than three.
@@ -12,6 +13,23 @@ import { table, banner, caveats } from './components.js';
  * for the same thing appear on the same row.
  */
 export async function renderSuppliers(root, { range }) {
+  // Two tabs: what was spent, and the suppliers themselves (Odoo's list, with key suppliers in groups).
+  let tab = 'spend';
+  try { tab = sessionStorage.getItem('insight-buying-tab') || 'spend'; } catch { /* private mode */ }
+  const body = h('div.by-body');
+  const tabs = h('div.by-tabs', { role: 'tablist' },
+    [['spend', 'Spend'], ['suppliers', 'Suppliers']].map(([key, label]) => h('button', {
+      type: 'button', role: 'tab', 'aria-selected': String(tab === key), class: tab === key ? 'on' : '',
+      onclick: () => { try { sessionStorage.setItem('insight-buying-tab', key); } catch { /* private mode */ } renderSuppliers(clearOf(root), { range }); },
+    }, label)));
+  add(root, tabs, body);
+  if (tab === 'suppliers') return renderSupplierBook(body, { range });
+  return renderSpend(body, { range });
+}
+
+function clearOf(el) { while (el.firstChild) el.firstChild.remove(); return el; }
+
+async function renderSpend(root, { range }) {
   const data = await api(`/suppliers?from=${range.from}&to=${range.to}`);
 
   add(root, 
