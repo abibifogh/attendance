@@ -10,9 +10,14 @@ they hold.
 - **＋ Give money**: choose the person, or somebody new (their name and their
   reference, e.g. `KOFI`), how much, the day, and where it came from (the
   safe, the bank, a drawer). Somebody new gets a reference and a link.
-- **🔗 Their link**: copy it and send it to them by SMS or WhatsApp. No
-  login: whoever has the link can send receipts as them, so send it to them
-  only. **New link** stops the old one; **Switch it off** stops receipts.
+- **🔗 Their link**: a short one, `insight.niceoperation.com/float/igna`:
+  the first four letters of their name (with a number when two names start
+  the same). Copy it and send it to them by SMS or WhatsApp. No login:
+  whoever has or guesses the link can see what they hold and send receipts as
+  them, so choose a less obvious ending if that matters. **Change the link**
+  takes the ending you type; every link they had before stops working.
+  **Switch it off** stops receipts. Long links sent before (`float.html?t=…`)
+  keep working until the link is changed.
 - **Given back…**: money they hand back, off what they hold.
 - **📷 Add a receipt for them**: paper receipts handed in, photographed here.
 - **Take out**: a "given" or "given back" typed wrong.

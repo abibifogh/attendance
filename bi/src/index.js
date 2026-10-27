@@ -450,6 +450,8 @@ export default {
   async fetch(request, env, execution) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) {
+      // A float's short link, /float/igna: their page, which reads the ending itself.
+      if (/^\/float\/[A-Za-z0-9-]{2,30}\/?$/.test(url.pathname)) return floatPage(env, request, url);
       // A published report lives at its own address, in front of the app's
       // own files. Anything that is not one falls through to them as before.
       try {
@@ -572,6 +574,15 @@ export default {
     }));
   },
 };
+
+/** The float page's own file, whatever the short link's address; the assets may answer with a redirect to it. */
+async function floatPage(env, request, url) {
+  let response = await env.ASSETS.fetch(new Request(new URL('/float.html', url), request));
+  for (let hops = 0; hops < 2 && response.status >= 300 && response.status < 400 && response.headers.get('Location'); hops += 1) {
+    response = await env.ASSETS.fetch(new Request(new URL(response.headers.get('Location'), url), request));
+  }
+  return response;
+}
 
 function findRoute(method, pathname) {
   const parts = pathname.split('/').filter(Boolean);

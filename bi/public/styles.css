@@ -2217,3 +2217,5 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
   .mg-chip { white-space: normal; }
 }
 .ra-table tbody tr:hover td { background: var(--surface); }
+.fl-slug { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .4rem; }
+.fl-slug input { flex: 1 1 8rem; min-width: 0; }

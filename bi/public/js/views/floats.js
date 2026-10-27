@@ -17,6 +17,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const chip = (cls, text) => h(`span.sh-chip.${cls}`, text);
 const STATUS = { checking: ['none', 'Being checked'], accepted: ['ok', '✓ Accepted'], refused: ['short', '✕ Refused'] };
 const linkOf = (token) => `${location.origin}/float.html?t=${encodeURIComponent(token)}`;
+const shortOf = (slug) => `${location.origin}/float/${slug}`;
 
 let shown = null; // the person open, or null for everybody
 
@@ -208,21 +209,30 @@ export async function renderFloats(root) {
   }
 
   function linkDialog(p) {
-    const box = h('input', { readonly: true, value: p.token ? linkOf(p.token) : '' });
+    const box = h('input', { readonly: true, value: p.slug ? shortOf(p.slug) : (p.token ? linkOf(p.token) : '') });
     const said = h('p.small');
     const copy = h('button.btn.primary', { type: 'button', onclick: () => { box.select(); navigator.clipboard?.writeText(box.value).then(() => { said.textContent = 'Copied: send it by SMS or WhatsApp.'; }).catch(() => {}); } }, 'Copy');
-    const renew = h('button.btn', { type: 'button', onclick: async () => {
-      if (!confirm('Make a new link? The old one stops working at once.')) return;
-      const out = await api('/floats/link', { method: 'POST', body: { personId: p.id } });
-      p.token = out.token; box.value = linkOf(out.token); said.textContent = 'New link made: the old one no longer works.';
-    } }, 'New link');
+    // The ending is theirs to change: the first four letters of their name unless an admin chose another.
+    const ending = h('input', { value: p.slug || '', maxlength: 30, 'aria-label': 'The link’s ending', placeholder: 'igna' });
+    const change = h('button.btn', { type: 'button', onclick: async () => {
+      if (!confirm(`Change ${p.name}’s link to /float/${ending.value.trim().toLowerCase() || '…'}? Their old link stops working at once.`)) return;
+      change.disabled = true;
+      try {
+        const out = await api('/floats/link', { method: 'POST', body: { personId: p.id, slug: ending.value } });
+        p.token = out.token; p.slug = out.slug; ending.value = out.slug; box.value = shortOf(out.slug);
+        said.textContent = 'Changed: send them the new link. The old one no longer works.';
+      } catch (e) { said.textContent = e.message; }
+      change.disabled = false;
+    } }, 'Change the link');
     const off = h('button.btn', { type: 'button', onclick: async () => {
       await api('/floats/link', { method: 'POST', body: { personId: p.id, active: !p.active } });
       close(); paint(banner('good', p.active ? 'Their link is switched off: no more receipts from it.' : 'Their link works again.'));
     } }, p.active ? 'Switch it off' : 'Switch it on');
     const close = dialog(`🔗 ${p.name}’s link`,
-      h('p.small.muted', 'They open it on their phone to see what they hold and send a picture of each receipt. No login: whoever has the link can send receipts as them, so send it to them only.'),
-      box, said, h('div.fl-dlg-acts', copy, renew, off));
+      h('p.small.muted', 'They open it on their phone to see what they hold and send a picture of each receipt. No login: whoever has or guesses the link can see what they hold and send receipts as them. If that worries you, choose a less obvious ending.'),
+      box, said,
+      h('div.fl-slug', h('span.small', `${location.host}/float/`), ending, change),
+      h('div.fl-dlg-acts', copy, off));
   }
 
   function statementDialog(p) {
