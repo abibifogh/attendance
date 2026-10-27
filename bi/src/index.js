@@ -22,6 +22,7 @@ import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
 import * as prepaid from './routes/prepaid.js';
+import * as mgmt from './routes/mgmt.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
 import * as formmatch from './routes/formmatch.js';
@@ -107,6 +108,26 @@ const ROUTES = [
     }
     if (!ctx.account?.email) throw badRequest('Your account has no email address to send it to.');
     return prepaid.sendSummary(env, { month: ctx.body?.month, to: ctx.account.email, origin: ctx.url.origin });
+  }],
+  // The management report: a week or a month of breakfast and maintenance, from each app.
+  ['GET', '/api/reports/management', 'insight', (env, ctx) => mgmt.managementReport(env, ctx.query)],
+  ['GET', '/api/reports/management/mail', 'insight', async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    return { ...(await mgmt.mailSettings(env)), adminEmails: await prepaid.adminEmails(env) };
+  }],
+  ['POST', '/api/reports/management/mail', 'insight', async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    return mgmt.saveMailSettings(env, ctx.body, { origin: ctx.url.origin });
+  }],
+  ['POST', '/api/reports/management/send', 'insight', async (env, ctx) => {
+    // To everybody it goes to (an admin), or to whoever presses it.
+    const { period, at } = ctx.body || {};
+    if (ctx.body?.everyone) {
+      await till.requireAdmin(ctx.account);
+      return mgmt.sendReport(env, { period, at, origin: ctx.url.origin });
+    }
+    if (!ctx.account?.email) throw badRequest('Your account has no email address to send it to.');
+    return mgmt.sendReport(env, { period, at, to: ctx.account.email, origin: ctx.url.origin });
   }],
   ['GET', '/api/money/articles', 'insight', (env, ctx) => revenue.articlesView(env, rangeOf(ctx.query))],
   ['POST', '/api/money/articles', 'insight', (env, ctx) => revenue.saveArticle(env, ctx.body, ctx.account)],
@@ -524,6 +545,9 @@ export default {
       execution.waitUntil(proof.remindDue(env));
       // To-dos made from a difference: whoever each is for, each morning until done.
       execution.waitUntil(tasks.remindDue(env));
+      // On Mondays last week's management report, on the 1st last month's.
+      execution.waitUntil(mgmt.sendDue(env).then((out) => out.forEach((x) => { if (x.error || x.failed?.length) console.error('Management report', x.error || x.failed); }))
+        .catch((err) => console.error('Management report', err)));
       // On the 5th, last month's prepaid stays to whoever an admin chose.
       if (new Date(event.scheduledTime || Date.now()).getUTCDate() === 5) {
         execution.waitUntil(prepaid.sendSummary(env, { auto: true }).then((out) => { if (out.failed?.length) console.error('Prepaid summary', out.failed); })

@@ -66,7 +66,10 @@ MAINTENANCE_APPROVALS_URL = "https://ibjmiyehfhsmupsokyqt.supabase.co/functions/
 #   SSO_SECRET_BREAKFAST
 #   SSO_SECRET_POS
 #   SSO_SECRET_LAUNDRY
-#   SSO_SECRET_MAINTENANCE  signs Approvals calls to Maintenance and Team Tasks
+#   SSO_SECRET_MAINTENANCE  signs Approvals calls to Maintenance and Team Tasks,
+#                           and the management report's call to Maintenance
+#   SSO_SECRET_BREAKFAST also signs the management report's call to breakfast
+#   (docs/management-report.md)
 
 # A little after midnight in Accra: yesterday is finished, and the brief is
 # waiting before anybody opens it. At 06:45, the daily till summary, once the

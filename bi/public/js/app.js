@@ -17,6 +17,7 @@ import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
 import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
 import { renderPrepaid } from './views/prepaid.js';
+import { renderMgmt } from './views/mgmt.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
@@ -43,6 +44,8 @@ const ROUTES = [
   // into the four systems they actually work in.
   { path: 'hub', label: 'Hub', render: renderHub, needs: 'session' },
   { path: 'brief', label: 'Brief', render: renderBrief, needs: 'insight' },
+  // A week or a month of the other systems (breakfast, maintenance), on one page and by email.
+  { path: 'management', label: 'Management', render: renderMgmt, ownHash: true },
   { path: 'money', label: 'Overview', render: renderPnl },
   { path: 'yardstick', label: 'Yardstick', render: renderFinancials },
   { path: 'labour', label: 'Labour', render: renderLabour },
@@ -79,7 +82,7 @@ const NAV_GROUPS = [
   ['Today', ['hub', 'brief']],
   ['Front desk', ['shifts', 'niceplace', 'upload']],
   ['Money', ['safe', 'floats', 'receipts']],
-  ['Reports', ['money', 'yardstick', 'prepaid', 'cash', 'labour', 'guests', 'buying', 'reports']],
+  ['Reports', ['management', 'money', 'yardstick', 'prepaid', 'cash', 'labour', 'guests', 'buying', 'reports']],
   ['Admin', ['accounts', 'setup']],
 ];
 
