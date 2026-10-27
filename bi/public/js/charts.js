@@ -208,7 +208,21 @@ export function barChart(rows, { label, value, colour, format = moneyShort, heig
   const rowHeight = 30;
   const chartHeight = height || rows.length * rowHeight + 18;
   const max = Math.max(...rows.map((r) => Math.abs(value(r))), 1);
-  const labelWidth = 128;
+  // The labels' column is as wide as the longest name needs, within limits:
+  // a name too long for it is cut with an ellipsis and given whole on hover,
+  // so it never runs out past the chart's left edge.
+  // Widths at 11.5px: capitals are wider than small letters, which many
+  // supplier names in Odoo are written in.
+  const charWidth = (c) => (/[A-Z]/.test(c) ? (/[MW]/.test(c) ? 10.2 : 7.9) : /[a-z0-9]/.test(c) ? (/[mw]/.test(c) ? 9 : 6.2) : c === ' ' ? 3.2 : 4.6);
+  const textWidth = (text) => [...text].reduce((t, c) => t + charWidth(c), 0);
+  const names = rows.map((r) => String(label(r) ?? ''));
+  const labelWidth = Math.round(Math.min(240, Math.max(96, Math.max(...names.map(textWidth), 40) + 16)));
+  const short = (text) => {
+    if (textWidth(text) <= labelWidth - 16) return text;
+    let cut = text;
+    while (cut.length > 1 && textWidth(`${cut}…`) > labelWidth - 16) cut = cut.slice(0, -1);
+    return `${cut.trimEnd()}…`;
+  };
   const plotX = labelWidth;
   const plotW = width - labelWidth - 74;
   const hasNegative = rows.some((r) => value(r) < 0);
@@ -235,7 +249,8 @@ export function barChart(rows, { label, value, colour, format = moneyShort, heig
       ? `M${x + r} ${y} h${w - r} v${thickness} h${-(w - r)} a${r} ${r} 0 0 1 ${-r} ${-r} v${-(thickness - 2 * r)} a${r} ${r} 0 0 1 ${r} ${-r} z`
       : `M${x} ${y} h${w - r} a${r} ${r} 0 0 1 ${r} ${r} v${thickness - 2 * r} a${r} ${r} 0 0 1 ${-r} ${r} h${-(w - r)} z`;
     return [
-      s('text', { x: labelWidth - 10, y: y + thickness / 2 + 4, 'text-anchor': 'end', fill: 'var(--ink-2)', 'font-size': 11.5 }, label(row)),
+      s('text', { x: labelWidth - 10, y: y + thickness / 2 + 4, 'text-anchor': 'end', fill: 'var(--ink-2)', 'font-size': 11.5 },
+        s('title', {}, String(label(row) ?? '')), short(String(label(row) ?? ''))),
       s('path', { d: w > 1 ? d : `M${x} ${y} h1 v${thickness} h-1 z`, fill, 'data-i': i }),
       // The value rides the tip of its own bar, always outside it, so it can
       // never be clipped by a short bar or lost inside a pale one.
@@ -247,7 +262,7 @@ export function barChart(rows, { label, value, colour, format = moneyShort, heig
     ];
   });
 
-  const svg = s('svg', { viewBox: `0 0 ${width} ${chartHeight}`, role: 'img' },
+  const svg = s('svg.bars', { viewBox: `0 0 ${width} ${chartHeight}`, role: 'img' },
     hasNegative ? s('line', { x1: zeroX, x2: zeroX, y1: 4, y2: chartHeight - 4, stroke: 'var(--axis)', 'stroke-width': 1 }) : null,
     marks);
 
