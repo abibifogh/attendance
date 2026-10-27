@@ -113,7 +113,8 @@ async function breakfastBase(env) {
 
 async function askBreakfast(env, p, fetchImpl) {
   const base = await breakfastBase(env);
-  if (!base || !env.SSO_SECRET_BREAKFAST) throw new Error('Breakfast is not linked: it needs its address under Accounts › Systems and SSO_SECRET_BREAKFAST.');
+  if (!env.SSO_SECRET_BREAKFAST) throw new Error('Breakfast is not linked: Insight has no SSO_SECRET_BREAKFAST. Run Actions › "Set Insight\'s secrets" in the attendance repository with Insight\'s address in the box.');
+  if (!base) throw new Error('Breakfast is not linked: Insight does not know its address. Set it under Accounts › Where each system lives.');
   const body = p.period === 'month' ? { period: 'month', month: p.key } : { period: 'week', week: p.from };
   return ask({ url: `${base}/api/link/report`, secret: env.SSO_SECRET_BREAKFAST, path: '/api/link/report', body, fetchImpl, what: 'The breakfast app' });
 }
@@ -124,7 +125,8 @@ const maintenanceUrl = (env) => env.MAINTENANCE_REPORT_URL
 
 async function askMaintenance(env, body, fetchImpl) {
   const url = maintenanceUrl(env);
-  if (!url || !env.SSO_SECRET_MAINTENANCE) throw new Error('Maintenance is not linked: it needs MAINTENANCE_APPROVALS_URL and SSO_SECRET_MAINTENANCE.');
+  if (!env.SSO_SECRET_MAINTENANCE) throw new Error('Maintenance is not linked: Insight has no SSO_SECRET_MAINTENANCE. Add INSIGHT_SSO_SECRET_MAINTENANCE to the attendance repository\'s secrets and run Actions › "Set Insight\'s secrets".');
+  if (!url) throw new Error('Maintenance is not linked: Insight does not know its address (MAINTENANCE_APPROVALS_URL in wrangler.toml).');
   return ask({ url, secret: env.SSO_SECRET_MAINTENANCE, path: '/report', body, fetchImpl, what: 'Maintenance' });
 }
 
