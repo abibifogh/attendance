@@ -94,7 +94,7 @@ export function periodOf({ period = 'week', at: asked } = {}, today) {
 
 // -------------------------------------------------------------- the asking --
 
-async function ask({ url, secret, path, body, fetchImpl, what }) {
+export async function ask({ url, secret, path, body, fetchImpl, what }) {
   const text = JSON.stringify(body ?? {});
   const headers = { 'Content-Type': 'application/json', ...(await signLink(secret, path, text)) };
   let response;
@@ -106,7 +106,7 @@ async function ask({ url, secret, path, body, fetchImpl, what }) {
 }
 
 /** Where the breakfast app is: BREAKFAST_URL, or the address it has under Accounts › Systems. */
-async function breakfastBase(env) {
+export async function breakfastBase(env) {
   if (env.BREAKFAST_URL) return String(env.BREAKFAST_URL).trim().replace(/\/+$/, '');
   const row = await first(env.DB, "SELECT home_url, sso_url FROM systems WHERE id = 'breakfast'").catch(() => null);
   const url = row?.home_url || row?.sso_url;
