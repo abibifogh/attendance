@@ -182,7 +182,7 @@ export async function detail(env, id, { fetchImpl } = {}) {
   return {
     person: { id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), token: p.token, slug: p.slug },
     ...totals(moves, receipts),
-    moves: moves.map((m) => ({ id: m.id, kind: m.kind, amount: m.amount, day: m.day, source: m.source, sourceText: SOURCES[m.source] || null, note: m.note, by: m.by_name })),
+    moves: moves.map((m) => ({ id: m.id, kind: m.kind, amount: m.amount, day: m.day, source: m.source, sourceText: SOURCES[m.source] || null, note: m.note, noteBy: m.note_by || null, noteAt: m.note_at || null, by: m.by_name })),
     receipts: receipts.map(receiptView),
     sources: SOURCES,
   };
@@ -196,6 +196,9 @@ export async function give(env, body, account) {
   const day = DAY.test(String(body?.day || '')) ? body.day : todayIn('UTC');
   const source = SOURCES[body?.source] ? body.source : 'other';
   const note = str(body?.note, 'What it is for', { max: 200 });
+  // A note on this money: shown on their page and statement. Somebody new's
+  // "what it is for" is the note when none is given for the money itself.
+  const moveNote = str(body?.moveNote, 'Note', { max: 300 });
   let p;
   if (body?.personId) {
     p = await person(env, body.personId);
@@ -208,8 +211,9 @@ export async function give(env, body, account) {
     p = await first(env.DB, `INSERT INTO float_person (name, code, note, token, slug, created_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING *`,
       name, code, note, newToken(), await freeSlug(env, slugFrom(name, code)), now(), who(account));
   }
-  await run(env.DB, `INSERT INTO float_move (person_id, kind, amount, day, source, note, by_name, at) VALUES (?1, 'given', ?2, ?3, ?4, ?5, ?6, ?7)`,
-    p.id, amount, day, source, note, who(account), now());
+  const said = moveNote || (body?.personId ? null : note);
+  await run(env.DB, `INSERT INTO float_move (person_id, kind, amount, day, source, note, by_name, at, note_by, note_at) VALUES (?1, 'given', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+    p.id, amount, day, source, said, who(account), now(), said ? who(account) : null, said ? now() : null);
   return { ok: true, personId: p.id, token: p.token, slug: p.slug || null };
 }
 
@@ -221,6 +225,15 @@ export async function giveBack(env, body, account) {
   await run(env.DB, `INSERT INTO float_move (person_id, kind, amount, day, source, note, by_name, at) VALUES (?1, 'back', ?2, ?3, ?4, ?5, ?6, ?7)`,
     p.id, amount, day, SOURCES[body?.source] ? body.source : 'safe', str(body?.note, 'Note', { max: 200 }), who(account), now());
   return { ok: true };
+}
+
+/** A note on money given or given back, added or changed by an admin; empty takes it off. */
+export async function noteMove(env, body, account) {
+  const m = await first(env.DB, 'SELECT id FROM float_move WHERE id = ?1', Number(body?.id));
+  if (!m) throw new HttpError(404, 'No such entry.');
+  const note = str(body?.note, 'Note', { max: 300 }) || null;
+  await run(env.DB, 'UPDATE float_move SET note = ?2, note_by = ?3, note_at = ?4 WHERE id = ?1', m.id, note, note ? who(account) : null, note ? now() : null);
+  return { ok: true, note };
 }
 
 /** Take back a mistake: money given or given back, typed wrong. */
@@ -358,13 +371,15 @@ export async function statement(env, id, query) {
   const receipts = (await receiptsOf(env, [p.id])).reverse();
   const lines = [
     ...moves.map((m) => ({
-      day: m.day, what: m.kind === 'given' ? `Given${m.source ? ` from ${(SOURCES[m.source] || m.source).toLowerCase()}` : ''}${m.by_name ? ` by ${m.by_name}` : ''}${m.note ? `: ${m.note}` : ''}`
-        : `Given back${m.note ? `: ${m.note}` : ''}`,
+      day: m.day, what: m.kind === 'given' ? `Given${m.source ? ` from ${(SOURCES[m.source] || m.source).toLowerCase()}` : ''}${m.by_name ? ` by ${m.by_name}` : ''}`
+        : 'Given back',
+      note: m.note || '',
       ref: '', po: '', status: '', change: m.kind === 'given' ? m.amount : -m.amount,
     })),
     ...receipts.map((r) => ({
       day: r.day || r.at.slice(0, 10),
       what: `Receipt: ${r.vendor_name || r.vendor_text || 'not read'}${r.description ? `, ${r.description}` : ''}`,
+      note: r.hint || '',
       ref: r.ref, po: r.po_name || '', status: { checking: 'Being checked', accepted: 'Accepted', refused: `Refused${r.reason ? `: ${r.reason}` : ''}` }[r.status],
       change: -spentBy(r),
     })),
@@ -383,10 +398,10 @@ export async function statement(env, id, query) {
     const cedis = (minor) => (minor / 100).toFixed(2);
     return csvResponse(`${file}.csv`, [
       [`Float statement: ${p.name} (FLT/${p.code})`], [`From ${from} to ${to}`], [],
-      ['Date', 'What', 'Reference', 'PO', 'Status', 'In (GH₵)', 'Out (GH₵)', 'Still with them (GH₵)'],
-      ['', 'Held at the start', '', '', '', '', '', cedis(opening)],
-      ...shown.map((l) => [l.day, l.what, l.ref, l.po, l.status, l.change > 0 ? cedis(l.change) : '', l.change < 0 ? cedis(-l.change) : '', cedis(l.held)]),
-      ['', 'Held at the end', '', '', '', cedis(s.given), cedis(s.spent + s.back), cedis(held)],
+      ['Date', 'What', 'Note', 'Reference', 'PO', 'Status', 'In (GH₵)', 'Out (GH₵)', 'Still with them (GH₵)'],
+      ['', 'Held at the start', '', '', '', '', '', '', cedis(opening)],
+      ...shown.map((l) => [l.day, l.what, l.note, l.ref, l.po, l.status, l.change > 0 ? cedis(l.change) : '', l.change < 0 ? cedis(-l.change) : '', cedis(l.held)]),
+      ['', 'Held at the end', '', '', '', '', cedis(s.given), cedis(s.spent + s.back), cedis(held)],
     ]);
   }
   return new Response(statementPage(s, file), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
@@ -396,7 +411,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const longDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 function statementPage(s, title) {
-  const row = (l) => `<tr><td>${esc(longDay(l.day))}</td><td>${esc(l.what)}${l.status ? `<div class="st">${esc(l.status)}</div>` : ''}</td><td class="ref">${esc(l.ref)}</td><td>${esc(l.po)}</td>
+  const row = (l) => `<tr><td>${esc(longDay(l.day))}</td><td>${esc(l.what)}${l.status ? `<div class="st">${esc(l.status)}</div>` : ''}</td><td class="note">${esc(l.note)}</td><td class="ref">${esc(l.ref)}</td><td>${esc(l.po)}</td>
     <td class="n">${l.change > 0 ? esc(ghs(l.change)) : ''}</td><td class="n">${l.change < 0 ? esc(ghs(-l.change)) : ''}</td><td class="n"><b>${esc(ghs(l.held))}</b></td></tr>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>
@@ -407,7 +422,7 @@ h1{font-size:22px;margin:0}.sub{color:#555;margin:.2rem 0 1rem}
 .sum div{border:1px solid #ddd;border-radius:8px;padding:8px 10px}.sum small{display:block;color:#555}.sum b{font-size:16px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e5e5;vertical-align:top}
 th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.03em}.n{text-align:right;white-space:nowrap}
-.ref{font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}.st{color:#666;font-size:12px}
+.ref{font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}.note{color:#333;font-style:italic;max-width:220px}.st{color:#666;font-size:12px}
 .bar{display:flex;gap:8px;margin-bottom:16px}.bar button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #bbb;background:#f5f5f5;cursor:pointer}
 .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}.sign div{border-top:1px solid #999;padding-top:6px;color:#555;font-size:12px}
 @media print{.bar{display:none}main{padding:0}}
@@ -417,9 +432,9 @@ th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.03em}.n{te
 <p class="sub">Reference FLT/${esc(s.code)} · ${esc(longDay(s.from))} to ${esc(longDay(s.to))}</p>
 <div class="sum"><div><small>Held at the start</small><b>${esc(ghs(s.opening))}</b></div><div><small>Given</small><b>${esc(ghs(s.given))}</b></div>
 <div><small>Spent (receipts)</small><b>${esc(ghs(s.spent))}</b></div><div><small>Given back</small><b>${esc(ghs(s.back))}</b></div><div><small>Held at the end</small><b>${esc(ghs(s.closing))}</b></div></div>
-<table><thead><tr><th>Date</th><th>What</th><th>Reference</th><th>PO</th><th class="n">In</th><th class="n">Out</th><th class="n">Still with them</th></tr></thead><tbody>
-<tr><td></td><td>Held at the start</td><td></td><td></td><td></td><td></td><td class="n"><b>${esc(ghs(s.opening))}</b></td></tr>
-${s.lines.map(row).join('\n') || '<tr><td colspan="7">Nothing in these dates.</td></tr>'}
+<table><thead><tr><th>Date</th><th>What</th><th>Note</th><th>Reference</th><th>PO</th><th class="n">In</th><th class="n">Out</th><th class="n">Still with them</th></tr></thead><tbody>
+<tr><td></td><td>Held at the start</td><td></td><td></td><td></td><td></td><td></td><td class="n"><b>${esc(ghs(s.opening))}</b></td></tr>
+${s.lines.map(row).join('\n') || '<tr><td colspan="8">Nothing in these dates.</td></tr>'}
 </tbody></table>
 <p class="st">A refused receipt does not count against them. One being checked counts until it is refused.</p>
 <div class="sign"><div>Received by ${esc(s.name)}</div><div>Checked by</div></div>

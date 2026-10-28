@@ -122,23 +122,26 @@ test('money given, receipts sent from their link become POs with their reference
 test('a statement for a period: held at the start, every line, held at the end, as a spreadsheet or a page', async () => {
   const { env } = await setUp();
   const { personId, token } = await floats.give(env, { name: 'Ama Test', amount: '500', day: '2026-09-28', source: 'bank' }, OWNER);
-  await floats.give(env, { personId, amount: '300', day: '2026-10-12', source: 'safe' }, OWNER);
+  await floats.give(env, { personId, amount: '300', day: '2026-10-12', source: 'safe', moveNote: 'For the generator repair' }, OWNER);
   await floats.linkSend(env, { t: token, file: jpg('locks') });
   await floats.giveBack(env, { personId, amount: '80', day: '2026-10-18' }, OWNER);
 
   const csv = await (await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31', format: 'csv' })).text();
   assert.match(csv, /Float statement: Ama Test \(FLT\/AMA\)/);
-  assert.match(csv, /,Held at the start,,,,,,500\.00/);
-  assert.match(csv, /2026-10-12,Given from the safe by Test Owner,,,,300\.00,,800\.00/);
-  assert.match(csv, /2026-10-15,"Receipt: A Hardware Shop, Padlock",FLT\/AMA\/001,P02531,Being checked,,120\.00,680\.00/);
-  assert.match(csv, /2026-10-18,Given back,,,,,80\.00,600\.00/);
-  assert.match(csv, /,Held at the end,,,,300\.00,200\.00,600\.00/);
+  assert.match(csv, /Date,What,Note,Reference/);
+  assert.match(csv, /,Held at the start,,,,,,,500\.00/);
+  assert.match(csv, /2026-10-12,Given from the safe by Test Owner,For the generator repair,,,,300\.00,,800\.00/);
+  assert.match(csv, /2026-10-15,"Receipt: A Hardware Shop, Padlock",,FLT\/AMA\/001,P02531,Being checked,,120\.00,680\.00/);
+  assert.match(csv, /2026-10-18,Given back,,,,,,80\.00,600\.00/);
+  assert.match(csv, /,Held at the end,,,,,300\.00,200\.00,600\.00/);
 
   const res = await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' });
   assert.match(res.headers.get('Content-Type'), /text\/html/);
   const html = await res.text();
   assert.match(html, /Float statement · Ama Test/);
   assert.match(html, /Print or save as PDF/);
+  assert.match(html, /<th>Note<\/th>/);
+  assert.match(html, /<td class="note">For the generator repair<\/td>/);
   await assert.rejects(floats.statement(env, personId, { from: '2026-11-01', to: '2026-10-01' }), /start is after the end/);
 });
 
@@ -180,4 +183,30 @@ test('/float/igna opens the float page, even when the files answer /float.html w
   assert.equal(res.status, 200);
   assert.match(await res.text(), /float/);
   assert.deepEqual(asked, ['/float.html', '/float']);
+});
+
+test('a note on every amount given: when it is given, or added and changed later, and on the statement', async () => {
+  const { env } = await setUp();
+  const { personId } = await floats.give(env, { name: 'Kofi Test', note: 'Market runs', amount: '200', day: '2026-10-05' }, OWNER);
+  await floats.give(env, { personId, amount: '150', day: '2026-10-09', moveNote: 'Extra for the plumber' }, OWNER);
+  await floats.give(env, { personId, amount: '100', day: '2026-10-11' }, OWNER);
+  let d = await floats.detail(env, personId);
+  const byDay = (day) => d.moves.find((m) => m.day === day);
+  assert.equal(byDay('2026-10-05').note, 'Market runs', 'somebody new: what it is for is the note on the first money');
+  assert.deepEqual([byDay('2026-10-09').note, byDay('2026-10-09').noteBy], ['Extra for the plumber', 'Test Owner']);
+  assert.equal(byDay('2026-10-11').note, null);
+
+  await floats.noteMove(env, { id: byDay('2026-10-11').id, note: 'Asked for by Ama Test, for the gate lock' }, { name: 'Ade Admin' });
+  await floats.noteMove(env, { id: byDay('2026-10-05').id, note: '' }, OWNER);
+  await assert.rejects(floats.noteMove(env, { id: 9999, note: 'x' }, OWNER), /No such entry/);
+  await assert.rejects(floats.noteMove(env, { id: byDay('2026-10-11').id, note: 'x'.repeat(301) }, OWNER), /300 characters/);
+  d = await floats.detail(env, personId);
+  assert.deepEqual([byDay('2026-10-11').note, byDay('2026-10-11').noteBy], ['Asked for by Ama Test, for the gate lock', 'Ade Admin']);
+  assert.deepEqual([byDay('2026-10-05').note, byDay('2026-10-05').noteBy], [null, null], 'emptied: taken off');
+
+  const csv = await (await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31', format: 'csv' })).text();
+  assert.match(csv, /2026-10-09,Given from somewhere else by Test Owner,Extra for the plumber,/);
+  assert.match(csv, /2026-10-11,Given from somewhere else by Test Owner,"Asked for by Ama Test, for the gate lock",/);
+  const html = await (await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' })).text();
+  assert.match(html, /<td class="note">Asked for by Ama Test, for the gate lock<\/td>/);
 });

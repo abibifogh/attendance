@@ -1,5 +1,6 @@
 import { h, mount, money } from '../util.js';
 import { api } from '../api.js';
+import { state } from '../app.js';
 import { banner } from './components.js';
 import { openNewPo, shrink, thumbOf } from './newpo.js';
 
@@ -115,10 +116,32 @@ export async function renderFloats(root) {
         h('td', act));
     }
 
+    /** The note on money given or given back: shown, and added or changed in place. It goes on their statement. */
+    function noteBox(m) {
+      const box = h('div.fl-mnote');
+      const show = () => mount(box,
+        m.note ? h('div.fl-note', '📝 ', m.note, m.noteBy ? h('span.fl-noteby', ` · ${m.noteBy}`) : null) : null,
+        h('button.sh-link', { type: 'button', onclick: edit }, m.note ? 'Change the note' : '＋ Add a note'));
+      const edit = () => {
+        const input = h('input', { value: m.note || '', maxlength: 300, placeholder: 'What this money was for, who asked, anything to remember' });
+        const save = h('button.btn', { type: 'button', onclick: async () => {
+          save.disabled = true;
+          try {
+            const out = await api('/floats/note', { method: 'POST', body: { id: m.id, note: input.value } });
+            m.note = out.note; m.noteBy = out.note ? (state.me?.account?.name || 'you') : null; show();
+          } catch (e) { alert(e.message); save.disabled = false; }
+        } }, 'Save');
+        mount(box, h('div.fl-noteedit', input, save, h('button.sh-link', { type: 'button', onclick: show }, 'Cancel')));
+        input.focus();
+      };
+      show();
+      return box;
+    }
+
     function moveRow(m) {
       return h('tr',
         h('td', dayText(m.day)),
-        h('td', m.kind === 'given' ? `💵 Given${m.by ? ` by ${m.by}` : ''}${m.sourceText ? ` · ${m.sourceText.toLowerCase()}` : ''}` : '↩ Given back', m.note ? h('div.fl-note', m.note) : null),
+        h('td', m.kind === 'given' ? `💵 Given${m.by ? ` by ${m.by}` : ''}${m.sourceText ? ` · ${m.sourceText.toLowerCase()}` : ''}` : '↩ Given back', noteBox(m)),
         h('td.num', `${m.kind === 'given' ? '+' : '−'}${money(m.amount)}`),
         h('td.fl-note', { colspan: 2 }, 'Not a PO: money handed over'),
         h('td', h('button.sh-link', { type: 'button', onclick: async () => {
@@ -165,6 +188,8 @@ export async function renderFloats(root) {
     const name = h('input', { placeholder: 'Their name' });
     const code = h('input', { placeholder: 'KOFI', maxlength: '10', autocapitalize: 'characters' });
     const note = h('input', { placeholder: 'e.g. Market runs this week' });
+    // A note on this money in particular: on their page and their statement.
+    const moveNote = h('input', { maxlength: 300, placeholder: 'e.g. For the generator repair, Tuesday' });
     const amount = h('input', { inputmode: 'decimal', placeholder: '1000.00' });
     const day = h('input', { type: 'date', value: today() });
     const from = sourceSelect(data.sources);
@@ -177,7 +202,7 @@ export async function renderFloats(root) {
       go.disabled = true; err.textContent = '';
       try {
         const personId = p?.id || (who?.value ? Number(who.value) : null);
-        const out = await api('/floats/give', { method: 'POST', body: { personId, name: name.value, code: code.value, note: note.value, amount: amount.value, day: day.value, source: from.value } });
+        const out = await api('/floats/give', { method: 'POST', body: { personId, name: name.value, code: code.value, note: note.value, moveNote: moveNote.value, amount: amount.value, day: day.value, source: from.value } });
         close();
         shown = out.personId;
         paint(banner('good', `Given. ${personId ? '' : 'Send them their link (🔗 Their link) to send receipts from. '}Each receipt becomes a draft PO with their reference.`));
@@ -187,7 +212,7 @@ export async function renderFloats(root) {
       h('p.small.muted', 'Who, how much, and from where. Their reference goes on every PO their receipts make.'),
       p ? null : field('Person', who), p ? null : fresh,
       h('div.fl-two', field('Amount (GH₵)', amount), field('Given on', day)),
-      field('From', from), err, h('div.fl-dlg-acts', go));
+      field('From', from), field('Note on this money (shows on their statement)', moveNote), err, h('div.fl-dlg-acts', go));
   }
 
   function backDialog(p, d) {

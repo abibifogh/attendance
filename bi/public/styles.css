@@ -2297,3 +2297,9 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 /* A bar chart scales with its card, but not so far that its writing grows
    large on a wide screen: past this it stays at its size, at the left. */
 .chart svg.bars { max-width: 880px; }
+/* Floats: the note on money given, added or changed in place. */
+.fl-mnote { display: grid; gap: .15rem; margin-top: .2rem; }
+.fl-mnote .sh-link { justify-self: start; font-size: .8rem; }
+.fl-noteby { color: var(--muted); font-size: .75rem; }
+.fl-noteedit { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.fl-noteedit input { flex: 1 1 14rem; min-width: 0; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
