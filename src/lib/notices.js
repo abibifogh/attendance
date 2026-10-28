@@ -192,8 +192,27 @@ export async function createNotice(db, {
  */
 export async function listNotices(db, userId, limit = 20, permissions = null) {
   try {
+    // THEIRS, THEN THE NEWEST OF THOSE. This used to take the newest notices
+    // of the whole property and then keep the ones for this person, and most
+    // notices are for one member of staff each (their shift tomorrow, the rota
+    // being out, a reminder). One rota published to thirty people pushed an
+    // administrator's notice past the window in a single press, and the bell
+    // simply never showed it. So the choosing is done in the query, and the
+    // window is over what is theirs.
+    const perms = Array.isArray(permissions) ? permissions.filter(Boolean).map(String) : null;
+    const n = perms?.length ?? 0;
+    const at = (i) => `?${i + 3}`;
+    const mine = perms
+      ? [
+        'user_id = ?1',
+        `(user_id IS NULL AND (audience IS NULL${n ? ` OR audience IN (${perms.map((_, i) => at(i)).join(',')})` : ''}))`,
+        // Copied in on a kind: `also` holds the permissions as a JSON list.
+        ...perms.map((_, i) => `also LIKE ${at(n + i)}`),
+      ].join(' OR ')
+      : 'user_id = ?1 OR user_id IS NULL OR also IS NOT NULL';
+    const binds = [userId ?? 0, Math.min(limit, 100) * 2, ...(perms ?? []), ...(perms ?? []).map((p) => `%"${p}"%`)];
     const [rows, seen] = await Promise.all([
-      db.prepare('SELECT * FROM app_notices ORDER BY id DESC LIMIT ?').bind(Math.min(limit, 100)).all(),
+      db.prepare(`SELECT * FROM app_notices WHERE ${mine} ORDER BY id DESC LIMIT ?2`).bind(...binds).all(),
       db.prepare('SELECT last_id FROM app_notice_reads WHERE user_id = ?').bind(userId ?? 0).first(),
     ]);
 
@@ -214,11 +233,13 @@ export async function listNotices(db, userId, limit = 20, permissions = null) {
       } catch { return false; }
     };
 
+    // Checked again here, as the query's reading of `also` is a text match;
+    // twice the window is fetched to allow for any that turn out not to be theirs.
     const notices = (rows.results ?? []).filter((n) => {
       // Addressed to one person: theirs, and anybody watching that kind.
       if (n.user_id != null) return Number(n.user_id) === Number(userId) || alsoOn(n);
       return !n.audience || !permissions || permissions.includes(n.audience) || alsoOn(n);
-    });
+    }).slice(0, Math.min(limit, 100));
 
     return {
       notices: notices.map((n) => ({ ...n, unread: n.id > lastSeen })),

@@ -498,3 +498,21 @@ test('what was added is written on the notice, not looked up later', async () =>
   const hers = await listNotices(db, 8, 20, ['att_signoff']);
   assert.equal(hers.notices.length, 1);
 });
+
+test('a notice for the office is not pushed out of the bell by notices to everybody else', async () => {
+  const { db } = await setup();
+  const spy = pretend();
+  try {
+    await createNotice(db, { kind: 'advance.asked', title: 'Linda has asked for a salary advance', audience: 'hr_pay', push: false, email: false });
+    // Then a rota goes out: one notice to each of eighty members of staff.
+    for (let i = 0; i < 80; i += 1) {
+      await createNotice(db, { kind: 'rota.published', title: `Your shifts, ${i}`, userId: 1000 + i, push: false, email: false });
+    }
+  } finally { spy.stop(); }
+  const admin = await listNotices(db, 1, 60, ['hr_pay', 'att_view']);
+  assert.ok(admin.notices.some((n) => n.title === 'Linda has asked for a salary advance'), 'still on the bell');
+  assert.ok(admin.notices.every((n) => n.user_id == null || Number(n.user_id) === 1), 'and nobody else’s shifts');
+  assert.equal(admin.unread, 1);
+  const staff = await listNotices(db, 1005, 20, ['att_me']);
+  assert.deepEqual(staff.notices.map((n) => n.title), ['Your shifts, 5'], 'a member of staff sees their own and not the office’s');
+});
