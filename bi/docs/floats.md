@@ -51,12 +51,20 @@ could not be read counts nothing until it is filled in (**Fill it in** opens
 the usual ＋ PO form; its PO still gets the reference). The same picture sent
 twice counts once.
 
+## Notes on money given
+
+Every amount given can carry a note: typed in **Note on this money** when it
+is given, or added and changed later on the person's page (**＋ Add a note**
+or **Change the note** under the line, admins). The note shows who wrote it
+last, and goes on the statement in its own Note column, with what was given
+or given back. A receipt's note is what the person typed when sending it.
+
 ## Statements
 
 On a person, **⬇ Statement**: choose the dates, then
 
 - **Open to print or save as PDF**: what they held at the start, every amount
-  given, spent and given back with references and POs, what they hold at the
+  given, spent and given back with its note, references and POs, what they hold at the
   end, and lines to sign; or
 - **Spreadsheet (CSV)**: the same, for Excel.
 

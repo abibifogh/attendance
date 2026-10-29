@@ -334,6 +334,7 @@ const ROUTES = [
   ['POST', '/api/floats/give', 'insight', adminOnly((env, ctx) => floats.give(env, ctx.body, ctx.account))],
   ['POST', '/api/floats/back', 'insight', adminOnly((env, ctx) => floats.giveBack(env, ctx.body, ctx.account))],
   ['POST', '/api/floats/undo', 'insight', adminOnly((env, ctx) => floats.undoMove(env, ctx.body))],
+  ['POST', '/api/floats/note', 'insight', adminOnly((env, ctx) => floats.noteMove(env, ctx.body, ctx.account))],
   ['POST', '/api/floats/decide', 'insight', adminOnly((env, ctx) => floats.decide(env, ctx.body, ctx.account))],
   ['POST', '/api/floats/link', 'insight', adminOnly((env, ctx) => floats.setLink(env, ctx.body))],
   ['POST', '/api/floats/add', 'insight', adminOnly((env, ctx) => floats.adminAdd(env, ctx.body, ctx.account))],
