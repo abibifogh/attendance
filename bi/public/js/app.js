@@ -22,6 +22,7 @@ import { renderMgmt } from './views/mgmt.js';
 import { renderReportAccess } from './views/reportaccess.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { renderPickups } from './views/nppickups.js';
+import { renderSpeed } from './views/speed.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
 import { renderAssistant } from './views/assistant.js';
@@ -100,6 +101,7 @@ const ROUTES = [
   { path: 'supervisors', label: 'Supervisors', section: 'settings', page: 'People & access', render: shiftsPart('settings', ['who']), needs: 'shifts', part: 'settings', still: true },
   { path: 'report-access', label: 'Reports they see', section: 'settings', page: 'People & access', render: renderReportAccess, needs: 'admin', own: true },
   { path: 'setup', label: 'Connections', section: 'settings', page: 'Connections & files', render: renderSetup, needs: 'owner' },
+  { path: 'speed', label: 'Speed', section: 'settings', page: 'Connections & files', render: renderSpeed, needs: 'admin' },
   { path: 'files', label: 'Shift files', section: 'settings', page: 'Connections & files', render: shiftsPart('files'), needs: 'shifts', part: 'files', still: true },
   { path: 'rules', label: 'Front desk', section: 'settings', page: 'Rules', render: shiftsPart('settings', ['desk', 'limits', 'lock']), needs: 'shifts', part: 'settings', still: true },
   { path: 'np-rules', label: 'Nice Place', section: 'settings', page: 'Rules', render: (root) => renderNicePlace(root, { part: 'settings' }), needs: 'admin' },
@@ -229,7 +231,8 @@ async function renderApp() {
     const say = (n) => { counts.textContent = n ? String(n) : ''; for (const el of document.querySelectorAll('.cnt-assistant')) el.textContent = n ? String(n) : ''; };
     window.addEventListener('approvals:count', (e) => say(e.detail));
     const ask = () => approvalsCount().then(say).catch(() => {});
-    ask();
+    // After the page itself has loaded: counting asks every system, and the page comes first.
+    setTimeout(ask, 5000);
     setInterval(() => { if (document.visibilityState === 'visible' && currentRoute?.path !== 'approvals') ask(); }, 300_000);
   }
 
