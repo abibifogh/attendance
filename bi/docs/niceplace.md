@@ -31,6 +31,14 @@ on the desk page with one tap. The link's code is built into the app (an app
 on an iPhone's home screen keeps nothing the browser knew), so **New link**
 stops the old app as well: open the new link and put it on the phone again.
 
+**An old phone.** If tapping the app only says **Nice Place keeps
+stopping**, the phone cannot start it (an old Android whose Chrome can no
+longer be updated). Hold the water drop, choose **Uninstall** (or drag it
+to Uninstall), and open the link with `?plain` at the end, e.g.
+`/niceplace?plain`. Press **Put Nice Place on this phone**: it says how to
+add a plain shortcut from Chrome's menu, which opens the same page in
+Chrome.
+
 **The supervisor.** Insight installs the same way: **Install Insight on this
 phone** in the account menu, in search, or at the top of Pickups. Its
 shortcuts open the Assistant, Shifts and Nice Place pickups.
