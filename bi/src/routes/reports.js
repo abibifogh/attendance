@@ -1,4 +1,5 @@
 import { all, first, run } from '../lib/db.js';
+import { shortLink } from './niceplace.js';
 import { badRequest, notFound, str } from '../lib/http.js';
 import { getPepper, sign, timingSafeEqual, b64urlEncode, b64urlDecode } from '../lib/auth.js';
 
@@ -397,6 +398,7 @@ export async function publish(env, request, account) {
     throw badRequest('The address must be 2–64 characters of letters, digits and hyphens, starting with a letter or digit');
   }
   if (RESERVED.has(slug)) throw badRequest(`"${slug}" is a part of this app and cannot be a report`);
+  if (slug === (await shortLink(env).catch(() => null))) throw badRequest(`"/${slug}" is Nice Place's link and cannot be a report`);
 
   const title = str(form.get('title'), 'Title', { max: 160, required: true });
 

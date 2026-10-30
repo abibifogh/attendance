@@ -57,10 +57,28 @@ function same(a, b) {
   return diff === 0;
 }
 
-async function linkSettings(env, token) {
+/**
+ * The open link: its long form (/np#code), or its short one (/niceplace),
+ * an ending the manager chose. Either opens the desk page, as a float's
+ * short link does; changing either stops the old one.
+ */
+async function linkSettings(env, token, slug = null) {
   const s = await settingsOf(env);
+  if (slug) {
+    if (!s.token || !s.slug || String(slug).toLowerCase() !== s.slug) throw new HttpError(404, 'This link is no longer in use. Ask the manager for the new one.');
+    return s;
+  }
   if (!s.token || !token || !same(token, s.token)) throw new HttpError(404, 'This link is no longer in use. Ask the manager for the new one.');
   return s;
+}
+
+export const SLUG = /^[a-z0-9][a-z0-9-]{1,29}$/;
+/** Endings that are Insight's own pages and files, never Nice Place's. */
+const TAKEN = new Set(['api', 'np', 'float', 'js', 'vendor', 'assets', 'static', 'index', 'index.html', 'styles.css', 'sw.js', 'icon.svg', 'manifest.webmanifest', 'join', 'login', 'hub']);
+
+/** The short link's ending, for the Worker to serve the desk page at /ending. */
+export async function shortLink(env) {
+  return (await settingsOf(env)).slug || null;
 }
 
 const staffNames = async (env) => (await all(env.DB, 'SELECT name FROM np_staff WHERE active = 1 ORDER BY name')).map((r) => r.name);
@@ -89,7 +107,7 @@ export function suggest(last, at = new Date(), times = DEFAULTS) {
 
 /** What the page on the open link needs: the names and the shift to suggest. */
 export async function linkForm(env, query) {
-  const s = await linkSettings(env, query?.t);
+  const s = await linkSettings(env, query?.t, query?.s);
   const last = await first(env.DB, "SELECT day, shift, name, sent_at FROM np_reading ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1");
   const today = todayIn('UTC');
   // The shifts that may be sent: the last three, newest first, and which are sent already.
@@ -110,11 +128,13 @@ export async function linkForm(env, query) {
  * new link from the manager stops the old app too, as it stops the old link.
  */
 export async function appManifest(env, query) {
-  await linkSettings(env, query?.t);
+  const s = await linkSettings(env, query?.t, query?.s);
+  // On the short link the app opens there; on the long one, with its code.
+  const home = query?.s ? `/${s.slug}` : '/np';
   return {
-    id: '/np', name: 'Nice Place', short_name: 'Nice Place',
+    id: home, name: 'Nice Place', short_name: 'Nice Place',
     description: 'Send each shift’s money and a picture of the counters.',
-    start_url: `/np#${query.t}`, scope: '/np', display: 'standalone', orientation: 'portrait',
+    start_url: query?.s ? home : `/np#${query.t}`, scope: home, display: 'standalone', orientation: 'portrait',
     background_color: '#ffffff', theme_color: '#14161a',
     icons: [
       { src: '/np-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
@@ -142,7 +162,7 @@ const count = (value, label) => {
 
 /** A reading sent from the open link, with its picture. */
 export async function sendReading(env, body) {
-  await linkSettings(env, body?.t);
+  await linkSettings(env, body?.t, body?.s);
   const name = str(body?.name, 'Your name', { required: true, max: 80 });
   if (!(await staffNames(env)).includes(name)) throw badRequest('Choose your name from the list.');
   const day = String(body?.day || '');
@@ -301,7 +321,7 @@ async function noteRead(env, outcome) {
  * is read once here; sending it reads what was missed once more.
  */
 export async function readCounters(env, body) {
-  const s = await linkSettings(env, body?.t);
+  const s = await linkSettings(env, body?.t, body?.s);
   const photo = String(body?.photo || '');
   const m = photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
   if (!m) throw badRequest('Take a picture of the counters first.');
@@ -715,7 +735,7 @@ export async function npView(env, query, account, { admin = false } = {}) {
     staff, admin,
     // How the last picture went with the reader, for the manager.
     readLast: admin ? readLast : null,
-    link: admin ? (s.token ? { token: s.token } : null) : (s.token ? {} : null),
+    link: admin ? (s.token ? { token: s.token, slug: s.slug || null } : null) : (s.token ? {} : null),
     revenueThrough: lastUpload?.day || null, revenueAt: lastUpload?.at || null,
   };
 }
@@ -734,6 +754,17 @@ export async function saveSettings(env, body) {
   if (body?.newLink) {
     const bytes = crypto.getRandomValues(new Uint8Array(12));
     s.token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  // The short link's ending: /niceplace. Empty takes it away.
+  if (body?.slug != null) {
+    const slug = String(body.slug).trim().toLowerCase().replace(/^\/+|\/+$/g, '').replace(/\s+/g, '-');
+    if (slug) {
+      if (!SLUG.test(slug)) throw badRequest('The link’s ending: 2 to 30 letters, numbers or dashes, like niceplace.');
+      if (TAKEN.has(slug)) throw badRequest(`/${slug} is a part of Insight: choose another ending.`);
+      if (await first(env.DB, 'SELECT slug FROM reports WHERE slug = ?1', slug).catch(() => null)) throw badRequest(`/${slug} is a published report already: choose another ending.`);
+      if (!s.token) throw badRequest('Make the link first.');
+    }
+    s.slug = slug || null;
   }
   if (body?.allowance != null) {
     const n = Number(body.allowance);

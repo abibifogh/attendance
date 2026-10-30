@@ -12,7 +12,9 @@
   <meta name="apple-mobile-web-app-title" content="Insight">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <!-- The font loads beside the page, not before it: until it comes, the phone's own font is used. -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"></noscript>
   <link rel="stylesheet" href="/styles.css">
   <!-- The letter i made of the four systems' bars, the tallest one dotted. -->
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
