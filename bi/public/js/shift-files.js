@@ -43,9 +43,10 @@ export async function readJournalPdf(file, progress = () => {}) {
 
 const FINACLE_COLUMNS = ['TRAN ID', 'PART TRAN SRL NUM', 'PART TRAN TYPE', 'PSTD FLG', 'TRAN DATE', 'PSTD DATE',
   'TRAN AMT', 'TRAN PARTICULAR', 'REF NUM', 'DEL FLG'];
-// Card credits, commission and MoMo, as the bank writes them. Everything
-// else stays on this computer.
-const WANTED = /^(comm_)?\d{6}\*{4,}\d{4}_|^GTB\/[^/]+\/\/|^[A-Z0-9]+ GTB[A-Z0-9]+\//;
+// Card credits, commission and MoMo, as the bank writes them; MoMo from a
+// wallet has words between the slashes (GTB/<name>/DEBIT WALLET/<ref><time>),
+// so only with the time on the end. Everything else stays on this computer.
+const WANTED = /^(comm_)?\d{6}\*{4,}\d{4}_|^GTB\/[^/]+\/\/|^GTB\/[^/]+\/[^/]+\/\S+\d\d\/\d\d\/\d{4} \d\d:\d\d:\d\d$|^[A-Z0-9]+ GTB[A-Z0-9]+\//;
 
 /**
  * The bank statement → its header and the card and MoMo rows.

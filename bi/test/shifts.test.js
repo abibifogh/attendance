@@ -226,6 +226,10 @@ test('the bank statement: kinds, deleted copies and dates without a time zone', 
   assert.equal(classify('411111************0001_01-Aug-2026_A1B2C3_TERM', 'D').kind, 'card-reversal');
   assert.equal(classify('comm_411111************0001_01-Aug-2026_A1B2C3', 'D').kind, 'commission');
   assert.equal(classify('GTB/X//R01/08/2026 15:15:00', 'C').kind, 'momo');
+  // Paid from a wallet: words between the slashes, the stamp the same.
+  const wallet = classify('GTB/TESTHOTEL/DEBIT WALLET/REF4242424208/10/2026 02:24:24', 'C');
+  assert.deepEqual([wallet.kind, wallet.reference, wallet.stampedAt], ['momo', 'REF42424242', '2026-10-08 02:24:24']);
+  assert.equal(classify('GTB/TESTHOTEL/DEBIT WALLET/REF4242424208/10/2026 02:24:24', 'D').kind, 'other');
   assert.equal(classify('A SUPPLIER PAYMENT', 'D').kind, 'other');
 
   const parsed = parseStatement(statement());
