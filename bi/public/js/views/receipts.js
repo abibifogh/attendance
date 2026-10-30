@@ -60,7 +60,11 @@ function odooPicker(kind, chosen, placeholder) {
   return { el: h('div.rc-picker', now, box, results), value: () => value };
 }
 
-export async function renderReceipts(root) {
+/**
+ * `part: 'settings'` is Settings › Rules › Receipts: the address, who may
+ * send, the placeholders and who checks, on their own.
+ */
+export async function renderReceipts(root, { part = null } = {}) {
   let data = null;
   let filter = 'all';
   const view = h('div.rc');
@@ -73,6 +77,7 @@ export async function renderReceipts(root) {
   }
 
   function paint(message = null) {
+    if (part === 'settings') { mount(view, message ? banner('good', message) : null, settingsCard()); return; }
     const items = data.items;
     const open = items.filter((x) => ['unread', 'failed'].includes(x.status));
     const toLook = (x) => ['unread', 'failed', 'check'].includes(x.status) || (x.status === 'duplicate' && x.hasFile);
@@ -84,8 +89,8 @@ export async function renderReceipts(root) {
         h('div.rc-top',
           h('div', h('h1', 'Receipts'), h('p.small.muted', 'Every receipt sent in, and the draft PO it became. Approving stays in Odoo.')),
           h('button.btn.primary', { type: 'button', onclick: () => openNewPo({ bulk: true, after: () => read() }) }, '＋ Add receipts')),
-        s.address ? h('p.rc-addr', '✉ Or email them to ', h('b', s.address), s.senders.length ? ` from ${s.senders.join(', ')}` : ': nobody may send yet (Settings, below)') : h('p.small.muted', 'Emailing receipts in is not set up yet: see Settings, below.'),
-        !s.vendor || !s.product ? banner('warning', 'Choose the placeholder vendor and item (Settings, below). Odoo needs an item on every priced PO line, so an unmatched one goes on the placeholder item, with the receipt’s own words as the line’s label. Until both are chosen, such a receipt is kept here with no PO.') : null),
+        s.address ? h('p.rc-addr', '✉ Or email them to ', h('b', s.address), s.senders.length ? ` from ${s.senders.join(', ')}` : ': nobody may send yet (Settings › Rules › Receipts)') : h('p.small.muted', 'Emailing receipts in is not set up yet: see Settings › Rules › Receipts.'),
+        !s.vendor || !s.product ? banner('warning', 'Choose the placeholder vendor and item (Settings › Rules › Receipts). Odoo needs an item on every priced PO line, so an unmatched one goes on the placeholder item, with the receipt’s own words as the line’s label. Until both are chosen, such a receipt is kept here with no PO.') : null),
       message ? banner('good', message) : null,
       h('div.td-pills', { role: 'group', 'aria-label': 'Which' },
         pill('all', 'All', items.length),
@@ -110,7 +115,6 @@ export async function renderReceipts(root) {
           },
         }, `Try all ${open.filter((x) => x.hasFile).length} again`) : null) : null,
       shown.length ? h('div.card.rc-list', shown.map(row)) : h('section.card', h('p', items.length ? 'Nothing here.' : 'No receipts yet. Press ＋ Add receipts, or email them in.')),
-      settingsCard(),
       data.mails.length ? h('details.card.rc-mails', h('summary', `Emails to the receipts address · ${data.mails.length}`),
         h('ul', data.mails.map((m) => h('li', h('b', m.outcome === 'read' ? '✓ ' : '✕ '), `${when(m.at)} · ${m.from_email || '?'} · “${m.subject || ''}” · ${m.said || ''}`)))) : null);
   }
@@ -169,9 +173,8 @@ export async function renderReceipts(root) {
   function settingsCard() {
     const s = data.settings;
     const box = h('div');
-    const card = h('details.card.rc-set', { open: !s.vendor || !s.product || !s.senders.length }, h('summary', 'Settings'), box);
-    card.addEventListener('toggle', () => { if (card.open && !box.childElementCount) fill(); });
-    if (card.open) fill();
+    const card = h('section.card.rc-set', h('h2', 'Receipts'), h('p.sub', 'Where receipts are emailed, who may send them, and what Odoo is given when a seller or an item is not matched.'), box);
+    fill();
     async function fill() {
       mount(box, h('p.small.muted', 'Reading Odoo’s vendors, items and people…'));
       let c;

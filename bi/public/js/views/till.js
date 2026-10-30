@@ -634,18 +634,27 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
 
   let settingsTab = 'who';
   let customFor = null;
+  // The parts the page asked for, kept for redraws from inside a part.
+  let shownParts = null;
 
-  /** Settings, in four parts: who sees what, who is told, the front desk, and the limits. */
-  async function settings(v) {
+  /**
+   * Settings, in five parts: who sees what, who is told, the front desk, the
+   * limits and the locked dates. `parts` picks some, for the Settings pages
+   * that hold them (People & access, Notifications, Rules).
+   */
+  async function settings(v, parts = shownParts) {
+    shownParts = parts;
     mount(v, h('p.muted', 'Reading the settings…'));
     const d = await read(true);
     const s = d.settings;
-    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits'], ['lock', 'Locked dates']];
+    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits'], ['lock', 'Locked dates']]
+      .filter(([k]) => !parts || parts.includes(k));
+    if (!tabs.some(([k]) => k === settingsTab)) settingsTab = tabs[0][0];
     const save = async (body) => {
       try {
         await api('/till/settings', { method: 'POST', body });
         forget();
-        await settings(v);
+        await settings(v, parts);
       } catch (err) { alert(err.message); }
     };
     const body = settingsTab === 'lock' ? await lockView(v)
@@ -655,7 +664,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
           : await limitsView(s, save, v);
     mount(v,
       notLinked(d),
-      h('div.tl-subtabs', tabs.map(([k, l]) => h('button', { type: 'button', 'aria-selected': String(settingsTab === k), onclick: () => { settingsTab = k; settings(v); } }, l))),
+      tabs.length > 1 ? h('div.tl-subtabs', tabs.map(([k, l]) => h('button', { type: 'button', 'aria-selected': String(settingsTab === k), onclick: () => { settingsTab = k; settings(v, parts); } }, l))) : null,
       body);
   }
 
@@ -691,7 +700,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     };
     return h('div.card',
       h('div.sh-cardhead', h('h2', 'Who sees what'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Settings › People & access. Pick what each one gets; Custom sets each part by hand.')),
-      s.supervisors.length ? null : banner('info', 'Nobody is a supervisor yet. Under Accounts, set somebody’s Insight access to Supervisor.'),
+      s.supervisors.length ? null : banner('info', 'Nobody is a supervisor yet. Under Settings › People & access, set somebody’s Insight access to Supervisor.'),
       h('div.tl-people', people.map((p) => {
         const custom = customFor === p.id || presetOf(levelsFor(p.id)) === 'custom';
         return h('div.tl-person',

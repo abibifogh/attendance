@@ -21,7 +21,8 @@ const ANSWERS = ['Counter fault', 'Free use (staff, cleaning)', 'Staff to accoun
 const dayText = (d, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
 const whole = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-GB'));
 
-export async function renderNicePlace(root) {
+/** `part: 'settings'` is Settings › Rules › Nice Place: names, prices, walk-throughs and the reader. */
+export async function renderNicePlace(root, { part = null } = {}) {
   const isAdmin = (state.me?.account?.till?.role || (state.me?.account?.isOwner ? 'admin' : null)) === 'admin';
   const view = h('div.np');
   mount(root, view);
@@ -40,6 +41,7 @@ export async function renderNicePlace(root) {
   }
 
   function paint() {
+    if (part === 'settings') { mount(view, flash ? h(`div.banner.${flash[0]}`, flash[1]) : null, settingsBlock()); return; }
     const rows = data.rows;
     const count = (st) => rows.filter((r) => r.status === st && !r.answer).length;
     const waiting = rows.filter((r) => ['no-revenue', 'no-reading'].includes(r.status)).length;
@@ -60,7 +62,7 @@ export async function renderNicePlace(root) {
       h('section.card', chartBlock(rows)),
       h('section.card', tableBlock(rows)),
       open ? detailBlock(rows.find((r) => r.key === open)) : null,
-      isAdmin ? settingsBlock() : null);
+      isAdmin ? h('p.small.muted', 'Names on the link, prices and walk-throughs: Settings › Rules › Nice Place.') : null);
   }
 
   const tile = (label, n, tone) => h(`div.np-tile${tone ? `.${tone}` : ''}`, h('small', label), h('b.num', String(n)));
@@ -368,7 +370,7 @@ export async function renderNicePlace(root) {
         out);
     };
     return h('section.card.np-settings',
-      h('h2', 'Settings'),
+      h('h2', 'Nice Place'),
       h('div.np-setgrid',
         h('div',
           h('b', 'Names on the link'),

@@ -30,11 +30,69 @@ const asked = () => {
   return { period: period === 'month' ? 'month' : 'week', at: q.get('at') || '', skip };
 };
 
-export async function renderMgmt(root) {
+/**
+ * `part: 'settings'` is Settings › Notifications › Management report: who
+ * gets it and whether it goes by itself, without reading the report.
+ */
+export async function renderMgmt(root, { part = null } = {}) {
   const me = state.me?.account;
   const isAdmin = (me?.till?.role || (me?.isOwner || me?.bootstrap ? 'admin' : null)) === 'admin';
-  const { period, at, skip } = asked();
   const view = h('div.mg');
+  if (part === 'settings') {
+    let mail = await api('/reports/management/mail');
+    const r = { sections: mail.sections, skip: [] };
+    return mount(root, view, settingsCard());
+
+    /** Who gets it, and sending by itself. */
+    function settingsCard() {
+      const box = h('section.card.mg-mail');
+      const draw = () => {
+        const emails = [...mail.emails];
+        const typed = h('input', { type: 'email', placeholder: 'Add an email address', 'aria-label': 'Email address' });
+        const said = h('span.small');
+        const save = async (body) => {
+          said.textContent = 'Saving…'; said.className = 'small';
+          try { mail = { ...mail, ...(await api('/reports/management/mail', { method: 'POST', body: { emails, admins: mail.admins, weekly: mail.weekly, monthly: mail.monthly, ...body } })) }; draw(); } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+        };
+        const add = () => {
+          const v = typed.value.trim().toLowerCase();
+          if (!v) return;
+          if (emails.includes(v)) { said.textContent = 'Already on the list.'; return; }
+          save({ emails: [...emails, v] });
+        };
+        const tick = (key, label, opts = {}) => h('label.mg-tick', h('input', { type: 'checkbox', checked: mail[key], disabled: opts.disabled, onchange: (e) => save({ [key]: e.target.checked }) }), label);
+        const last = mail.lastSent || {};
+        const auto = h('input', { type: 'checkbox', role: 'switch', checked: mail.auto, 'aria-label': 'Send by itself', onchange: (e) => save({ auto: e.target.checked }) });
+        mount(box,
+          h('h2', 'Management report'),
+          h('p.sub', 'The weekly or monthly report from breakfast and maintenance. Nothing goes until somebody presses Send on Reports › Management report, unless sending by itself is switched on.'),
+          h('div.mg-auto',
+            h('label.mg-switch', auto, h('span.track', h('span.knob')), h('b', mail.auto ? 'Sending by itself: on' : 'Sending by itself: off')),
+            h('p.small.muted', mail.auto ? 'Sent by itself at 06:45 for the ticked ones below. Each week or month goes once.' : 'Off: it goes only when somebody presses Send.'),
+            h('div.mg-row', tick('weekly', 'Every Monday: last week', { disabled: !mail.auto }), tick('monthly', 'On the 1st: last month', { disabled: !mail.auto })),
+            h('div.mg-row', h('span.small', 'With:'), r.sections.map((x) => h('label.mg-tick',
+              h('input', {
+                type: 'checkbox', checked: !(mail.skip || []).includes(x.key), disabled: !mail.auto,
+                onchange: (e) => {
+                  const left = e.target.checked ? (mail.skip || []).filter((k) => k !== x.key) : [...(mail.skip || []), x.key];
+                  if (left.length === r.sections.length) { e.target.checked = true; said.textContent = 'At least one section has to go.'; return; }
+                  save({ skip: left });
+                },
+              }), x.label)))),
+          h('h3', 'Who gets it'),
+          h('div.mg-row', tick('admins', `Insight’s admins${mail.adminEmails?.length ? ` (${mail.adminEmails.join(', ')})` : ''}`)),
+          h('div.mg-emails', emails.length ? emails.map((e) => h('span.mg-email', e,
+            h('button', { type: 'button', 'aria-label': `Remove ${e}`, title: 'Remove', onclick: () => save({ emails: emails.filter((x) => x !== e) }) }, '×')))
+            : h('span.muted', 'Nobody else yet. Any address works, not only people with an account.')),
+          h('div.mg-row', typed, h('button.btn', { type: 'button', onclick: add }, 'Add')),
+          h('p.small.muted', `Last sent: ${last.week ? `week of ${day(last.week)}` : 'no week yet'} · ${last.month ? new Date(`${last.month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : 'no month yet'}.`),
+          said);
+      };
+      draw();
+      return box;
+    }
+  }
+  const { period, at, skip } = asked();
   mount(root, view, h('p.muted', 'Asking each system…'));
   const r = await api(`/reports/management?period=${period}${at ? `&at=${encodeURIComponent(at)}` : ''}${skip ? `&skip=${encodeURIComponent(skip)}` : ''}`);
   const go = (p, key, left = r.skip) => {
@@ -247,28 +305,15 @@ export async function renderMgmt(root) {
     return h('div.card.mg-send', h('p.small', `${r.label}: the figures, what needs attention and both sections in short, with a link back here.`), h('div.mg-row', toMe, said));
   }
 
-  /** Sending it: now, by pressing Send; by itself only when switched on; and to whom. */
+  /** Sending it now, to everybody it goes to or to yourself; who that is and sending by itself are in Settings › Notifications. */
   function mailCard() {
     const box = h('section.card.mg-mail', { id: 'mg-mail' }, h('h2', 'Sending the report'), h('p.muted', 'Loading…'));
     const draw = () => {
-      const emails = [...mail.emails];
-      const typed = h('input', { type: 'email', placeholder: 'Add an email address', 'aria-label': 'Email address' });
       const said = h('span.small');
-      const save = async (body) => {
-        said.textContent = 'Saving…'; said.className = 'small';
-        try { mail = await api('/reports/management/mail', { method: 'POST', body: { emails, admins: mail.admins, weekly: mail.weekly, monthly: mail.monthly, ...body } }); draw(); } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
-      };
-      const add = () => {
-        const v = typed.value.trim().toLowerCase();
-        if (!v) return;
-        if (emails.includes(v)) { said.textContent = 'Already on the list.'; return; }
-        save({ emails: [...emails, v] });
-      };
-      const tick = (key, label, opts = {}) => h('label.mg-tick', h('input', { type: 'checkbox', checked: mail[key], disabled: opts.disabled, onchange: (e) => save({ [key]: e.target.checked }) }), label);
-      const last = mail.lastSent || {};
+      const who = [mail.admins ? 'Insight’s admins' : null, mail.emails.length ? `${mail.emails.length} address${mail.emails.length === 1 ? '' : 'es'}` : null].filter(Boolean);
       const sendNow = h('button.btn.primary', {
         type: 'button',
-        disabled: !emails.length && !mail.admins,
+        disabled: !mail.emails.length && !mail.admins,
         onclick: async () => {
           if (!window.confirm(`Send ${r.title} now to everybody on the list?`)) return;
           sendNow.disabled = true; said.textContent = 'Sending…'; said.className = 'small';
@@ -276,7 +321,6 @@ export async function renderMgmt(root) {
             const out = await api('/reports/management/send', { method: 'POST', body: { period: r.period, at: r.key, skip: r.skip, everyone: true } });
             said.textContent = out.sent ? `Sent ${r.title} to ${out.sent} address${out.sent === 1 ? '' : 'es'}.${out.failed?.length ? ` Not sent to: ${out.failed.join('; ')}` : ''}` : (out.failed?.[0] || out.reason || 'Not sent.');
             said.className = out.sent ? 'small' : 'small form-error';
-            if (out.sent) mail = await api('/reports/management/mail');
           } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
           sendNow.disabled = false;
         },
@@ -293,31 +337,12 @@ export async function renderMgmt(root) {
           toMe.disabled = false;
         },
       }, 'Send a test to me');
-      const auto = h('input', { type: 'checkbox', role: 'switch', checked: mail.auto, 'aria-label': 'Send by itself', onchange: (e) => save({ auto: e.target.checked }) });
       mount(box,
         h('h2', 'Sending the report'),
-        h('p.sub', `The figures, what needs attention and each section in short, with a link to this page. Send sends the sections included above${r.skip.length ? ` (without ${r.sections.filter((x) => r.skip.includes(x.key)).map((x) => x.label).join(', ')})` : ''}. Nothing is sent until you press Send, unless sending by itself is switched on.`),
+        h('p.sub', `Send sends the sections included above${r.skip.length ? ` (without ${r.sections.filter((x) => r.skip.includes(x.key)).map((x) => x.label).join(', ')})` : ''}.`),
         h('div.mg-row', sendNow, toMe),
-        h('div.mg-auto',
-          h('label.mg-switch', auto, h('span.track', h('span.knob')), h('b', mail.auto ? 'Sending by itself: on' : 'Sending by itself: off')),
-          h('p.small.muted', mail.auto ? 'Sent by itself at 06:45 for the ticked ones below. Each week or month goes once.' : 'Off: it goes only when somebody presses Send.'),
-          h('div.mg-row', tick('weekly', 'Every Monday: last week', { disabled: !mail.auto }), tick('monthly', 'On the 1st: last month', { disabled: !mail.auto })),
-          h('div.mg-row', h('span.small', 'With:'), r.sections.map((x) => h('label.mg-tick',
-            h('input', {
-              type: 'checkbox', checked: !(mail.skip || []).includes(x.key), disabled: !mail.auto,
-              onchange: (e) => {
-                const left = e.target.checked ? (mail.skip || []).filter((k) => k !== x.key) : [...(mail.skip || []), x.key];
-                if (left.length === r.sections.length) { e.target.checked = true; said.textContent = 'At least one section has to go.'; return; }
-                save({ skip: left });
-              },
-            }), x.label)))),
-        h('h3', 'Who gets it'),
-        h('div.mg-row', tick('admins', `Insight’s admins${mail.adminEmails?.length ? ` (${mail.adminEmails.join(', ')})` : ''}`)),
-        h('div.mg-emails', emails.length ? emails.map((e) => h('span.mg-email', e,
-          h('button', { type: 'button', 'aria-label': `Remove ${e}`, title: 'Remove', onclick: () => save({ emails: emails.filter((x) => x !== e) }) }, '×')))
-          : h('span.muted', 'Nobody else yet. Any address works, not only people with an account.')),
-        h('div.mg-row', typed, h('button.btn', { type: 'button', onclick: add }, 'Add')),
-        h('p.small.muted', `Last sent: ${last.week ? `week of ${day(last.week)}` : 'no week yet'} · ${last.month ? new Date(`${last.month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : 'no month yet'}.`),
+        h('p.small.muted', `It goes to ${who.length ? who.join(' and ') : 'nobody yet'}. Sending by itself is ${mail.auto ? 'on' : 'off'}. `,
+          h('a', { href: '#/notify-mgmt' }, 'Change who gets it, and when')),
         said);
     };
     if (mail) { draw(); return box; }
