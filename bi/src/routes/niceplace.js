@@ -103,6 +103,27 @@ export async function linkForm(env, query) {
   };
 }
 
+/**
+ * The desk page as an app on the phone. The link's code goes in where the app
+ * starts, because an app put on an iPhone's home screen keeps nothing the
+ * browser knew: without it, it would open on a link that is not complete. A
+ * new link from the manager stops the old app too, as it stops the old link.
+ */
+export async function appManifest(env, query) {
+  await linkSettings(env, query?.t);
+  return {
+    id: '/np', name: 'Nice Place', short_name: 'Nice Place',
+    description: 'Send each shift’s money and a picture of the counters.',
+    start_url: `/np#${query.t}`, scope: '/np', display: 'standalone', orientation: 'portrait',
+    background_color: '#ffffff', theme_color: '#14161a',
+    icons: [
+      { src: '/np-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/np-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      { src: '/np-icon.svg', sizes: 'any', type: 'image/svg+xml' },
+    ],
+  };
+}
+
 /** Money typed at the desk, in cedis: none, or a positive amount. Pesewas back. */
 const cediTyped = (value, label) => {
   const text = String(value ?? '').replace(/[\s,]/g, '').replace(/^GH₵|^GHS/i, '');

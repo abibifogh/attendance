@@ -17,9 +17,23 @@
  * the counters (niceplace.js).
  */
 
+import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS } from './install.js';
+
 const page = document.getElementById('page');
 const head = document.getElementById('head');
-const token = location.hash.replace(/^#/, '').trim();
+// The link's code: from the address, or kept on this phone from the first time it was opened.
+const token = (() => {
+  const fromLink = location.hash.replace(/^#/, '').trim();
+  try {
+    if (fromLink) localStorage.setItem('np-token', fromLink);
+    return fromLink || localStorage.getItem('np-token') || '';
+  } catch { return fromLink; }
+})();
+if (token) {
+  // So it can be put on the phone as the Nice Place app, opening on this link.
+  document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: `/api/np/manifest?t=${encodeURIComponent(token)}` }));
+}
+registerWorker();
 const SHIFT = { day: 'DAY SHIFT', night: 'NIGHT SHIFT' };
 const COLOURS = ['#0e7490', '#7c3aed', '#b45309', '#15803d', '#be185d', '#1d4ed8'];
 
@@ -88,10 +102,26 @@ async function start() {
   if (name) money(); else who();
 }
 
+/**
+ * "Put Nice Place on this phone": the browser's own question on Android, the
+ * steps on an iPhone. Gone once it is installed, or opened as the app.
+ */
+function installBox() {
+  if (!canInstall()) return null;
+  const said = el('p', {}, 'Then it opens with one tap, like any other app.');
+  const go = el('button', { type: 'button', class: 'big app' }, '📲 Put Nice Place on this phone');
+  go.addEventListener('click', async () => {
+    const out = await install();
+    if (out === 'iphone') put(said, IPHONE_STEPS);
+    else if (out === 'accepted') put(said, '✓ Done. Find Nice Place on the phone’s home screen.');
+  });
+  return el('div', { class: 'install' }, el('b', {}, 'Make it an app'), said, go);
+}
+
 /** Step 0: whose shift. */
 function who() {
   top('Nice Place', 'Who are you?');
-  put(page, 
+  put(page, installBox(), 
     form.staff.length ? el('div', { class: 'names' }, form.staff.map((n, i) => el('button', {
       type: 'button', class: `name${n === name ? ' on' : ''}`, onclick: () => { name = n; remember(n); money(); },
     }, el('span', { class: 'face', style: `background:${COLOURS[i % COLOURS.length]}` }, n.trim().charAt(0).toUpperCase()), n)))
@@ -203,7 +233,11 @@ function done(out) {
       el('div', {}, el('span', {}, '🚽 Toilet'), el('b', {}, cedi(out.sales.toilet / 100))),
       el('div', { class: 'all' }, el('span', {}, 'All money'), el('b', {}, cedi(out.sales.total / 100)))) : null,
     (out.pending || []).length ? el('p', { class: 'note' }, 'One number on the counters could not be read. The manager will read it from the picture: nothing more to do.') : null,
-    el('button', { type: 'button', class: 'big soft', onclick: () => start() }, 'Done'));
+    el('button', { type: 'button', class: 'big soft', onclick: () => start() }, 'Done'),
+    installBox());
 }
+
+// The browser's offer comes a moment after the page: show the button then, on the names.
+onInstallChange(() => { if (head.textContent.includes('Who are you?')) who(); });
 
 start();

@@ -2,6 +2,8 @@ import { h, mount, money } from '../util.js';
 import { api } from '../api.js';
 import { banner } from './components.js';
 import { shrink, thumbOf } from './newpo.js';
+import { canInstall, onInstallChange } from '../install.js';
+import { installNow } from '../app.js';
 
 /**
  * Front desk › Nice Place › Pickups.
@@ -22,6 +24,7 @@ export async function renderPickups(root) {
   let flash = null;
   let picked = null;
   let openRow = null;
+  onInstallChange(() => { if (view.isConnected && data) paint(); });
   await load();
 
   async function load(message = null) {
@@ -41,6 +44,9 @@ export async function renderPickups(root) {
     const t = data.tiles;
     mount(view,
       flash ? banner('good', flash) : null,
+      // Pickups are made on a phone: Insight on its home screen opens with one tap.
+      canInstall() ? h('div.pu-install', h('span', h('b', '📲 Put Insight on this phone'), ' and it opens with one tap, like any other app.'),
+        h('button.btn.primary', { type: 'button', onclick: installNow }, 'Install')) : null,
       h('div.pu-tiles',
         tile('Sales this month', money(t.sales, { places: 0 }), 'picked up'),
         tile('Spent from it', money(t.spent, { places: 0 }), 'with receipts'),
