@@ -27,7 +27,8 @@ export const SHIFTS = ['day', 'night'];
 export const COUNTERS = ['gb', 'gt', 'lb', 'lt'];
 export const FACILITIES = { toilet: ['gt', 'lt'], shower: ['gb', 'lb'] };
 const KEY = 'np_settings';
-const DEFAULTS = { token: null, allowance: 10, adult: 300, child: 100, layout: '' };
+// The shifts at Nice Place: Day 03:30 to 13:30, Night 13:30 to 23:00 (Accra is UTC).
+const DEFAULTS = { token: null, allowance: 10, adult: 300, child: 100, layout: '', dayStarts: '03:30', nightStarts: '13:30', nightEnds: '23:00' };
 /** Cloudflare Workers AI's model for reading the counters off a picture. */
 export const READ_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
 /** How long after sending a reading the same person may send it again. */
@@ -64,26 +65,52 @@ async function linkSettings(env, token) {
 
 const staffNames = async (env) => (await all(env.DB, 'SELECT name FROM np_staff WHERE active = 1 ORDER BY name')).map((r) => r.name);
 
-/** The shift to suggest: the one after the last reading sent, or by the time of day. */
-export function suggest(last, at = new Date()) {
+const minutesOf = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return h * 60 + (m || 0); };
+
+/**
+ * The shift to suggest: the one after the last reading sent, or the shift
+ * that has just ended or is ending. Staff send at the end of their shift, so
+ * the clock is read an hour back: at 13:40 it is still the day shift's turn.
+ */
+export function suggest(last, at = new Date(), times = DEFAULTS) {
   const today = at.toISOString().slice(0, 10);
   if (last) {
     const next = nextShift(last.day, last.shift);
     if (next.day >= addDays(today, -1) && next.day <= today) return next;
   }
-  const hour = at.getUTCHours();
-  if (hour < 6) return { day: addDays(today, -1), shift: 'night' };
-  return { day: today, shift: hour < 18 ? 'day' : 'night' };
+  const back = new Date(at.getTime() - 60 * 60_000);
+  const day = back.toISOString().slice(0, 10);
+  const m = back.getUTCHours() * 60 + back.getUTCMinutes();
+  if (m < minutesOf(times.dayStarts)) return { day: addDays(day, -1), shift: 'night' };
+  return { day, shift: m < minutesOf(times.nightStarts) ? 'day' : 'night' };
 }
 
 // ------------------------------------------------------------ the open link --
 
 /** What the page on the open link needs: the names and the shift to suggest. */
 export async function linkForm(env, query) {
-  await linkSettings(env, query?.t);
+  const s = await linkSettings(env, query?.t);
   const last = await first(env.DB, "SELECT day, shift, name, sent_at FROM np_reading ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1");
-  return { staff: await staffNames(env), suggest: suggest(last), today: todayIn('UTC') };
+  const today = todayIn('UTC');
+  // The shifts that may be sent: the last three, newest first, and which are sent already.
+  const choices = [{ day: today, shift: 'night' }, { day: today, shift: 'day' }, { day: addDays(today, -1), shift: 'night' }, { day: addDays(today, -1), shift: 'day' }];
+  const sent = await all(env.DB, 'SELECT day, shift FROM np_reading WHERE day >= ?1', addDays(today, -1));
+  const isSent = new Set(sent.map((r) => `${r.day}|${r.shift}`));
+  return {
+    staff: await staffNames(env), suggest: suggest(last, new Date(), s), today,
+    hours: { day: `${s.dayStarts}–${s.nightStarts}`, night: `${s.nightStarts}–${s.nightEnds}` },
+    choices: choices.map((c) => ({ ...c, sent: isSent.has(`${c.day}|${c.shift}`) })),
+  };
 }
+
+/** Money typed at the desk, in cedis: none, or a positive amount. Pesewas back. */
+const cediTyped = (value, label) => {
+  const text = String(value ?? '').replace(/[\s,]/g, '').replace(/^GH₵|^GHS/i, '');
+  if (text === '') return 0;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0 || n > 100_000) throw badRequest(`${label}: type the money in cedis, e.g. 120 or 45.50.`);
+  return Math.round(n * 100);
+};
 
 const count = (value, label) => {
   const text = String(value ?? '').replace(/[\s,]/g, '');
@@ -114,6 +141,12 @@ export async function sendReading(env, body) {
   const values = Object.fromEntries(COUNTERS.map((c) => [c, read?.[c] ?? null]));
   const pending = COUNTERS.filter((c) => values[c] == null);
 
+  // The shift's money, typed at the desk: children and adults, the shower and the toilet.
+  const sales = body?.sales && typeof body.sales === 'object' ? {
+    showerChild: cediTyped(body.sales.showerChild, 'Shower, children'), showerAdult: cediTyped(body.sales.showerAdult, 'Shower, adults'),
+    toiletChild: cediTyped(body.sales.toiletChild, 'Toilet, children'), toiletAdult: cediTyped(body.sales.toiletAdult, 'Toilet, adults'),
+  } : null;
+
   const was = await first(env.DB, 'SELECT * FROM np_reading WHERE day = ?1 AND shift = ?2', day, shift);
   if (was) {
     if (was.edited_by) throw new HttpError(409, 'The manager has already corrected this shift’s numbers. Ask them to change it.');
@@ -126,7 +159,18 @@ export async function sendReading(env, body) {
   await run(env.DB, `INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at, read_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
     ON CONFLICT (day, shift) DO UPDATE SET name = ?3, gb = ?4, gt = ?5, lb = ?6, lt = ?7, photo_id = ?8, at = ?9, checked_by = NULL, checked_at = NULL, read_json = ?10`,
   day, shift, name, values.gb, values.gt, values.lb, values.lt, photoId, at, JSON.stringify(read || { unavailable: true }));
-  return { ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was), values, pending };
+  if (sales) {
+    // Where the workbook used to put it: the people paid for are worked out from it, against the counters.
+    await run(env.DB, `INSERT INTO np_revenue (day, shift, toilet_adult, toilet_child, toilet_total, shower_adult, shower_child, shower_total, staff, uploaded_by, uploaded_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+      ON CONFLICT (day, shift) DO UPDATE SET toilet_adult = ?3, toilet_child = ?4, toilet_total = ?5, shower_adult = ?6, shower_child = ?7, shower_total = ?8, staff = ?9, uploaded_by = ?10, uploaded_at = ?11`,
+    day, shift, sales.toiletAdult, sales.toiletChild, sales.toiletAdult + sales.toiletChild, sales.showerAdult, sales.showerChild, sales.showerAdult + sales.showerChild,
+    name, `Desk: ${name}`, at);
+  }
+  return {
+    ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was), values, pending,
+    sales: sales ? { shower: sales.showerAdult + sales.showerChild, toilet: sales.toiletAdult + sales.toiletChild, total: Object.values(sales).reduce((t, v) => t + v, 0) } : null,
+  };
 }
 
 /** A reading still missing a counter: what the reader could not see. */

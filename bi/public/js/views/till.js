@@ -33,6 +33,7 @@ const AREA_TEXT = {
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
   advances: ['Advances', 'In the Inbox: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
   proof: ['Ask for proof', 'Act means ask whoever gave an answer for pictures or a PDF (a MoMo screenshot, a slip, a statement). See means see the proof sent.'],
+  pickups: ['Nice Place pickups', 'Front desk › Nice Place › Pickups. See means the pickups; Act means take the envelopes: add what was paid out of them, with receipts, and count what is left.'],
   niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
   check: ['Check shifts', 'Act means mark a shift checked once its report, drawer and payments are looked at. Until then its person sees its differences as “not checked yet”: the amounts may change.'],
   envelopes: ['Envelopes received (Front desk › Safe)', 'Every envelope moved to the safe, with its amount, and which have reached it. Act means mark them received, with the count, or undo that.'],

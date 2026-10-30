@@ -2344,3 +2344,49 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .as-feed .bad { color: var(--critical); }
 @media (max-width: 1100px) { .as { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) { .as-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .as-row-b { padding-left: 16px; } }
+
+/* ------------------------------------------------- nice place pickups -- */
+.pu { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.pu .card { margin: 0; }
+.pu-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pu-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; }
+.pu-tile small { color: var(--muted); } .pu-tile b { display: block; font-size: 1.35rem; } .pu-tile span { font-size: .8rem; color: var(--ink-2); }
+.pu-start { display: flex; align-items: center; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
+.pu-start h2, .pu-start p { margin: 0; }
+.pu-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pu-chip { border-radius: 99px; padding: 2px 10px; font-size: .82rem; font-weight: 600; }
+.pu-chip.bad { background: color-mix(in srgb, var(--critical) 12%, transparent); color: var(--critical); }
+.pu-formhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pu-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 8px; }
+.pu-grid h3 { margin: 0 0 2px; }
+.pu-envs { display: grid; margin-top: 6px; }
+.pu-env { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--border); cursor: pointer; }
+.pu-env:first-child { border-top: 0; }
+.pu-env input { width: 18px; height: 18px; accent-color: var(--accent); }
+.pu-env b, .pu-exp b { display: block; font-size: .9rem; }
+.pu-env small, .pu-exp small { color: var(--muted); font-size: .78rem; }
+.pu-exp { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid var(--border); }
+.pu-exp .btn.ghost { border: 0; background: none; color: var(--muted); }
+.pu-add { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.pu-add input, .pu-f input { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 9px; padding: 8px 10px; font: inherit; width: 100%; min-width: 0; }
+.pu-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.pu-cam { border-style: dashed; }
+.pu-net { display: grid; gap: 6px; margin: 8px 0 10px; }
+.pu-net div { display: flex; justify-content: space-between; }
+.pu-net .net { border-top: 2px solid var(--ink); padding-top: 6px; font-size: 1.1rem; font-weight: 800; }
+.pu-f { display: grid; gap: 4px; font-size: .85rem; color: var(--ink-2); margin-top: 6px; }
+.pu-record { width: 100%; padding: .7rem; margin-top: 6px; }
+.pu-diff { color: var(--critical); }
+.pu-ok { color: var(--good-text); }
+.pu-table tr.pu-row { cursor: pointer; }
+.pu-table tr.pu-row:hover td, .pu-table tr.on td { background: var(--surface-2); }
+.pu-st { font-size: .75rem; font-weight: 700; border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
+.pu-st.warn { background: color-mix(in srgb, var(--warning) 22%, transparent); color: #8a5300; }
+.pu-st.good { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good-text); }
+.pu-st.info { background: var(--accent-2); color: var(--accent-ink); }
+.pu-det { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 6px 2px; }
+.pu-det h3 { margin: 0 0 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.pu-li { display: flex; justify-content: space-between; gap: 8px; font-size: .88rem; padding: 2px 0; }
+.pu-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pu-acts input { flex: 1; min-width: 140px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 9px; padding: 7px 10px; font: inherit; }
+@media (max-width: 960px) { .pu-grid, .pu-det { grid-template-columns: minmax(0, 1fr); } .pu-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

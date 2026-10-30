@@ -251,7 +251,11 @@ async function safeView(v, range, notice = null) {
   const rows = [
     d.start ? h('tr.start', h('td', dayText(d.start.day)), h('td', h('b', 'Counted'), h('small', d.start.with ? `with ${d.start.with}` : 'the start of this page')), h('td.num', ''), h('td.num', ''), h('td.num', h('b', money(d.start.counted))))
       : null,
-    ...d.lines.map((l) => (l.type === 'in'
+    ...d.lines.map((l) => (l.type === 'in' && l.kind === 'pickup'
+      ? h('tr', h('td', dayText(l.day)),
+        h('td', h('b', 'Nice Place pickup'), h('small', `counted by ${l.by}${l.status === 'review' ? ' · waiting for review' : ''}`)),
+        h('td.num.in', money(l.amount)), h('td.num', ''), h('td.num', money(l.balance)))
+      : l.type === 'in'
       ? h('tr', h('td', dayText(l.day)),
         h('td', h('b', `Envelopes · ${nameOf(l.user)}, ${SLOT[l.slot].label.toLowerCase()}`),
           h('small', l.list?.length ? `${l.list.map((e) => `No. ${e.no}`).join(', ')} · ${l.agrees ? 'ASSD agrees' : `the envelopes say ${money(l.envelopes)}`}` : 'from ASSD; no closing report')),

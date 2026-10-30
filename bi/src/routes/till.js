@@ -45,8 +45,10 @@ export const AREAS = [
   { key: 'answers', max: 2 }, { key: 'money_out', max: 2 }, { key: 'reopen', max: 2 }, { key: 'net', max: 1 },
   { key: 'bank', max: 2 }, { key: 'odoo', max: 1 }, { key: 'files', max: 2 }, { key: 'unpaid', max: 2 },
   { key: 'advances', max: 2 }, { key: 'niceplace', max: 2 }, { key: 'proof', max: 2 }, { key: 'check', max: 2 },
-  // Money › Safe › Envelopes received: see them, or mark them received.
+  // Front desk › Safe › Envelopes received: see them, or mark them received.
   { key: 'envelopes', max: 2 },
+  // Front desk › Nice Place › Pickups: see them, or make them (take the envelopes, add what was spent, count).
+  { key: 'pickups', max: 2 },
 ];
 const AREA_MAX = new Map(AREAS.map((a) => [a.key, a.max]));
 
@@ -59,6 +61,11 @@ export const PRESETS = [
     key: 'frontdesk', label: 'Front desk supervisor',
     text: 'Sees shifts and closing reports without amounts. Acts on staff answers, unpaid stays and advances, and reopens a report.',
     levels: { day: 1, week: 1, month: 1, reports: 1, answers: 2, reopen: 2, unpaid: 2, advances: 2 },
+  },
+  {
+    key: 'nppickups', label: 'Nice Place pickups',
+    text: 'Takes Nice Place’s envelopes from the safe: adds what was paid out of them, with receipts, and counts what is left. Reads counters a picture could not.',
+    levels: { pickups: 2, niceplace: 2 },
   },
   {
     key: 'accounts', label: 'Accounts',

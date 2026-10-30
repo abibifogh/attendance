@@ -34,6 +34,7 @@ import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
 import * as assistant from './routes/assistant.js';
+import * as npPickup from './routes/nppickup.js';
 import * as approvals from './routes/approvals.js';
 import * as receipts from './routes/receipts.js';
 import { sendDailySummary } from './routes/summary.js';
@@ -371,6 +372,13 @@ const ROUTES = [
   ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
   // A picture of the counters: for an admin, and a supervisor given Nice Place, who reads one the reader could not.
   ['GET', '/api/np/photo/:id', 'shifts', area('niceplace', 1, (env, ctx) => np.photo(env, ctx.params.id))],
+  // Nice Place pickups: the envelopes taken from the safe, what was paid out of them, the count, and admin's review.
+  ['GET', '/api/np/pickups', 'shifts', (env, ctx) => npPickup.pickupsView(env, ctx.account)],
+  ['POST', '/api/np/pickups/start', 'shifts', (env, ctx) => npPickup.startPickup(env, ctx.account)],
+  ['POST', '/api/np/pickups/expense', 'shifts', (env, ctx) => npPickup.addExpense(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/pickups/expense/remove', 'shifts', (env, ctx) => npPickup.removeExpense(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/pickups/record', 'shifts', (env, ctx) => npPickup.recordPickup(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/pickups/review', 'shifts', (env, ctx) => npPickup.reviewPickup(env, ctx.body, ctx.account)],
   ['GET', '/api/np/pending', 'shifts', area('niceplace', 1, (env) => np.pendingReadings(env))],
   ['POST', '/api/np/review', 'shifts', area('niceplace', 2, (env, ctx) => np.reviewReading(env, ctx.body, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' }))],
   ['POST', '/api/np/reread', 'shifts', area('niceplace', 2, (env, ctx) => np.rereadReading(env, ctx.body))],
