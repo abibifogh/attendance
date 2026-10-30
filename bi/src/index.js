@@ -316,6 +316,7 @@ const ROUTES = [
   // Nice Place: the open link staff send the counters from (its own token
   // in the address, no account), and the page that holds them to the money.
   ['GET', '/api/np/form', 'public', (env, ctx) => np.linkForm(env, ctx.query)],
+  ['GET', '/api/np/manifest', 'public', (env, ctx) => np.appManifest(env, ctx.query)],
   ['POST', '/api/np/send', 'public', (env, ctx) => np.sendReading(env, ctx.body)],
   // The counters read off the picture, so the numbers fill in by themselves.
   ['POST', '/api/np/read', 'public', (env, ctx) => np.readCounters(env, ctx.body)],

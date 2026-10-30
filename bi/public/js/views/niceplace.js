@@ -76,11 +76,12 @@ export async function renderNicePlace(root, { part = null } = {}) {
       try { await api('/np/settings', { method: 'POST', body: { newLink: true } }); await load(['good', 'A new link is ready. Copy it and send it to the staff.']); } catch (err) { said.textContent = err.message; }
     };
     if (!data.link?.token) return h('span', h('b', 'Staff link '), h('button.btn.primary', { type: 'button', onclick: () => make(false) }, 'Make the link'), said);
-    const url = `${location.origin}/np.html#${data.link.token}`;
+    const url = `${location.origin}/np#${data.link.token}`;
     return h('span.np-link',
       h('b', 'Staff link'), h('code', url),
       h('button.btn', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch { window.prompt('Copy the link:', url); } } }, 'Copy'),
-      h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'), said);
+      h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'),
+      h('small.np-apphint', 'Open it once on the desk phone and press “Put Nice Place on this phone”: it becomes an app that opens with one tap. A new link stops the old app too.'), said);
   }
 
   // -------------------------------------------------------------- upload --

@@ -92,3 +92,14 @@ test('a pickup: the envelopes in the safe, what was spent with its receipt, the 
   assert.deepEqual(await pickup.safeIns(env), []);
   assert.equal((await all(db, 'SELECT * FROM np_pickup_shift')).length, 4);
 });
+
+test('the desk page as an app: it opens on its own link, and a new link stops it', async () => {
+  const { db } = freshDb();
+  const env = { DB: db };
+  await np.saveSettings(env, { newLink: true });
+  const { token } = await np.settingsOf(env);
+  const app = await np.appManifest(env, { t: token });
+  assert.deepEqual([app.name, app.start_url, app.scope, app.display], ['Nice Place', `/np#${token}`, '/np', 'standalone']);
+  await np.saveSettings(env, { newLink: true });
+  await assert.rejects(np.appManifest(env, { t: token }), /no longer in use/);
+});

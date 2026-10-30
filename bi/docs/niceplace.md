@@ -11,6 +11,22 @@ works out how many people paid, and holds that against the people counted.
 
 The shifts: **Day 03:30 to 13:30**, **Night 13:30 to 23:00** (Accra time).
 
+## On the phone, as an app
+
+**The desk.** Open the staff link once on the desk phone and press **Put
+Nice Place on this phone** (on an iPhone: Share, then Add to Home Screen). It
+becomes the Nice Place app, a water drop on the home screen, opening straight
+on the desk page with one tap. The link's code is built into the app (an app
+on an iPhone's home screen keeps nothing the browser knew), so **New link**
+stops the old app as well: open the new link and put it on the phone again.
+
+**The supervisor.** Insight installs the same way: **Install Insight on this
+phone** in the account menu, in search, or at the top of Pickups. Its
+shortcuts open the Assistant, Shifts and Nice Place pickups.
+
+Neither keeps anything on the phone: everything is read fresh each time, and
+with no connection a page says so plainly.
+
 ## The desk: each shift's sales
 
 On the phone at the desk, from the staff link, made as big and plain as it

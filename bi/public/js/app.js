@@ -29,6 +29,9 @@ import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
+import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS } from './install.js';
+
+registerWorker();
 
 export const state = {
   boot: null,
@@ -266,6 +269,7 @@ async function renderApp() {
     h('div.me-who', h('b', account.name || 'Account'), h('small', roleName(account))),
     account.mayViewAs ? h('button', { type: 'button', onclick: () => { closePops(); openViewAs(); } }, '👁 View as somebody else…') : null,
     h('button', { type: 'button', onclick: () => { toggleTheme(); closePops(); } }, '◐ Light or dark'),
+    installButton(),
     h('button', { type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); } }, 'Sign out'));
   const meBtn = (cls) => h(`button.${cls}`, { type: 'button', 'aria-label': 'Your account', onclick: (e) => { e.stopPropagation(); e.currentTarget.parentElement.append(me); toggle(me, e.currentTarget); } },
     h('span.av', (account.name || '?').trim().charAt(0).toUpperCase()),
@@ -291,6 +295,7 @@ async function renderApp() {
       shown.some((r) => r.path === 'safe') ? { label: 'Count the safe', go: () => go('safe') } : null,
       account.mayViewAs ? { label: 'View as somebody else', go: () => openViewAs() } : null,
       { label: 'Light or dark', go: toggleTheme },
+      canInstall() ? { label: 'Install Insight on this phone', go: installNow } : null,
     ].filter(Boolean),
     suppliers: shown.some((r) => r.path === 'suppliers') ? () => go('suppliers') : null,
   });
@@ -567,4 +572,17 @@ try {
 function roleName(account) {
   if (account.isOwner) return 'Owner';
   return ({ admin: 'Admin', supervisor: 'Supervisor', uploader: 'Uploader', reports: 'Reports only' })[account.till?.role] || '';
+}
+
+/** "Install Insight on this phone", in the account menu, while it can be. */
+function installButton() {
+  const b = h('button', { type: 'button', hidden: !canInstall(), onclick: installNow }, '📲 Install Insight on this phone');
+  onInstallChange(() => { b.hidden = !canInstall(); });
+  return b;
+}
+
+/** The browser's own question; on an iPhone, the steps. */
+export async function installNow() {
+  const out = await install();
+  if (out === 'iphone') alert(IPHONE_STEPS);
 }
