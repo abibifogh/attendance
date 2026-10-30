@@ -2,6 +2,15 @@ name = "niceoperation-insight"
 main = "src/index.js"
 compatibility_date = "2025-05-05"
 
+# Run the Worker beside its database, not beside each visitor. A page reads
+# the database 10 to 50 times, one after another; from a Worker in Accra to a
+# database in Europe each read is a long round trip, and they add up to
+# seconds. Placed by the database, each read is a millisecond or two, and the
+# one trip from the visitor is made once. The static files are still served
+# from the edge nearest the visitor.
+[placement]
+mode = "smart"
+
 # The dashboard and its API are one Worker; everything that is not /api/* is
 # served from public/ as a static asset.
 [assets]

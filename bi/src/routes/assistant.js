@@ -34,6 +34,8 @@ import { requireAdmin } from './till.js';
 export const MODEL = np.READ_MODEL;
 const DAY = 86_400_000;
 const FLOAT_DAYS = 14;
+/** How long one place may take to answer before the list goes without it: another system being slow must not hold the page. */
+const SOURCE_MS = 6000;
 const BILL_DAYS = 30;
 
 const daysSince = (at, now) => (at ? Math.max(0, Math.floor((now - Date.parse(String(at).length <= 10 ? `${at}T12:00:00Z` : at)) / DAY)) : null);
@@ -61,7 +63,9 @@ export async function gather(env, account, { now = Date.now(), sources = SOURCES
   const items = [];
   await Promise.all(sources.map(async (s) => {
     try {
-      const got = await s.read(env, account, now);
+      let timer;
+      const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Took too long to answer; it is read again next time.')), SOURCE_MS); });
+      const got = await Promise.race([s.read(env, account, now), late]).finally(() => clearTimeout(timer));
       for (const item of got) items.push({ source: s.label, ...item });
       read.push({ id: s.id, label: s.label, ok: true, count: got.length });
     } catch (err) {
