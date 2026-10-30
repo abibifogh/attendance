@@ -477,6 +477,11 @@ const UPLOADER_MAY = new Set([
 export default {
   async fetch(request, env, execution) {
     const url = new URL(request.url);
+    // Never over plain http: a phone would say "Not secure", sign-in cookies are https only, and nothing installs.
+    if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 301);
+    }
     if (!url.pathname.startsWith('/api/')) {
       // A float's short link, /float/igna: their page, which reads the ending itself.
       if (/^\/float\/[A-Za-z0-9-]{2,30}\/?$/.test(url.pathname)) return floatPage(env, request, url);

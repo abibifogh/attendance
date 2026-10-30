@@ -123,3 +123,9 @@ test('the short link: an ending the manager chooses, /niceplace, opens the desk 
   await np.saveSettings(env, { slug: '' });
   assert.equal(await np.shortLink(env), null);
 });
+
+test('never over plain http: sent to the secure address', async () => {
+  const insight = (await import('../src/index.js')).default;
+  const r = await insight.fetch(new Request('http://insight.example.test/niceplace?x=1'), { DB: freshDb().db }, { waitUntil() {} });
+  assert.deepEqual([r.status, r.headers.get('Location')], [301, 'https://insight.example.test/niceplace?x=1']);
+});

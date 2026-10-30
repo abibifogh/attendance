@@ -34,9 +34,11 @@ window.addEventListener('beforeinstallprompt', function (event) { event.preventD
 window.addEventListener('appinstalled', function () { offer = null; waiting.forEach(function (fn) { fn(); }); });
 const installed = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 const isIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
-const canInstall = () => !installed() && Boolean(offer || isIphone());
+// Offered whenever it is not the app already: where the browser makes no offer of its own, the steps.
+const canInstall = () => !installed();
+const ANDROID_STEPS = 'Tap Chrome’s menu (the three dots ⋮ at the top right), then “Add to Home screen” or “Install app”.';
 async function install() {
-  if (!offer) return isIphone() ? 'iphone' : 'unavailable';
+  if (!offer) return isIphone() ? 'iphone' : 'android';
   offer.prompt();
   const choice = await offer.userChoice;
   offer = null;
@@ -152,6 +154,7 @@ function installBox() {
   go.addEventListener('click', async () => {
     const out = await install();
     if (out === 'iphone') put(said, IPHONE_STEPS);
+    else if (out === 'android') put(said, ANDROID_STEPS);
     else if (out === 'accepted') put(said, '✓ Done. Find Nice Place on the phone’s home screen.');
   });
   return el('div', { class: 'install' }, el('b', {}, 'Make it an app'), said, go);
