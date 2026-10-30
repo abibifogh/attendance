@@ -8126,3 +8126,26 @@ button.lp-row:disabled { cursor: default; }
 .settings-body { grid-template-columns: minmax(0, 1fr); }
 .settings-panel, .settings-panel-body, .settings-section-head { min-width: 0; }
 .settings-panel-body { overflow-x: auto; }
+
+/* ---- Leave: who is off, a fortnight at a time ---- */
+.away-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
+.away-head { font-size: .72rem; font-weight: 650; color: var(--text-faint); text-align: center; text-transform: uppercase; letter-spacing: .04em; }
+.away-day {
+  position: relative; display: grid; justify-items: center; gap: .05rem; padding: .35rem .2rem .4rem;
+  min-height: 56px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2);
+  font: inherit; color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.away-day:hover { border-color: var(--text-faint); }
+.away-day.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.away-date { font-size: .72rem; color: var(--text-faint); }
+.away-count { font-size: 1.05rem; font-weight: 700; line-height: 1.1; }
+.away-asked { font-size: .7rem; font-weight: 650; color: var(--warn); }
+.away-day.is-near { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.away-day.is-full { background: color-mix(in srgb, var(--bad) 14%, var(--surface)); border-color: color-mix(in srgb, var(--bad) 50%, var(--border)); }
+.away-day.is-today .away-date { color: var(--accent); font-weight: 700; }
+.away-day.is-past { opacity: .55; }
+.away-names { margin-top: .7rem; font-size: .9rem; min-height: 1.2rem; }
+.away-names ul { margin: .3rem 0 0; padding-left: 1.1rem; display: grid; gap: .2rem; }
+.away-names .pill { margin-left: .4rem; }
+.away-note { font-size: .8rem; margin: .6rem 0 0; }
+.report-departments { margin-bottom: .8rem; }

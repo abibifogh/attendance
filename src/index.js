@@ -487,6 +487,7 @@ export const ROUTES = [
   ['POST', '/api/att/leave-plans/chase', 'att_manage', leavePlans.chase],
   ['GET', '/api/att/absence-questions', 'att_rota', absence.listQuestions],
   ['POST', '/api/att/absence-questions/:id/answer', 'att_rota', absence.answerQuestion],
+  ['GET', '/api/att/away', 'att_view', att.awayCalendar],
   ['GET', '/api/att/leave', 'att_view', att.listLeave],
   ['POST', '/api/att/leave', 'att_manage', att.requestLeave],
   ['GET', '/api/att/leave/:id/days', 'att_manage', att.leaveDays],

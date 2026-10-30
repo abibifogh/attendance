@@ -19,10 +19,14 @@ export async function renderAttWeek(params) {
   const host = h('div');
   const from = params.from || mondayOf(todayISO());
   const data = await api.attWeek(from);
+  const department = departmentOf(data.rows, params.department);
+  const rows = inDepartment(data.rows, department);
+  const totals = department ? addUp(rows, data.totals) : data.totals;
 
-  const reload = async (nextFrom) => {
-    replaceParams('att-week', { from: nextFrom });
-    mount(host, await renderAttWeek({ from: nextFrom }));
+  const reload = async (nextFrom, nextDepartment = department) => {
+    const next = { from: nextFrom, ...(nextDepartment ? { department: nextDepartment } : {}) };
+    replaceParams('att-week', next);
+    mount(host, await renderAttWeek(next));
   };
 
   const nav = h('div.toolbar',
@@ -100,14 +104,15 @@ export async function renderAttWeek(params) {
   mount(host,
     head('Week', data),
     nav,
+    departmentPicker(data.rows, department, (d) => reload(data.from, d)),
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
-      tile('Days worked', fmtNum(data.totals.daysWorked, 1), `across ${data.rows.length} people`),
-      tile('Hours', fmtNum(data.totals.workedMinutes / 60, 1), data.totals.overtimeMinutes ? `${fmtNum(data.totals.overtimeMinutes / 60, 1)} overtime` : 'total'),
-      tile('Absences', fmtNum(data.totals.daysAbsent, 0), 'unexcused', data.totals.daysAbsent ? 'var(--bad)' : null),
-      tile('Late arrivals', fmtNum(data.totals.lateCount, 0), data.totals.lateMinutes ? `${lateBy(data.totals.lateMinutes)} in total` : 'none', data.totals.lateCount ? 'var(--warn)' : null),
+      tile('Days worked', fmtNum(totals.daysWorked, 1), `across ${rows.length} people`),
+      tile('Hours', fmtNum(totals.workedMinutes / 60, 1), totals.overtimeMinutes ? `${fmtNum(totals.overtimeMinutes / 60, 1)} overtime` : 'total'),
+      tile('Absences', fmtNum(totals.daysAbsent, 0), 'unexcused', totals.daysAbsent ? 'var(--bad)' : null),
+      tile('Late arrivals', fmtNum(totals.lateCount, 0), totals.lateMinutes ? `${lateBy(totals.lateMinutes)} in total` : 'none', totals.lateCount ? 'var(--warn)' : null),
     ),
-    card('The week', { note: totalsLine(data.totals), wide: true },
-      table(columns, data.rows, { empty: 'Nothing recorded.' })),
+    card(department ? `The week, ${department}` : 'The week', { note: totalsLine(totals), wide: true },
+      table(columns, rows, { empty: 'Nobody in this department this week.' })),
     legend(),
   );
 
@@ -173,10 +178,13 @@ export async function renderAttOverview(params) {
   const host = h('div');
   const month = params.month || monthOf(todayISO());
   const data = await api.attOverview(month);
+  const department = departmentOf(data.rows, params.department);
+  const rows = inDepartment(data.rows, department);
 
-  const reload = async (nextMonth) => {
-    replaceParams('att-overview', { month: nextMonth });
-    mount(host, await renderAttOverview({ month: nextMonth }));
+  const reload = async (nextMonth, nextDepartment = department) => {
+    const next = { month: nextMonth, ...(nextDepartment ? { department: nextDepartment } : {}) };
+    replaceParams('att-overview', next);
+    mount(host, await renderAttOverview(next));
   };
 
   const label = new Date(`${data.month}-15T12:00:00Z`)
@@ -196,7 +204,7 @@ export async function renderAttOverview(params) {
     moreActions(
       printButton({
         title: `Attendance — ${label}`,
-        subtitle: `${data.rows.length} people · ${fmtDay(data.from)} to ${fmtDay(data.to)}`,
+        subtitle: `${department ? `${department} · ` : ''}${rows.length} people · ${fmtDay(data.from)} to ${fmtDay(data.to)}`,
         footer: PRINT_FOOTER,
       }),
       // The export carries the balances, so it stays behind the permission
@@ -218,9 +226,10 @@ export async function renderAttOverview(params) {
   // What the month cost, where the absence fell and how the cover was shaped.
   // Heavier than the rest, so a failure leaves the table standing. Money in it
   // is left out by the server for anybody who may not see pay.
-  const deeper = await api.attAnalytics({ from: data.from, to: data.to }).catch(() => null);
+  const deeper = await api.attAnalytics({ from: data.from, to: data.to, ...(department ? { department } : {}) })
+    .catch(() => null);
 
-  const totals = data.rows.reduce((acc, row) => ({
+  const totals = rows.reduce((acc, row) => ({
     daysWorked: acc.daysWorked + row.totals.daysWorked,
     workedMinutes: acc.workedMinutes + row.totals.workedMinutes,
     daysAbsent: acc.daysAbsent + row.totals.daysAbsent,
@@ -236,8 +245,9 @@ export async function renderAttOverview(params) {
         : h('span.pill.good', 'Every day settled'),
     ),
     nav,
+    departmentPicker(data.rows, department, (d) => reload(data.month, d)),
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
-      tile('Days worked', fmtNum(totals.daysWorked, 1), `${data.rows.length} people`),
+      tile('Days worked', fmtNum(totals.daysWorked, 1), `${rows.length} people`),
       tile('Hours', fmtNum(totals.workedMinutes / 60, 0), 'total for the month', 'var(--c3)'),
       tile('Absences', fmtNum(totals.daysAbsent, 0), 'unexcused', totals.daysAbsent ? 'var(--bad)' : null),
       tile('Late arrivals', fmtNum(totals.lateCount, 0), 'across the month', totals.lateCount ? 'var(--warn)' : null),
@@ -270,7 +280,7 @@ export async function renderAttOverview(params) {
           ? { key: 'leaveLeft', label: 'Leave left', align: 'right', format: (v, r) => h('span', { style: { color: r.leave.remaining <= 0 ? 'var(--bad)' : 'var(--good)' } }, fmtNum(r.leave.remaining, 1)) }
           : null,
         { key: 'rate', label: 'Attendance', align: 'right', format: (v, r) => (r.totals.attendanceRate == null ? h('span.muted', '—') : `${fmtNum(r.totals.attendanceRate, 0)}%`) },
-      ].filter(Boolean), data.rows, {
+      ].filter(Boolean), rows, {
         groupBy: (r) => r.staff.department,
         empty: 'Nothing recorded.',
       })),
@@ -282,6 +292,49 @@ export async function renderAttOverview(params) {
   );
 
   return host;
+}
+
+// ---------------------------------------------------------------------------
+// One department at a time
+// ---------------------------------------------------------------------------
+
+/** The department asked for, if it is one on this sheet; everybody otherwise. */
+function departmentOf(rows, asked) {
+  if (!asked) return '';
+  return rows.some((r) => (r.staff.department || '') === asked) ? asked : '';
+}
+
+const inDepartment = (rows, department) => (department
+  ? rows.filter((r) => (r.staff.department || '') === department)
+  : rows);
+
+/**
+ * The totals for the people shown, added up from their own rows. Counts and
+ * minutes add; a rate does not, so it is left out rather than shown wrong.
+ */
+function addUp(rows, all) {
+  const out = {};
+  for (const [key, value] of Object.entries(all ?? {})) {
+    if (typeof value !== 'number') { out[key] = value; continue; }
+    out[key] = /rate/i.test(key) ? null : rows.reduce((n, r) => n + (Number(r.totals?.[key]) || 0), 0);
+  }
+  return out;
+}
+
+/**
+ * Everybody, or one department. Drawn only when there is more than one to
+ * choose between, and kept in the address so a live update stays on it.
+ */
+function departmentPicker(rows, chosen, pick) {
+  const names = [...new Set(rows.map((r) => r.staff.department).filter(Boolean))].sort();
+  if (names.length < 2) return null;
+  return h('div.seg.seg-wrap.report-departments', { role: 'group', 'aria-label': 'Department' },
+    [['', 'Everyone'], ...names.map((n) => [n, n])].map(([key, label]) => h('button', {
+      type: 'button',
+      class: key === chosen ? 'active' : '',
+      'aria-pressed': String(key === chosen),
+      onclick: () => pick(key),
+    }, label)));
 }
 
 function head(title, data) {

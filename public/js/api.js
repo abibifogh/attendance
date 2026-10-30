@@ -494,6 +494,7 @@ export const api = {
   attRotaImportDiscard: () => request('/api/att/rota-import/discard', { method: 'POST', body: {} }),
 
   attLeave: (params = {}) => request(`/api/att/leave?${new URLSearchParams(params)}`),
+  attAway: (params = {}) => request(`/api/att/away?${new URLSearchParams(params)}`),
   attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),
   attDecideLeave: (id, body) => request(`/api/att/leave/${id}/decide`, { method: 'POST', body }),
   attSetLeaveType: (id, body) => request(`/api/att/leave/${id}/type`, { method: 'POST', body }),

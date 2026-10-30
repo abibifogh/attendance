@@ -35,6 +35,7 @@ import {
   monthOf, rangeDays, startOfWeek, todayIn,
 } from '../util/dates.js';
 import { SUNDAY_DOW, limitsFrom, sundaysWorkedCap } from '../lib/workload.js';
+import { awayByDay, awayCap } from '../lib/away.js';
 import {
   firstName, sayDate, sayHours, sayRange, sayShortDate, sayTime,
 } from '../lib/email-design.js';
@@ -4455,6 +4456,29 @@ export async function savePattern(ctx) {
 // ---------------------------------------------------------------------------
 // Leave
 // ---------------------------------------------------------------------------
+
+/**
+ * Who is off, day by day, against the property's limit: the calendar on Leave.
+ *
+ * Leave and unavailable days together, as the limit counts them. Whoever may
+ * see requests before they are decided sees them here as asked for; anybody
+ * else sees approved days only, as on the list beside it.
+ */
+export async function awayCalendar(ctx) {
+  const timezone = await timezoneOf(ctx.db);
+  const today = todayIn(timezone);
+  const from = readDay(ctx.url.searchParams.get('from'), startOfWeek(today));
+  let to = readDay(ctx.url.searchParams.get('to'), addDays(from, 13));
+  if (to < from) throw badRequest('The end comes before the start.');
+  if (diffDays(from, to) > 41) to = addDays(from, 41);
+  const asked = allows('att_manage', ctx.session.permissions) || allows('att_rota', ctx.session.permissions);
+  return json({
+    from, to, today,
+    cap: await awayCap(ctx.db),
+    showsAsked: asked,
+    days: await awayByDay(ctx.db, { from, to, asked }),
+  });
+}
 
 export async function listLeave(ctx) {
   const status = ctx.url.searchParams.get('status');

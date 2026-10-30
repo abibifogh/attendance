@@ -1,7 +1,7 @@
 import { api } from '../api.js';
-import { can, navigate } from '../app.js';
+import { can, navigate, replaceParams } from '../app.js';
 import {
-  fmtDay, fmtNum, fmtSince, fmtStamp, h, monthOf, mount, shiftMonth, toast, todayISO,
+  fmtDay, fmtNum, fmtSince, fmtStamp, h, monthOf, mount, shiftDay, shiftMonth, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, table } from './components.js';
 import { field, formDialog, monthLabel, signOffDialog } from './att-shared.js';
@@ -25,13 +25,19 @@ export async function renderAttLeave(params = {}) {
 
   // The balance is beside a request as well as on its own view: the question
   // is never "how much has Ama left" alone, it is "can Ama have Friday off".
-  const [leaveData, balanceData, bootstrap] = await Promise.all([
+  const from = params.from || null;
+  const [leaveData, balanceData, bootstrap, away] = await Promise.all([
     api.attLeave(),
     can('att_reports') && part !== 'booked' ? api.attBalances() : Promise.resolve({ rows: [] }),
     api.attBootstrap(),
+    part === 'balances' ? Promise.resolve(null) : api.attAway(from ? { from } : {}).catch(() => null),
   ]);
 
-  const reload = async () => mount(host, await renderAttLeave({ part }));
+  const reload = async (next = {}) => {
+    const merged = { part, ...(from ? { from } : {}), ...next };
+    if ('from' in next) replaceParams(part === 'booked' ? 'att-leave-booked' : 'att-leave', next.from ? { from: next.from } : {});
+    mount(host, await renderAttLeave(merged));
+  };
 
   const leaveKinds = bootstrap.reasons.filter((r) => r.kind === 'leave' && r.active);
   const pending = leaveData.leave.filter((l) => l.status === 'pending');
@@ -364,6 +370,7 @@ export async function renderAttLeave(params = {}) {
 
   if (part === 'booked') {
     mount(host, head,
+      whoIsOff(away, reload),
       card('Booked and coming up', { note: `${upcoming.length}`, wide: true },
         table(columns('upcoming'), upcoming, { empty: 'Nobody is booked off.' })));
     return host;
@@ -413,6 +420,7 @@ export async function renderAttLeave(params = {}) {
   }
 
   mount(host, head,
+    whoIsOff(away, reload),
     pending.length
       ? card('Waiting on you', { note: `${pending.length}`, wide: true },
         decides ? null : h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
@@ -426,6 +434,70 @@ export async function renderAttLeave(params = {}) {
   );
 
   return host;
+}
+
+/**
+ * Who is off, a fortnight at a time.
+ *
+ * A count for each day of the people away, leave and unavailable days
+ * together, which is what the property's limit is held against. What is only
+ * asked for is counted beside it, so a request can be read against the days
+ * it would fill before it is approved. A day is pressed for the names.
+ */
+function whoIsOff(away, reload) {
+  if (!away?.days?.length) return null;
+  const { cap, today } = away;
+  const names = h('div.away-names');
+  const first = away.days[0].day;
+  const weekday = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+
+  const show = (d) => {
+    for (const el of grid.querySelectorAll('.away-day')) el.classList.toggle('on', el.dataset.day === d.day);
+    mount(names, d.people.length
+      ? [h('strong', fmtDay(d.day)),
+        h('ul', d.people.map((p) => h('li', p.name,
+          h('small.muted', ` · ${p.why === 'leave' ? 'leave' : 'cannot work'}${p.department ? ` · ${p.department}` : ''}`),
+          p.asked ? h('span.pill.warn', 'Asked') : null)))]
+      : h('span.muted', `Nobody is off on ${fmtDay(d.day)}.`));
+  };
+
+  const grid = h('div.away-grid', { role: 'list' },
+    away.days.slice(0, 7).map((d) => h('div.away-head', { 'aria-hidden': 'true' }, weekday(d.day))),
+    away.days.map((d) => {
+      const approved = d.people.filter((p) => !p.asked).length;
+      const asked = d.people.length - approved;
+      const tone = cap > 0 && approved >= cap ? 'is-full' : cap > 0 && approved + asked >= cap ? 'is-near' : '';
+      return h('button.away-day', {
+        type: 'button',
+        role: 'listitem',
+        'data-day': d.day,
+        class: ['away-day', tone, d.day === today ? 'is-today' : '', d.day < today ? 'is-past' : ''].filter(Boolean).join(' '),
+        title: d.people.map((p) => `${p.name}${p.asked ? ' (asked)' : ''}`).join(', ') || 'Nobody off',
+        'aria-label': `${fmtDay(d.day)}: ${approved} off${asked ? `, ${asked} more asked for` : ''}`,
+        onclick: () => show(d),
+      },
+      h('span.away-date', String(Number(d.day.slice(8)))),
+      h('span.away-count', String(approved)),
+      asked ? h('span.away-asked', `+${asked}`) : null);
+    }));
+
+  const step = (n) => reload({ from: shiftDay(first, n) });
+  return card('Who is off', {
+    wide: true,
+    note: cap > 0 ? `${cap} a day is the limit` : 'nobody may ask',
+    actions: h('div.btn-row',
+      h('button.btn-sm', { type: 'button', 'aria-label': 'The fortnight before', onclick: () => step(-14) }, '‹'),
+      first <= today && today <= away.days[away.days.length - 1].day
+        ? null
+        : h('button.btn-sm', { type: 'button', onclick: () => reload({ from: null }) }, 'Today'),
+      h('button.btn-sm', { type: 'button', 'aria-label': 'The fortnight after', onclick: () => step(14) }, '›')),
+  },
+  grid,
+  names,
+  h('p.muted.away-note',
+    `${fmtDay(first)} to ${fmtDay(away.days[away.days.length - 1].day)}. Leave and days somebody cannot work, counted together.`
+    + (away.showsAsked ? ' The small figure is what is asked for and not decided yet.' : '')
+    + ' The limit is set in Settings › Leave & holidays.'));
 }
 
 function capitalise(value) {

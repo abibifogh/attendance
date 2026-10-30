@@ -85,6 +85,45 @@ export async function whoIsAway(db, { from, to, exceptStaffId = null }) {
   return byDay;
 }
 
+/**
+ * Who is away on each day, for the office's calendar on Leave.
+ *
+ * The same leave and unavailable days the limit is held against, told apart:
+ * what is approved, and what is only asked for. `asked` false leaves out
+ * anything not yet decided, for a reader who only ever sees approved leave.
+ */
+export async function awayByDay(db, { from, to, asked = true }) {
+  const days = new Map(daysBetween(from, to).map((day) => [day, []]));
+  const put = (day, person) => days.get(day)?.push(person);
+
+  const leave = await db.prepare(
+    `SELECT l.staff_id, l.from_day, l.to_day, l.status, s.name, s.department
+       FROM att_leave l JOIN att_staff s ON s.id = l.staff_id
+      WHERE l.status IN (${asked ? "'pending', 'approved'" : "'approved'"})
+        AND l.from_day <= ?2 AND l.to_day >= ?1
+      ORDER BY s.name`,
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+  for (const row of leave.results ?? []) {
+    for (const day of daysBetween(row.from_day, row.to_day)) {
+      put(day, { name: row.name, department: row.department ?? null, why: 'leave', asked: row.status === 'pending' });
+    }
+  }
+
+  const marked = await db.prepare(
+    `SELECT a.day, a.decision, s.name, s.department
+       FROM att_availability a JOIN att_staff s ON s.id = a.staff_id
+      WHERE a.status = 'unavailable'
+        AND a.decision IN (${asked ? "'waiting', 'approved'" : "'approved'"})
+        AND a.day BETWEEN ?1 AND ?2
+      ORDER BY s.name`,
+  ).bind(from, to).all().catch(() => ({ results: [] }));
+  for (const row of marked.results ?? []) {
+    put(row.day, { name: row.name, department: row.department ?? null, why: 'unavailable', asked: row.decision === 'waiting' });
+  }
+
+  return [...days].map(([day, people]) => ({ day, people }));
+}
+
 /** The first of these days that is already full, if any of them is. */
 export function firstDayFull(days, away, cap) {
   if (!Number.isFinite(cap)) return null;
