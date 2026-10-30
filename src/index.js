@@ -23,6 +23,7 @@ import { watchShifts } from './lib/shift-watch.js';
 import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
+import { watchHolidayChoices } from './lib/holiday-choice.js';
 import { watchReminders } from './lib/reminders.js';
 import { watchInterviews } from './lib/interview-mail.js';
 import { watchOffers } from './routes/offers.js';
@@ -34,6 +35,7 @@ import * as companies from './routes/companies.js';
 import * as tillReports from './routes/till-reports.js';
 import * as absence from './routes/absence.js';
 import * as leavePlans from './routes/leave-plans.js';
+import * as holidays from './routes/holiday-choice.js';
 import * as newStarter from './routes/new-starter.js';
 import * as signing from './routes/signing.js';
 
@@ -314,6 +316,9 @@ export const ROUTES = [
   ['DELETE', '/api/me/leave-plan/blocks/:id', 'att_me', leavePlans.removeBlock],
   ['POST', '/api/me/leave-plan/blocks/:id/take', 'att_me', leavePlans.takeSuggestion],
   ['POST', '/api/me/leave-plan/send', 'att_me', leavePlans.sendPlan],
+  // Christmas or New Year: each person's own choice.
+  ['GET', '/api/me/holiday', 'att_me', holidays.mine],
+  ['POST', '/api/me/holiday', 'att_me', holidays.choose],
   // Their own signed contract, the same document and the same certificate the
   // office sees. The file route is for the ones signed on paper, where the
   // contract is a scan rather than words.
@@ -480,6 +485,14 @@ export const ROUTES = [
   ['POST', '/api/att/rota-import/confirm', 'att_rota', rotaImport.confirmRotaImport],
   ['POST', '/api/att/rota-import/discard', 'att_rota', rotaImport.discardRotaImport],
 
+  // Christmas or New Year: the office's set-up and board.
+  ['GET', '/api/att/holidays', 'att_manage', holidays.board],
+  ['GET', '/api/att/holidays/new', 'att_manage', holidays.suggestion],
+  ['POST', '/api/att/holidays', 'att_manage', holidays.saveRound],
+  ['DELETE', '/api/att/holidays/:id', 'att_manage', holidays.removeRound],
+  ['POST', '/api/att/holidays/:id/pick', 'att_manage', holidays.officePick],
+  ['POST', '/api/att/holidays/:id/remind', 'att_manage', holidays.remind],
+  ['POST', '/api/att/holidays/:id/confirm', 'att_manage', holidays.confirm],
   ['GET', '/api/att/leave-plans', 'att_manage', leavePlans.board],
   ['POST', '/api/att/leave-plans/round', 'att_setup', leavePlans.saveRound],
   ['POST', '/api/att/leave-plans/blocks/:id/decide', 'att_manage', leavePlans.decideBlock],
@@ -1144,6 +1157,16 @@ export default {
       if (plans.invited || plans.reminded) {
         console.log(`Leave plans: ${plans.invited} invited, ${plans.reminded} reminded`);
       }
+
+      // And Christmas or New Year: reminders until everybody has chosen.
+      const festive = await watchHolidayChoices(env.DB, {
+        timezone,
+        ctx: { env, executionContext },
+      }).catch((err) => {
+        console.error('Holiday choice watch failed', err);
+        return { reminded: 0 };
+      });
+      if (festive.reminded) console.log(`Holiday choice: ${festive.reminded} reminded`);
 
       // And whatever is still waiting on somebody: details and contract links,
       // letters to sign, handbook sections. Once a day from nine.

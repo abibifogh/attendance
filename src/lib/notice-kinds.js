@@ -297,6 +297,22 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'leave.holiday_asked',
+    group: 'day',
+    label: 'Choose your holiday: Christmas or New Year',
+    who: 'Everybody on the rota except casual staff',
+    when: 'The office asks, then every Monday and each of the last three days until they answer',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'leave.holiday_confirmed',
+    group: 'day',
+    label: 'Your holiday is confirmed',
+    who: 'Everybody who was asked',
+    when: 'The office confirms the choices and puts them on the rota',
+    ways: ['push', 'email'],
+  },
+  {
     key: 'leave.plan_reviewed',
     group: 'day',
     label: 'Your leave plan was reviewed',

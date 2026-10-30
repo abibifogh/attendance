@@ -5,6 +5,7 @@ import { askForLeave, editMyAvailability, leaveRow } from './att-me.js';
 import { ask as askForAdvance } from './att-my-advance.js';
 import { makeClaim } from './att-my-medical.js';
 import { icon } from '../icons.js';
+import { holidayCard } from './holiday-choice.js';
 
 /**
  * Everything somebody can ask for, and what became of it.
@@ -22,12 +23,13 @@ export async function renderRequests() {
 }
 
 async function body(reload) {
-  const [week, swaps, advances, medical, plan] = await Promise.all([
+  const [week, swaps, advances, medical, plan, holiday] = await Promise.all([
     api.myWeek().catch(() => null),
     api.swaps().catch(() => null),
     api.myAdvances().catch(() => null),
     api.myMedical().catch(() => null),
     api.myLeavePlan().catch(() => null),
+    api.myHoliday().catch(() => null),
   ]);
 
   const cash = (n, cur) => money(n, cur);
@@ -87,6 +89,7 @@ async function body(reload) {
       h('div.ask-grid', asks.map((a) => h('button.ask-tile', { type: 'button', onclick: a.run },
         h(`span.ask-icon${a.tone ? `.is-${a.tone}` : ''}`, icon(a.name)),
         h('span', a.label))))),
+    holidayCard(holiday),
     planCard(plan),
     h('section.card', { 'aria-labelledby': 'asked' },
       h('div.card-head', h('h2', { id: 'asked' }, 'What I’ve asked')),

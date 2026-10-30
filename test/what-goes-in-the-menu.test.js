@@ -195,7 +195,7 @@ test('a supervisor reads Home, Inbox, Rota and Attendance', () => {
   assert.deepEqual(tabsOf(day).map((t) => t.label), ['Today', 'Reports', 'Leave', 'Sign-off']);
   // Holding Month but not Week, Reports opens on Month.
   assert.equal(tabsOf(day).find((t) => t.label === 'Reports').path, 'att-overview');
-  assert.deepEqual(segmentsOf(day, 'leave-plans').map((t) => t.label), ['Requests', 'Booked', 'Plans']);
+  assert.deepEqual(segmentsOf(day, 'leave-plans').map((t) => t.label), ['Requests', 'Booked', 'Plans', 'Holidays']);
 });
 
 test('a manager reads People as Staff, Recruitment, Documents and Handbook', () => {
