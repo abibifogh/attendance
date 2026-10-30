@@ -6,7 +6,7 @@ they are the five buttons along the bottom.
 | Place | Pages |
 |---|---|
 | **Assistant** | Today (what needs you, with advice; see assistant.md) · Approvals (everything waiting for an admin, in every system) · Brief |
-| **Front desk** | Shifts (with To sort out and Closing reports) · People · Safe · Nice Place |
+| **Front desk** | Shifts (with To sort out and Closing reports) · People · Safe · Nice Place (Counters & money, Pickups) |
 | **Buying** | Suppliers · Receipts · Floats · Spend |
 | **Reports** | Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) · Staff costs |
 | **Settings** | People & access (People, Supervisors, Reports they see) · Connections & files (Connections, Shift files) · Rules (Front desk, Nice Place, Receipts) · Notifications (HIVE alerts, Management report, Prepaid summary) · Shared reports |

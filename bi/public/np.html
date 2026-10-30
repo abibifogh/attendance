@@ -8,43 +8,70 @@
   <meta name="color-scheme" content="light">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <style>
-    :root { --plane: #f9f9f7; --surface: #fcfcfb; --surface-2: #f2f1ed; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781; --line: rgba(11,11,11,.18); --blue: #2a78d6; --good: #0b6b35; --good-bg: #e5f3ea; --bad: #a12626; --bad-bg: #fbe6e6; }
+    /* Big and plain, for the ladies at the desk: large type, large buttons, strong colours. */
+    :root { --ink: #14161a; --ink-2: #4b515c; --muted: #8a909b; --line: #e3e6eb; --surface-2: #f1f3f6; --accent: #4f46e5; --accent-2: #eef0ff;
+      --good: #15803d; --good-bg: #e9f7ee; --bad: #b91c1c; --bad-bg: #fdecec; --warn: #8a5300; --warn-bg: #fdf3e3;
+      --shower: #0e7490; --shower-bg: #e0f5f9; --toilet: #7c3aed; --toilet-bg: #f1eafe; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--plane); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header { background: #16232e; color: #fff; padding: 16px; }
-    header b { display: block; font-size: 18px; }
-    header small { opacity: .8; }
-    main { max-width: 520px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
-    label, .lbl { font-size: 14px; color: var(--ink-2); font-weight: 600; display: grid; gap: 6px; }
-    select, input { font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); width: 100%; }
-    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .shot { border: 2px dashed var(--line); border-radius: 12px; min-height: 150px; display: grid; place-items: center; text-align: center; color: var(--ink-2); background: var(--surface-2); cursor: pointer; overflow: hidden; }
-    .shot b { display: block; color: var(--ink); font-size: 17px; }
-    .shot img { width: 100%; display: block; }
-    .num input { font: 700 20px ui-monospace, Menlo, Consolas, monospace; }
-    .num small { font-weight: 500; color: var(--muted); }
-    button { font: inherit; font-weight: 700; border: 0; border-radius: 10px; padding: 14px; background: var(--blue); color: #fff; width: 100%; cursor: pointer; }
-    button:disabled { opacity: .6; }
-    .err { background: var(--bad-bg); color: var(--bad); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
-    .done { text-align: center; display: grid; gap: 10px; padding: 24px 8px; }
-    .ok { width: 64px; height: 64px; border-radius: 50%; background: var(--good-bg); color: var(--good); display: grid; place-items: center; font-size: 32px; margin: 0 auto; }
-    .note { font-size: 14px; color: var(--ink-2); }
-    .link { background: none; color: var(--blue); padding: 4px; width: auto; font-weight: 600; }
-    /* Numbers read off the picture: green until changed by hand; one not read, red; changed, amber. */
-    .readsaid { display: grid; gap: 8px; }
-    .readsaid p { margin: 0; }
-    .ok-note { background: var(--good-bg); color: var(--good); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
-    .warn { background: #fbf1dc; color: #7a4f00; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
-    .retake { background: #fff; color: var(--ink); border: 2px solid var(--blue); }
-    .num input.auto, .num input[readonly].auto { border-color: var(--good); background: var(--good-bg); }
-    .num input.missing, .num input[readonly].missing { border: 2px dashed #c98a00; background: #fbf1dc; }
-    .num input[readonly] { background: var(--surface-2); cursor: default; }
-    .num input::placeholder { font-weight: 500; font-size: 15px; }
+    body { margin: 0; background: #fff; color: var(--ink); font: 18px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    header { background: #14161a; color: #fff; padding: 18px 20px 16px; }
+    header small { display: block; font-size: 16px; opacity: .78; margin-top: 4px; }
+    header b { display: block; font-size: 26px; line-height: 1.2; }
+    header .hours { display: inline-block; margin-left: 10px; font-size: 16px; opacity: .8; }
+    .steps { display: flex; gap: 6px; margin-bottom: 6px; }
+    .steps i { flex: 1; height: 6px; border-radius: 99px; background: #3a3d45; }
+    .steps i.on { background: #fbbf24; }
+    .shiftpill { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; background: #fbbf24; color: #1b1d22; font-weight: 800; font-size: 20px; border-radius: 12px; padding: 6px 12px; }
+    .shiftpill.night { background: #6366f1; color: #fff; }
+    main { max-width: 520px; margin: 0 auto; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .names { display: grid; gap: 12px; }
+    .name { display: flex; align-items: center; gap: 14px; border: 2px solid var(--line); border-radius: 18px; padding: 14px; font-size: 23px; font-weight: 700; background: #fff; text-align: left; }
+    .name.on, .name:active { border-color: var(--accent); background: var(--accent-2); }
+    .name small { display: block; font-size: 16px; font-weight: 500; color: var(--muted); }
+    .face { width: 54px; height: 54px; border-radius: 99px; display: grid; place-items: center; font-size: 24px; color: #fff; flex: none; }
+    .face.day { background: #fbbf24; color: #1b1d22; } .face.night { background: #6366f1; }
+    .sale { border-radius: 20px; padding: 14px 14px 12px; display: grid; gap: 10px; }
+    .sale.shower { background: var(--shower-bg); } .sale.toilet { background: var(--toilet-bg); }
+    .sale h3 { margin: 0; font-size: 25px; }
+    .sale.shower h3 { color: var(--shower); } .sale.toilet h3 { color: var(--toilet); }
+    .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .fld { display: block; background: #fff; border-radius: 14px; padding: 8px 10px 10px; border: 3px solid transparent; }
+    .fld:focus-within { border-color: var(--accent); }
+    .fld > span { display: block; font-size: 18px; font-weight: 700; color: var(--ink-2); }
+    .fld .in { display: flex; align-items: baseline; gap: 4px; }
+    .fld em { font-style: normal; font-size: 17px; color: var(--muted); font-weight: 600; }
+    .fld input { width: 100%; min-width: 0; border: 0; outline: 0; font: 800 34px system-ui, sans-serif; color: var(--ink); background: none; padding: 0; }
+    .tot { display: flex; justify-content: space-between; align-items: baseline; font-size: 19px; font-weight: 700; padding: 2px 4px 0; }
+    .tot b { font-size: 26px; }
+    .grand { background: #14161a; color: #fff; border-radius: 20px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
+    .grand span { font-size: 19px; font-weight: 600; }
+    .grand b { font-size: 32px; font-weight: 800; }
+    .big { width: 100%; border: 0; border-radius: 18px; padding: 20px; font-size: 23px; font-weight: 800; }
+    .big.go { background: #16a34a; color: #fff; }
+    .big.cam { background: var(--accent); color: #fff; }
+    .big.soft { background: var(--surface-2); color: var(--ink); }
+    .big:disabled { opacity: .6; }
+    .plain { background: none; border: 0; color: var(--ink-2); text-decoration: underline; font-size: 17px; padding: 6px; }
+    .small-row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .shot:empty { display: none; }
+    .shot img { width: 100%; display: block; border-radius: 18px; }
+    .err { background: var(--bad-bg); color: var(--bad); border-radius: 14px; padding: 12px 14px; font-size: 18px; margin: 0; }
+    .warn { background: var(--warn-bg); color: var(--warn); border-radius: 14px; padding: 12px 14px; font-size: 18px; margin: 0; }
+    .readok { background: var(--good-bg); color: var(--good); border-radius: 14px; padding: 12px 14px; font-size: 19px; font-weight: 700; margin: 0; }
+    .note { color: var(--ink-2); margin: 0; }
+    .done { text-align: center; padding: 18px 6px 4px; }
+    .tick { width: 96px; height: 96px; border-radius: 99px; background: #16a34a; color: #fff; font-size: 56px; display: grid; place-items: center; margin: 0 auto 14px; }
+    .done h3 { margin: 0; font-size: 30px; }
+    .done p { font-size: 20px; color: var(--ink-2); margin: 8px 0 0; }
+    .summ { background: var(--surface-2); border-radius: 18px; padding: 12px 16px; display: grid; gap: 6px; font-size: 20px; }
+    .summ div { display: flex; justify-content: space-between; }
+    .summ .all { border-top: 1px solid #d6d9df; padding-top: 6px; }
   </style>
 </head>
 <body>
-  <header><b>Nice Place · end of shift</b><small id="when">Loading…</small></header>
-  <main id="page"><p class="note">Loading…</p></main>
+  <header id="head"><small>Nice Place</small><b>Loading…</b></header>
+  <main id="page"></main>
   <script type="module" src="/js/np.js"></script>
 </body>
 </html>

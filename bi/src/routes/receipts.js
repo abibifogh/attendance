@@ -244,9 +244,24 @@ async function makePo(env, r, { data, today, fetchImpl, mark = null, anyway = fa
 export async function floatMark(env, receiptId) {
   const row = await first(env.DB, `SELECT f.ref, p.name, p.id AS person_id FROM float_receipt f JOIN float_person p ON p.id = f.person_id
     WHERE f.receipt_id = ?1`, Number(receiptId)).catch(() => null);
-  if (!row) return null;
+  if (!row) {
+    // Paid out of Nice Place's takings at a pickup.
+    const paid = await first(env.DB, `SELECT e.ref, p.day, p.by_name FROM np_pickup_expense e JOIN np_pickup p ON p.id = e.pickup_id
+      WHERE e.receipt_id = ?1`, Number(receiptId)).catch(() => null);
+    return paid ? pickupMarkFor({ ref: paid.ref, day: paid.day, by: paid.by_name }) : null;
+  }
   const given = await first(env.DB, "SELECT day, amount FROM float_move WHERE person_id = ?1 AND kind = 'given' ORDER BY day DESC, id DESC LIMIT 1", row.person_id).catch(() => null);
   return markFor({ ref: row.ref, name: row.name, given });
+}
+
+/** The words a PO paid from Nice Place's takings carries: its reference, the pickup and who made it. */
+export function pickupMarkFor({ ref, day, by }) {
+  return {
+    ref,
+    origin: `${ref} · Nice Place pickup`,
+    label: 'Nice Place pickup',
+    note: `Paid from Nice Place takings at the pickup of ${day} by ${by}. Reference ${ref}.`,
+  };
 }
 
 /** The words a float's PO carries, from its reference and whose it is. */

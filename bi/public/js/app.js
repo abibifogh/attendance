@@ -21,6 +21,7 @@ import { renderPrepaid, renderPrepaidMail } from './views/prepaid.js';
 import { renderMgmt } from './views/mgmt.js';
 import { renderReportAccess } from './views/reportaccess.js';
 import { renderNicePlace } from './views/niceplace.js';
+import { renderPickups } from './views/nppickups.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
 import { renderAssistant } from './views/assistant.js';
@@ -68,7 +69,9 @@ const ROUTES = [
   { path: 'closing', label: 'Closing reports', section: 'desk', page: 'Shifts', render: shiftsPart('reports'), needs: 'shifts', part: 'reports' },
   { path: 'people', label: 'People', section: 'desk', page: 'People', render: shiftsPart('people'), needs: 'shifts', part: 'people' },
   { path: 'safe', label: 'Safe', section: 'desk', page: 'Safe', render: renderSafe, needs: 'safe' },
-  { path: 'niceplace', label: 'Nice Place', section: 'desk', page: 'Nice Place', render: renderNicePlace, needs: 'insight' },
+  { path: 'niceplace', label: 'Counters & money', section: 'desk', page: 'Nice Place', render: renderNicePlace, needs: 'insight' },
+  // The envelopes taken from the safe, what was paid out of them and the count: the supervisor given it, and admins.
+  { path: 'np-pickups', label: 'Pickups', section: 'desk', page: 'Nice Place', render: renderPickups, needs: 'pickups' },
   // The one screen an uploader gets: the three shift files, nothing in them.
   { path: 'upload', label: 'Upload files', section: 'desk', page: 'Upload files', render: renderUpload, needs: 'upload', own: true },
 
@@ -134,6 +137,7 @@ function allowed(route) {
   if (route.needs === 'admin') return me.till?.role === 'admin';
   // The safe book is the admins'; a supervisor given Envelopes received sees that tab.
   if (route.needs === 'safe') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.envelopes || 0) >= 1);
+  if (route.needs === 'pickups') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.pickups || 0) >= 1);
   // A report page: every one for an admin, the ones shared with them for anybody else.
   return me.canSeeReports === true || (me.reports || []).includes(route.report || route.path);
 }

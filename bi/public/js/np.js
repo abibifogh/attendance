@@ -1,21 +1,27 @@
 /**
- * Nice Place, end of shift: the open link staff send the counters from.
+ * Nice Place, end of shift: the open link the ladies at the desk send from.
  *
- * No account: the link's own code (after # in the address) is the key, and a
- * new link from the manager stops the old one. Staff choose their name, the
- * shift (the one after the last sent is suggested) and take a picture of the
- * four counters. The picture is made smaller on the phone, then read: the four
- * numbers fill in by themselves and cannot be typed over. A number that cannot
- * be read for certain: take a clearer picture, or send this one as it is. Sent,
- * it is read once more, and a number still not read is read off the picture by
- * the manager. Nothing is ever typed here.
+ * Made to be as plain as it can be: big letters, big buttons, one thing at a
+ * time. No account: the link's own code (after # in the address) is the key,
+ * and a new link from the manager stops the old one.
+ *
+ * 0. Tap your name (the phone remembers it).
+ * 1. The shift is already there, in big letters, from the clock. Type the
+ *    money: the shower and the toilet, children and adults. The totals add up
+ *    as she types.
+ * 2. One picture of the four counters. They are read from it; a number that
+ *    cannot be read is read again when sent, and by the manager after that.
+ * 3. A big tick, what was sent, and what to write on the envelope.
+ *
+ * Insight works out how many people paid from the money and holds it against
+ * the counters (niceplace.js).
  */
 
 const page = document.getElementById('page');
-const when = document.getElementById('when');
+const head = document.getElementById('head');
 const token = location.hash.replace(/^#/, '').trim();
-const SHIFT = { day: 'Day shift', night: 'Night shift' };
-const COUNTERS = [['gb', 'GB · Gents bath'], ['gt', 'GT · Gents toilet'], ['lb', 'LB · Ladies bath'], ['lt', 'LT · Ladies toilet']];
+const SHIFT = { day: 'DAY SHIFT', night: 'NIGHT SHIFT' };
+const COLOURS = ['#0e7490', '#7c3aed', '#b45309', '#15803d', '#be185d', '#1d4ed8'];
 
 const el = (tag, props = {}, ...kids) => {
   if (props == null || typeof props !== 'object' || props instanceof Node || Array.isArray(props)) { kids.unshift(props); props = {}; }
@@ -27,8 +33,12 @@ const el = (tag, props = {}, ...kids) => {
   for (const k of kids.flat()) if (k != null) e.append(k);
   return e;
 };
+/** Fill a node, skipping what is not there. */
+const put = (node, ...kids) => node.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
 const dayText = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const shortDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const cedi = (n) => `GH₵ ${Number(n || 0).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
+const typed = (input) => { const n = Number(String(input.value).replace(/[\s,]/g, '')); return Number.isFinite(n) && n > 0 ? n : 0; };
 
 async function call(path, body) {
   const res = await fetch(`/api/np/${path}`, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
@@ -51,100 +61,149 @@ async function shrink(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-async function start() {
-  if (!token) { page.replaceChildren(el('p', { class: 'err' }, 'This link is not complete. Ask the manager for the Nice Place link.')); when.textContent = ''; return; }
-  let form;
-  try { form = await call(`form?t=${encodeURIComponent(token)}`); } catch (err) { page.replaceChildren(el('p', { class: 'err' }, err.message)); when.textContent = ''; return; }
-  const remembered = (() => { try { return localStorage.getItem('np-name'); } catch { return null; } })();
-  const name = el('select', { 'aria-label': 'Your name' }, el('option', { value: '' }, 'Choose your name'),
-    form.staff.map((n) => el('option', { value: n, selected: n === remembered }, n)));
-  const day = el('select', { 'aria-label': 'Date of the shift' },
-    [form.today, addDays(form.today, -1)].map((d) => el('option', { value: d, selected: d === form.suggest.day }, `${d === form.today ? 'Today' : 'Yesterday'} · ${new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}`)));
-  const shift = el('select', { 'aria-label': 'Shift' }, Object.entries(SHIFT).map(([k, v]) => el('option', { value: k, selected: k === form.suggest.shift }, v)));
-  const showWhen = () => { when.textContent = `${dayText(day.value)} · ${SHIFT[shift.value]}`; };
-  day.addEventListener('change', showWhen); shift.addEventListener('change', showWhen); showWhen();
+const remember = (name) => { try { if (name) localStorage.setItem('np-name', name); else localStorage.removeItem('np-name'); } catch { /* not kept */ } };
+const remembered = () => { try { return localStorage.getItem('np-name'); } catch { return null; } };
 
-  let photo = null;
-  const readSaid = el('div', { class: 'readsaid' });
-  const file = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
-  const shot = el('div', { class: 'shot', role: 'button', tabindex: '0' }, el('div', {}, el('b', '📷 Take picture'), 'or choose one from the phone', el('br'), el('small', {}, 'All four counters in one picture, clear and straight')));
-  shot.addEventListener('click', () => file.click());
-  // Read only: filled from the picture, never typed.
-  const inputs = Object.fromEntries(COUNTERS.map(([k]) => [k, el('input', { inputmode: 'numeric', autocomplete: 'off', placeholder: 'from the picture', readonly: true, 'aria-label': k.toUpperCase() })]));
-  const retake = el('button', { type: 'button', class: 'retake', onclick: () => file.click() }, '📷 Take the picture again');
-  /** The numbers off the picture: filled in, or the picture asked for again. */
-  const readPicture = async () => {
-    said.replaceChildren();
-    readSaid.replaceChildren(el('p', { class: 'note' }, 'Reading the counters…'));
-    for (const [k] of COUNTERS) { inputs[k].classList.remove('auto', 'missing'); inputs[k].value = ''; inputs[k].placeholder = 'from the picture'; }
-    let out;
-    try { out = await call('read', { t: token, photo }); } catch (err) { out = { available: false }; }
-    if (!out.available) {
-      for (const [k] of COUNTERS) { inputs[k].classList.add('missing'); inputs[k].placeholder = 'to be read'; }
-      readSaid.replaceChildren(el('p', { class: 'warn' }, 'The picture could not be read just now. Send it as it is: it will be read again, and if it still cannot be, the manager will read the numbers off it.'), retake);
-      return;
-    }
-    for (const [k, label] of COUNTERS) {
-      const v = out.values[k];
-      inputs[k].value = v == null ? '' : String(v);
-      inputs[k].classList.toggle('auto', v != null);
-      inputs[k].classList.toggle('missing', v == null);
-      inputs[k].placeholder = v == null ? 'to be read' : 'from the picture';
-      inputs[k].setAttribute('aria-label', `${label}${v == null ? ', not read from the picture' : ', read from the picture'}`);
-    }
-    const lower = (out.lower || []).map((x) => el('p', { class: 'warn' }, `${x.counter.toUpperCase()} reads ${x.now.toLocaleString('en-GB')}, lower than the last reading (${x.was.toLocaleString('en-GB')}). If the counter was not reset, take the picture again.`));
-    if (!out.unreadable.length) {
-      readSaid.replaceChildren(el('p', { class: 'ok-note' }, '✓ Read from the picture. Check each number against the counters: if one is wrong, take the picture again.'), retake, ...lower);
-      return;
-    }
-    const names = out.unreadable.map((c) => c.toUpperCase());
-    readSaid.replaceChildren(
-      el('p', { class: 'warn' }, `${names.join(' and ')} could not be read from this picture${out.problem ? ` (${out.problem})` : ''}. You can take the picture again for a clearer one (all four counters, close and straight, with no glare), or send this one as it is: it will be read again, and if it still cannot be, the manager will read it.`),
-      retake,
-      ...lower);
+/** The dark band at the top: small words over big ones, and how far through. */
+function top(small, big, step = 0, extra = null) {
+  put(head, 
+    step ? el('div', { class: 'steps' }, [1, 2, 3].map((n) => el('i', { class: n <= step ? 'on' : '' }))) : null,
+    el('small', {}, small), el('b', {}, big), extra);
+}
+
+let form = null;
+let name = null;
+let when = null;
+let sales = { showerChild: '', showerAdult: '', toiletChild: '', toiletAdult: '' };
+let photo = null;
+
+async function start() {
+  if (!token) { top('Nice Place', 'This link is not complete'); put(page, el('p', { class: 'err' }, 'Ask the manager for the Nice Place link.')); return; }
+  top('Nice Place', 'Loading…');
+  try { form = await call(`form?t=${encodeURIComponent(token)}`); } catch (err) { top('Nice Place', 'This link does not open'); put(page, el('p', { class: 'err' }, err.message)); return; }
+  name = form.staff.includes(remembered()) ? remembered() : null;
+  when = { day: form.suggest.day, shift: form.suggest.shift };
+  sales = { showerChild: '', showerAdult: '', toiletChild: '', toiletAdult: '' };
+  photo = null;
+  if (name) money(); else who();
+}
+
+/** Step 0: whose shift. */
+function who() {
+  top('Nice Place', 'Who are you?');
+  put(page, 
+    form.staff.length ? el('div', { class: 'names' }, form.staff.map((n, i) => el('button', {
+      type: 'button', class: `name${n === name ? ' on' : ''}`, onclick: () => { name = n; remember(n); money(); },
+    }, el('span', { class: 'face', style: `background:${COLOURS[i % COLOURS.length]}` }, n.trim().charAt(0).toUpperCase()), n)))
+      : el('p', { class: 'err' }, 'No names yet. Ask the manager to add yours.'));
+}
+
+/** Step 1: the money. */
+function money() {
+  const pill = el('span', { class: `shiftpill ${when.shift}` }, `${when.shift === 'day' ? '☀' : '☾'} ${SHIFT[when.shift]}`);
+  top(`Hello, ${name}`, dayText(when.day), 1, el('div', {}, pill, el('small', { class: 'hours' }, form.hours[when.shift])));
+  const inputs = {};
+  const box = (key, label) => {
+    inputs[key] = el('input', { inputmode: 'decimal', autocomplete: 'off', 'aria-label': label, value: sales[key], placeholder: '0' });
+    inputs[key].addEventListener('input', () => { sales[key] = inputs[key].value; sum(); });
+    return el('label', { class: 'fld' }, el('span', {}, label.split(', ')[1]), el('span', { class: 'in' }, el('em', {}, 'GH₵'), inputs[key]));
   };
+  const showerTotal = el('b');
+  const toiletTotal = el('b');
+  const all = el('b');
+  const sum = () => {
+    const s = typed(inputs.showerChild) + typed(inputs.showerAdult);
+    const t = typed(inputs.toiletChild) + typed(inputs.toiletAdult);
+    showerTotal.textContent = cedi(s);
+    toiletTotal.textContent = cedi(t);
+    all.textContent = cedi(s + t);
+  };
+  const said = el('div');
+  const next = el('button', { type: 'button', class: 'big go' }, 'Next: picture ›');
+  next.addEventListener('click', () => {
+    const bad = Object.entries(inputs).find(([, i]) => i.value.trim() && !(Number(i.value.replace(/[\s,]/g, '')) >= 0));
+    if (bad) { put(said, el('p', { class: 'err' }, 'Type only numbers, like 120 or 45.50.')); bad[1].focus(); return; }
+    if (!Object.values(inputs).some((i) => typed(i) > 0)) { put(said, el('p', { class: 'err' }, 'Type the money first. If a box had nothing, leave it empty.')); return; }
+    picture();
+  });
+  const sent = form.choices.find((c) => c.day === when.day && c.shift === when.shift)?.sent;
+  put(page, 
+    sent ? el('p', { class: 'warn' }, 'This shift is sent already. Send again only to correct it.') : null,
+    el('section', { class: 'sale shower' }, el('h3', {}, '🚿 Shower'),
+      el('div', { class: 'row2' }, box('showerChild', 'Shower, Children'), box('showerAdult', 'Shower, Adults')),
+      el('div', { class: 'tot' }, el('span', {}, 'Shower total'), showerTotal)),
+    el('section', { class: 'sale toilet' }, el('h3', {}, '🚽 Toilet'),
+      el('div', { class: 'row2' }, box('toiletChild', 'Toilet, Children'), box('toiletAdult', 'Toilet, Adults')),
+      el('div', { class: 'tot' }, el('span', {}, 'Toilet total'), toiletTotal)),
+    el('div', { class: 'grand' }, el('span', {}, 'All money'), all),
+    said, next,
+    el('div', { class: 'small-row' },
+      el('button', { type: 'button', class: 'plain', onclick: chooseShift }, 'This is not my shift'),
+      el('button', { type: 'button', class: 'plain', onclick: () => { remember(null); name = null; who(); } }, `Not ${name}?`)));
+  sum();
+}
+
+/** The shifts that may be sent, as big buttons. */
+function chooseShift() {
+  top(`Hello, ${name}`, 'Which shift?');
+  put(page, el('div', { class: 'names' }, form.choices.map((c) => el('button', {
+    type: 'button', class: `name shift${c.day === when.day && c.shift === when.shift ? ' on' : ''}`,
+    onclick: () => { when = { day: c.day, shift: c.shift }; money(); },
+  }, el('span', { class: `face ${c.shift}` }, c.shift === 'day' ? '☀' : '☾'),
+  el('span', {}, `${c.day === form.today ? 'Today' : 'Yesterday'} · ${c.shift === 'day' ? 'Day' : 'Night'}`, el('small', {}, c.sent ? 'sent already' : form.hours[c.shift]))))));
+}
+
+/** Step 2: one picture of the counters. */
+function picture() {
+  top(`${dayText(when.day)} · ${when.shift === 'day' ? 'Day' : 'Night'} shift`, 'Picture of the counters', 2);
+  const file = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+  const shot = el('div', { class: 'shot' }, photo ? el('img', { src: photo, alt: 'The counters' }) : null);
+  const said = el('div');
+  const take = el('button', { type: 'button', class: 'big cam' }, photo ? '📷 Take it again' : '📷 Take the picture');
+  take.addEventListener('click', () => file.click());
+  const send = el('button', { type: 'button', class: 'big go', hidden: !photo }, 'Send ›');
+  const back = el('button', { type: 'button', class: 'plain', onclick: money }, '‹ Back to the money');
   file.addEventListener('change', async () => {
     if (!file.files[0]) return;
-    shot.replaceChildren(el('div', {}, 'Getting the picture ready…'));
-    try { photo = await shrink(file.files[0]); shot.replaceChildren(el('img', { src: photo, alt: 'The counters' })); } catch { photo = null; shot.replaceChildren(el('div', {}, el('b', 'That picture could not be read'), 'Take it again')); return; }
+    put(said, el('p', { class: 'note' }, 'Getting the picture ready…'));
+    try { photo = await shrink(file.files[0]); } catch { photo = null; put(said, el('p', { class: 'err' }, 'That picture could not be used. Take it again.')); return; }
     file.value = '';
-    await readPicture();
+    put(shot, el('img', { src: photo, alt: 'The counters' }));
+    take.textContent = '📷 Take it again';
+    send.hidden = false;
+    put(said, el('p', { class: 'note' }, 'Reading the numbers…'));
+    let out;
+    try { out = await call('read', { t: token, photo }); } catch { out = { available: false }; }
+    if (!out.available) { put(said, el('p', { class: 'warn' }, 'It could not be read just now. Send it: it will be read again, or the manager will read it.')); return; }
+    if (!out.unreadable.length) { put(said, el('p', { class: 'readok' }, '✓ All four numbers read from the picture')); return; }
+    put(said, el('p', { class: 'warn' }, `${out.unreadable.map((c) => c.toUpperCase()).join(' and ')} could not be read. Take it again, closer and straight, or send it as it is: the manager will read it.`));
   });
-  const said = el('div');
-  const send = el('button', { type: 'button' }, 'Send');
   send.addEventListener('click', async () => {
-    said.replaceChildren();
-    // Only the name and the picture: a counter not read is read again, or by the manager.
-    const missing = [!name.value && 'your name', !photo && 'the picture'].filter(Boolean);
-    if (missing.length) { said.replaceChildren(el('p', { class: 'err' }, `Still needed: ${missing.join(', ')}.`)); return; }
     send.disabled = true; send.textContent = 'Sending…';
     try {
-      const out = await call('send', { t: token, name: name.value, day: day.value, shift: shift.value, photo });
-      const pending = (out.pending || []).map((c) => c.toUpperCase());
-      try { localStorage.setItem('np-name', name.value); } catch { /* not kept */ }
-      page.replaceChildren(el('div', { class: 'done' },
-        el('img', { src: photo, alt: 'The counters', style: 'width:100%;border-radius:12px' }),
-        el('div', { class: 'ok' }, '✓'),
-        el('b', { style: 'font-size:19px' }, `Sent at ${String(out.sentAt).slice(11, 16)}`),
-        el('p', { class: 'note' }, `Thank you, ${name.value}.`),
-        pending.length ? el('p', { class: 'warn' }, `${pending.join(' and ')} could not be read, even the second time. The manager will read ${pending.length === 1 ? 'it' : 'them'} from the picture: nothing more to do.`)
-          : el('p', { class: 'ok-note' }, `✓ ${COUNTERS.map(([k]) => `${k.toUpperCase()} ${Number(out.values?.[k]).toLocaleString('en-GB')}`).join(' · ')}`),
-        el('p', { class: 'note' }, `A number wrong? Send again with a new picture within ${out.resendUntil} minutes of the first time and the new one is kept.`),
-        el('button', { type: 'button', class: 'link', onclick: () => start() }, 'Send again')));
+      const out = await call('send', { t: token, name, day: when.day, shift: when.shift, photo, sales });
+      done(out);
     } catch (err) {
-      said.replaceChildren(el('p', { class: 'err' }, err.message));
-      send.disabled = false; send.textContent = 'Send';
+      put(said, el('p', { class: 'err' }, err.message));
+      send.disabled = false; send.textContent = 'Send ›';
     }
   });
+  put(page, shot, file, said, take, send, back);
+}
 
-  page.replaceChildren(
-    el('label', {}, 'Your name', name),
-    el('div', { class: 'two' }, el('label', {}, 'Date', day), el('label', {}, 'Shift', shift)),
-    el('div', { class: 'lbl' }, '1. Take a picture of the counters'), shot, file,
-    readSaid,
-    el('div', { class: 'lbl' }, '2. Check the numbers on the counters'),
-    el('div', { class: 'two' }, COUNTERS.map(([k, label]) => el('label', { class: 'num' }, el('small', {}, label), inputs[k]))),
-    said, send);
+/** Step 3: sent. */
+function done(out) {
+  top('Nice Place', 'Sent', 3);
+  const words = `${shortDay(when.day)} · ${when.shift === 'day' ? 'Day' : 'Night'}`;
+  put(page, 
+    el('div', { class: 'done' }, el('div', { class: 'tick' }, '✓'), el('h3', {}, `Thank you, ${name}`),
+      el('p', {}, 'Put the money in the envelope and write ', el('b', {}, words), ' on it.')),
+    out.sales ? el('div', { class: 'summ' },
+      el('div', {}, el('span', {}, '🚿 Shower'), el('b', {}, cedi(out.sales.shower / 100))),
+      el('div', {}, el('span', {}, '🚽 Toilet'), el('b', {}, cedi(out.sales.toilet / 100))),
+      el('div', { class: 'all' }, el('span', {}, 'All money'), el('b', {}, cedi(out.sales.total / 100)))) : null,
+    (out.pending || []).length ? el('p', { class: 'note' }, 'One number on the counters could not be read. The manager will read it from the picture: nothing more to do.') : null,
+    el('button', { type: 'button', class: 'big soft', onclick: () => start() }, 'Done'));
 }
 
 start();

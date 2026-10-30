@@ -48,7 +48,7 @@ const SOURCES = [
   { id: 'floats', label: 'Floats', read: readFloats },
   { id: 'bills', label: 'Odoo bills', read: readBills },
   { id: 'todos', label: 'The to-do list', read: readTodos },
-  { id: 'niceplace', label: 'Nice Place counters', read: readNicePlace },
+  { id: 'niceplace', label: 'Nice Place', read: readNicePlace },
   { id: 'files', label: 'Shift files', read: readFiles },
   { id: 'suppliers', label: 'Suppliers', read: readSuppliers },
   { id: 'report', label: 'Management report', read: readReport },
@@ -205,11 +205,37 @@ async function readTodos(env, account) {
   return out;
 }
 
-/** Counters a picture could not be read for. */
+/** Counters a picture could not be read for; pickups to review; shifts with no sales sent. */
 async function readNicePlace(env, account, now) {
+  const out = [];
+  const pickups = await all(env.DB, "SELECT * FROM np_pickup WHERE status = 'review' ORDER BY day").catch(() => []);
+  for (const p of pickups) {
+    const net = p.sales - p.spent;
+    const diff = p.counted - net;
+    out.push({
+      tab: 'decide', key: `np:pickup:${p.id}`, sev: diff < 0 ? 'warn' : 'info',
+      title: `Nice Place pickup of ${new Date(`${p.day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })} by ${p.by_name}: ${cedi(p.counted)} counted`,
+      why: `Sales ${cedi(p.sales)}, spent ${cedi(p.spent)}, net cash ${cedi(net)}.${diff ? ` ${cedi(Math.abs(diff))} ${diff < 0 ? 'short' : 'over'}${p.note ? `: “${p.note}”` : ''}.` : ''}`,
+      // At stake is only what is short; the rest is in the safe.
+      amount: diff < 0 ? -diff : null, age: daysSince(p.recorded_at || p.day, now),
+      advice: diff < 0 ? `Ask ${p.by_name} about the ${cedi(-diff)}, or approve it if the reason holds.` : 'The count matches: approve it.',
+      actions: [{ label: 'Open pickups', href: '#/np-pickups', primary: true }],
+    });
+  }
+  const today = new Date(now).toISOString().slice(0, 10);
+  const from = new Date(now - 3 * DAY).toISOString().slice(0, 10);
+  const sent = new Set((await all(env.DB, 'SELECT day, shift FROM np_revenue WHERE day >= ?1', from).catch(() => [])).map((r) => `${r.day}|${r.shift}`));
+  const started = await first(env.DB, "SELECT 1 AS yes FROM np_revenue WHERE uploaded_by LIKE 'Desk:%' LIMIT 1").catch(() => null);
+  if (started) {
+    const missing = [];
+    for (let d = from; d < today; d = new Date(Date.parse(`${d}T12:00:00Z`) + DAY).toISOString().slice(0, 10)) {
+      for (const shift of np.SHIFTS) if (!sent.has(`${d}|${shift}`)) missing.push(`${d} ${shift}`);
+    }
+    if (missing.length) out.push({ tab: 'fix', key: 'np:missing', sev: 'warn', title: `Nice Place: ${missing.length} shift${missing.length === 1 ? '' : 's'} with no sales sent`, why: missing.join(', '), advice: 'Ask whoever was on to send it from the Nice Place link; until then the counters cannot be checked against the money.', actions: [{ label: 'Open Nice Place', href: '#/niceplace', primary: true }] });
+  }
   const { items } = await np.pendingReadings(env);
-  if (!items.length) return [];
-  return [{
+  if (!items.length) return out;
+  return [...out, {
     tab: 'decide', key: 'np:pending', sev: 'info', title: `${items.length} Nice Place reading${items.length === 1 ? '' : 's'} with a counter to read`,
     why: items.slice(0, 3).map((x) => `${x.day} ${x.shift}${x.problem ? `: ${x.problem}` : ''}`).join(' · '),
     age: daysSince(items[0].sentAt || items[0].day, now),
