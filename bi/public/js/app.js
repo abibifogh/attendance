@@ -29,7 +29,7 @@ import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
-import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS } from './install.js';
+import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS, ANDROID_STEPS } from './install.js';
 
 registerWorker();
 // Reached only when every module could be read: index.html says so on a browser too old to.
@@ -587,4 +587,5 @@ function installButton() {
 export async function installNow() {
   const out = await install();
   if (out === 'iphone') alert(IPHONE_STEPS);
+  else if (out === 'android') alert(ANDROID_STEPS);
 }

@@ -20,11 +20,11 @@ window.addEventListener('appinstalled', () => { offer = null; for (const fn of w
 export const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 export const isIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 /** Whether a button to install makes sense here. */
-export const canInstall = () => !installed() && Boolean(offer || isIphone());
+export const canInstall = () => !installed();
 
 /** Ask to install: the browser's own question, or 'iphone' when it is Share › Add to Home Screen. */
 export async function install() {
-  if (!offer) return isIphone() ? 'iphone' : 'unavailable';
+  if (!offer) return isIphone() ? 'iphone' : 'android';
   offer.prompt();
   const { outcome } = await offer.userChoice;
   offer = null;
@@ -34,6 +34,7 @@ export async function install() {
 /** Be told when installing becomes possible, or is done. */
 export function onInstallChange(fn) { waiting.add(fn); return () => waiting.delete(fn); }
 
+export const ANDROID_STEPS = 'Tap the browser’s menu (the three dots ⋮ at the top right), then “Add to Home screen” or “Install app”.';
 export const IPHONE_STEPS = 'On an iPhone: tap the Share button (the square with an arrow, at the bottom), then “Add to Home Screen”.';
 
 /** The service worker that makes the page installable. It keeps nothing: see /sw.js. */

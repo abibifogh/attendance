@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script>
+    // Always the secure address: typed without https://, a phone opens it as http://, says "Not secure",
+    // and will not put it on the home screen as an app.
+    if (location.protocol === 'http:' && location.hostname !== 'localhost') location.replace('https:' + location.href.slice(5));
+  </script>
   <title>Nice Place · end of shift</title>
   <meta name="robots" content="noindex">
   <meta name="color-scheme" content="light">
