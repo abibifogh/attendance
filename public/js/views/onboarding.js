@@ -193,21 +193,7 @@ export async function renderOnboardingDesk() {
           h('div.sub', openOnes.length
             ? `New starters: ${openOnes.length} in progress${openOnes.filter((p) => p.late?.length).length ? ` · ${openOnes.filter((p) => p.late?.length).length} behind` : ''}`
             : 'New starters: nobody is in their first week')),
-        data.mayManage
-          ? h('div.btn-row',
-            data.available.length
-              ? h('button.btn.btn-sm', {
-                onclick: async () => {
-                  const out = await api.onboardingInstall();
-                  toast(`${out.added} steps added.`, 'good');
-                  await paint();
-                },
-              }, `Add the standard steps (${data.available.length})`)
-              : null,
-            h('button.btn.btn-sm.btn-primary', {
-              onclick: async () => { if (await stepDialog(null, data)) await paint(); },
-            }, 'New step'))
-          : null),
+        null),
 
       !data.on
         ? h('div.alert.warn',
@@ -216,7 +202,7 @@ export async function renderOnboardingDesk() {
             h('div.alert-title', 'Onboarding is switched off'),
             h('div.alert-detail',
               'Nobody is landed on their first week and nobody new gets one. '
-              + 'Settings → Features → For staff.')))
+              + 'Settings › People & logins.')))
         : null,
 
       openOnes.length
@@ -235,6 +221,40 @@ export async function renderOnboardingDesk() {
           + 'onboarding is on, and can be started by hand from somebody’s record.')
         : null,
 
+      h('p.muted', 'The steps everybody goes through are set in ',
+        h('a', { href: '#/settings?section=people&panel=firstweek', onclick: (e) => { e.preventDefault(); navigate('settings', { section: 'people', panel: 'firstweek' }); } },
+          'Settings › People & logins'), '.'),
+    );
+  };
+
+  await paint();
+  return host;
+}
+
+/**
+ * The checklist every first week is made of. Set once, in Settings › People &
+ * logins, rather than under the list of who is going through it.
+ */
+export async function renderChecklistSetup() {
+  const host = h('div');
+  const paint = async () => {
+    const data = await api.onboardings();
+    mount(host,
+      data.mayManage
+        ? h('div.btn-row', { style: { marginBottom: '.6rem' } },
+          data.available.length
+            ? h('button.btn.btn-sm', {
+              onclick: async () => {
+                const out = await api.onboardingInstall();
+                toast(`${out.added} steps added.`, 'good');
+                await paint();
+              },
+            }, `Add the standard steps (${data.available.length})`)
+            : null,
+          h('button.btn.btn-sm.btn-primary', {
+            onclick: async () => { if (await stepDialog(null, data)) await paint(); },
+          }, 'New step'))
+        : null,
       card('The checklist', { note: `${data.steps.length} steps`, wide: true },
         data.steps.length
           ? h('div.ob-rows', data.steps.map((s) => h('div.ob-row',
@@ -270,7 +290,6 @@ export async function renderOnboardingDesk() {
             + 'chapters that tick themselves off.')),
     );
   };
-
   await paint();
   return host;
 }

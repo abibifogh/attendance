@@ -219,7 +219,9 @@ const ROUTES = [
   { group: 'money', tab: 'Till', path: 'till-reports', label: 'Till', permission: 'till_reports', render: renderTillReports },
 
   // Everything set once, as topics down the side of one screen.
-  { group: 'setup', tab: 'Settings', path: 'settings', label: 'Settings', permission: ['att_setup', 'users'], render: renderSettings, live: ['admin'] },
+  // Whoever sets anything: a manager the new-starter form and the first week,
+  // the kitchen its lunch times, an administrator everything.
+  { group: 'setup', tab: 'Settings', path: 'settings', label: 'Settings', permission: ['att_setup', 'users', 'hr_manage', 'lunch'], render: renderSettings, live: ['admin'] },
   // The three screens it replaced keep their addresses, and open the topic
   // that holds what they showed.
   { alias: 'settings', path: 'att-setup', label: 'Settings', permission: 'att_setup', render: (params) => renderSettings({ ...params, from: 'att-setup' }), live: ['admin'], hidden: true },
@@ -241,7 +243,7 @@ const ROUTES = [
   { path: 'att-staff', label: 'Person', permission: 'att_view', render: (params) => (can('hr_view') ? renderPerson({ ...params, tab: 'attendance' }) : renderAttStaff(params)), live: ['attendance', 'rota', 'leave'], hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, live: ['people'], hidden: true },
   { path: 'rec-candidate', label: 'Candidate', permission: 'rec_view', render: renderRecCandidate, live: ['recruitment'], hidden: true },
-  { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
+  { path: 'people-form', label: 'New-starter form', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
   { path: 'contract', label: 'Contract', permission: 'hr_view', render: renderContract, live: ['people'], hidden: true },
   // The same page, read by the person it is about. A separate path because the
   // permission is the whole difference: hr_view reads anybody's, att_me reads

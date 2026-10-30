@@ -196,18 +196,50 @@ function kindsTab(data, reload) {
       const mine = kinds.filter((k) => k.group === group.key);
       if (!mine.length) return null;
 
+      // One switch per way for the whole group, above the column it sets: a
+      // property that wants no texts about pay unticks one box, not nine.
+      const boxes = new Map(WAYS.map(([way]) => [way, []]));
+      const rows = mine.map((kind) => h('div.notice-kind',
+        h('div.notice-what',
+          h('strong', kind.label),
+          h('small.muted', `${kind.who}. ${kind.when}.`),
+          kind.note ? h('small.notice-note', kind.note) : null,
+          alsoFor(kind)),
+        ...WAYS.map(([way]) => {
+          const input = box(kind, way);
+          boxes.get(way).push({ kind, input });
+          return h('span.notice-way', input);
+        })));
+      const whole = (way, label) => {
+        const all = boxes.get(way);
+        const input = h('input', {
+          type: 'checkbox',
+          'aria-label': `Every ${group.label.toLowerCase()} notice by ${label.toLowerCase()}`,
+          title: `Every one in this group by ${label.toLowerCase()}`,
+          onchange: () => {
+            for (const { kind, input: one } of all) {
+              one.checked = input.checked;
+              wanted[kind.key] = wanted[kind.key] ?? {};
+              wanted[kind.key][way] = input.checked ? 1 : 0;
+            }
+          },
+        });
+        const sync = () => {
+          const on = all.filter((x) => x.input.checked).length;
+          input.checked = on === all.length;
+          input.indeterminate = on > 0 && on < all.length;
+        };
+        for (const { input: one } of all) one.addEventListener('change', sync);
+        sync();
+        return h('label.notice-way.notice-whole', h('span', label), input);
+      };
+
       return card(group.label, { wide: true, note: `${mine.length}` },
         h('div.notice-kinds',
           h('div.notice-head',
             h('span', 'Notice'),
-            ...WAYS.map(([, label]) => h('span.notice-way', label))),
-          ...mine.map((kind) => h('div.notice-kind',
-            h('div.notice-what',
-              h('strong', kind.label),
-              h('small.muted', `${kind.who}. ${kind.when}.`),
-              kind.note ? h('small.notice-note', kind.note) : null,
-              alsoFor(kind)),
-            ...WAYS.map(([way]) => h('span.notice-way', box(kind, way))))),
+            ...WAYS.map(([way, label]) => whole(way, label))),
+          ...rows,
         ));
     }),
 

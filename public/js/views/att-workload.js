@@ -414,7 +414,7 @@ function limitsCard(limits) {
     h('p.muted', { style: { fontSize: '.85rem' } },
       'The first four are the law. The rest are this property’s own. Every one of them is set '
       + 'under ',
-      h('a', { href: '#/settings?section=shifts&panel=workload' }, 'Settings → Workload'),
+      h('a', { href: '#/settings?section=rota&panel=workload' }, 'Settings › Rota & clocking'),
       '. Nothing here ever stops a rota being saved: a hotel has nights when somebody has to '
       + 'cover, and an app that refuses to record what happened is one people work around on '
       + 'paper.'),

@@ -316,8 +316,8 @@ export const GUIDE = [
         + 'numbers surprises you.' },
       { note: 'A month nobody has closed off can still change — a corrected clock time moves '
         + 'the figures with it. The screen says which kind of month you are looking at.' },
-      { p: 'Whether public holidays are counted is up to the property, and set under Settings, '
-        + 'Features. Left out, they go from the totals and from the day-by-day together.' },
+      { p: 'Whether public holidays are counted is up to the property, and set under Settings › Leave & holidays. '
+        + 'Left out, they go from the totals and from the day-by-day together.' },
 
       { sub: 'My payslips' },
       { p: 'Every month that has been closed, one line each with what you were paid. Press '
@@ -527,7 +527,7 @@ export const GUIDE = [
       { p: 'Each chapter says who it is for: everybody, some departments, or people with a '
         + 'tag on their record. Beside that is how many of them have done what it asks, and '
         + '"Who has not" lists the names.' },
-      { warn: 'The whole thing is off until Settings \u2192 Features turns it on, and each chapter '
+      { warn: 'The whole thing is off until Settings \u2192 People & logins turns it on, and each chapter '
         + 'is off until you publish it. Nothing here reaches a phone by accident.' },
     ],
   },
@@ -588,8 +588,8 @@ export const GUIDE = [
         + 'you and you would like to be, tell whoever keeps the records.' },
       { warn: 'These are personal numbers, shared so the property can reach each other. They '
         + 'are not for anything else, and not for anybody outside.' },
-      { p: 'An administrator turns the whole thing on or off under Settings \u2192 Features, '
-        + 'in "For staff". It is off until somebody turns it on.' },
+      { p: 'An administrator turns the whole thing on or off under Settings \u2192 People & logins, '
+        + 'in "What staff can see". It is off until somebody turns it on.' },
     ],
   },
 
@@ -697,7 +697,7 @@ export const GUIDE = [
 
       { sub: 'A reason changes the arithmetic' },
       { p: 'Sick leave and absent-without-leave do not count the same way, and what each one '
-        + 'costs is set up per property under Settings → Shifts and clocking → Absence reasons. Pick the right one; the '
+        + 'costs is set up per property under Settings › Rota & clocking › Absence reasons. Pick the right one; the '
         + 'reports and the leave balances are built from it.' },
 
       { warn: 'A ruling survives recomputation. A punch that arrives late updates the times on '
@@ -900,7 +900,7 @@ export const GUIDE = [
       { sub: 'Public holidays' },
       { p: 'A public holiday is named in the column header and tints the column, so you know '
         + 'which day you are asking somebody to come in on before you ask. Set them under '
-        + 'Settings \u2192 Leave and holidays. Past a week the column is too narrow for the name and the '
+        + 'Settings \u2192 Leave & holidays. Past a week the column is too narrow for the name and the '
         + 'tint says it on its own; the day still names itself when you hover a cell.' },
       { note: 'This is the only screen that names them. Staff do not see holidays on their own '
         + 'week or on their department\u2019s rota: beside a shift it reads as an offer, that '
@@ -959,7 +959,7 @@ export const GUIDE = [
         + 'an empty list.' },
 
       { sub: 'How many can be off at once' },
-      { p: 'Set under Settings → Leave and holidays, three to begin with. It counts leave and unavailability '
+      { p: 'Set under Settings › Leave & holidays, three to begin with. It counts leave and unavailability '
         + 'together, and it counts what has been asked for as well as what has been agreed, or '
         + 'four more requests would all be accepted while the first three were still waiting.' },
       { note: 'It does not stand in your way. Leave or unavailability you write on somebody’s '
@@ -1015,7 +1015,7 @@ export const GUIDE = [
 
       { sub: 'Letting it draft one for you' },
       { p: 'Suggest a draft reads the weeks behind this one and fills the days nothing has been '
-        + 'said about. It aims at what each shift asks for under Settings → Shifts and clocking; where a shift '
+        + 'said about. It aims at what each shift asks for under Settings › Rota & clocking; where a shift '
         + 'has not said, it copies what the last few weeks actually did, and empty cards already '
         + 'standing on a day are filled rather than doubled. Nothing it proposes is published.' },
       { p: 'Whatever it could not fill is listed before you accept it, shift by shift, with the '
@@ -1037,7 +1037,7 @@ export const GUIDE = [
         + 'schedule as a PDF. It lands as a draft: nothing is written until you have read what '
         + 'it would do, name by name.' },
       { warn: 'A name the import does not recognise is never created. Add the person under '
-        + 'Settings → Staff and logins first. And a PDF printed from a phone usually has no text in it at all '
+        + 'Settings › People & logins first. And a PDF printed from a phone usually has no text in it at all '
         + 'and cannot be read — print it from a computer.' },
 
       { sub: 'Two things that trip people up' },
@@ -1083,14 +1083,14 @@ export const GUIDE = [
         'To take the shift off the day altogether, tick "Take this shift off the day" in the '
           + 'same box.',
         'A shift needing two people is two empty cards.',
-        'Deleting the shift itself under Settings → Shifts and clocking takes its empty cards with it. That is '
+        'Deleting the shift itself under Settings › Rota & clocking takes its empty cards with it. That is '
           + 'the only thing that removes one without somebody saying so.',
       ] },
 
       { sub: 'Positions' },
       { p: 'Several shifts that are really one job — three breakfast shifts that differ only '
         + 'in when they finish — can be put under one position, and the rota reads by position '
-        + 'as well as by person. Tick them in Settings → Shifts and clocking and press "Put under one '
+        + 'as well as by person. Tick them in Settings › Rota & clocking and press "Put under one '
         + 'position".' },
       { p: 'Every position you have named is listed under the shifts, with Edit beside it. '
         + 'That is where a position is renamed, or a shift added to one or taken out of it, '
@@ -1106,7 +1106,7 @@ export const GUIDE = [
         + 'theirs, out of how many there were. A Sunday on leave counts as one they got. The '
         + 'app expects everybody to get at least one a month and says so when somebody has not '
         + 'had theirs, which is the figure that otherwise goes unnoticed until somebody '
-        + 'complains. Set the number, or turn it off, under Settings → Shifts and clocking → Workload.' },
+        + 'complains. Set the number, or turn it off, under Settings › Rota & clocking › Workload limits.' },
       { sub: 'The 48 hours off' },
       { p: 'Everybody should get 48 hours off in any seven days, and here they do not have to '
         + 'be next to each other: off on the Wednesday and off on the Saturday is two days off. '
@@ -1132,7 +1132,7 @@ export const GUIDE = [
       { p: 'Approved leave locks those days on the rota so nobody rosters over them by '
         + 'accident, and shows the shift’s hours rather than nothing, so a fortnight off '
         + 'does not read as a fortnight of zero.' },
-      { note: 'Entitlement is set under Settings → Leave and holidays and starts at the statutory fifteen '
+      { note: 'Entitlement is set under Settings › Leave & holidays and starts at the statutory fifteen '
         + 'working days after a year’s service (Labour Act 2003, s.20).' },
 
       { sub: 'Asking before the rota reaches that far' },
@@ -1181,7 +1181,7 @@ export const GUIDE = [
         'A rejected request keeps the type it was asked with. Nothing happened, so there is '
           + 'nothing to correct.',
       ] },
-      { p: 'The list of types itself is under Settings → Shifts and clocking → Absence reasons, where each one says '
+      { p: 'The list of types itself is under Settings › Rota & clocking › Absence reasons, where each one says '
         + 'whether it is paid, whether it counts as a day worked, whether it comes off the '
         + 'annual entitlement and whether it needs a note. Add your own — study leave, '
         + 'quarantine, anything the property actually gives.' },
@@ -1190,8 +1190,8 @@ export const GUIDE = [
       { p: 'Not every kind of leave belongs on a dropdown at the end of a shift. Maternity '
         + 'leave is arranged in an office; nobody asks to be suspended; a property that '
         + 'records unpaid leave may not want it offered beside the paid one. Each kind of '
-        + 'leave now carries "Staff can ask for this themselves" — set it under Settings → '
-        + 'Shifts and clocking → Absence reasons and the ones you say no to come off their list.' },
+        + 'leave now carries "Staff can ask for this themselves" — set it under Settings › '
+        + 'Rota & clocking › Absence reasons and the ones you say no to come off their list.' },
       { note: 'It changes nothing about what you can record for somebody. Whoever manages '
         + 'leave still has every type, which is the whole point of the difference. Everything '
         + 'is on their list until you take it off.' },
@@ -1220,7 +1220,7 @@ export const GUIDE = [
         + 'month actually expected. It applies to that month and that person only, and clearing '
         + 'it hands the month back to the ordinary rule.' },
       { p: 'The general shape can also be set: a days-a-week figure per person under '
-        + 'Settings → Staff and logins, with a property default under Settings → Leave and holidays. Use that for a contract '
+        + 'Settings › People & logins, with a property default under Settings › Leave & holidays. Use that for a contract '
         + 'that is simply not five days; use the monthly figure for a month that was unusual.' },
       { note: 'Every figure on a row can be pressed to see the days behind it. An absence '
         + 'counts whether or not anybody has settled it — a working day nobody delivered is a '
@@ -1963,7 +1963,7 @@ export const GUIDE = [
           + 'changes nothing about the tax or what they cost.',
         'Cost to the property: gross pay plus the employer’s SSNIT.',
       ] },
-      { p: 'All of those figures are under Settings → Pay and tax, including the band table '
+      { p: 'All of those figures are under Settings › Pay & tax, including the band table '
         + 'itself. They change with the budget, and a month is worked by the table that was in '
         + 'force when it was worked.' },
       { note: 'A payslip is what somebody was paid and what came off it, and no more than '
@@ -2332,7 +2332,7 @@ export const GUIDE = [
         + 'is not somewhere a candidate at the other end of Accra can navigate to.' },
       { note: 'It is a text box either way. Whatever you type stands, you are never made to '
         + 'pick a suggestion, and a property with no key set sees no difference. An '
-        + 'administrator sets the key under Settings \u2192 Shifts and clocking; it stays on the server and is '
+        + 'administrator sets the key under Settings \u2192 Connections; it stays on the server and is '
         + 'never shown back.' },
 
       { sub: 'Nothing is emailed from here' },
@@ -2437,7 +2437,7 @@ export const GUIDE = [
     blocks: [
       { sub: 'A new starter, start to finish' },
       { steps: [
-        'Settings → Staff and logins: add them, with the employee number exactly as the terminal has it.',
+        'Settings › People & logins: add them, with the employee number exactly as the terminal has it.',
         'People → open them → Issue a contract from a template.',
         'Send them a link. One link carries their details form and the contract together.',
         'They fill it in on their phone. It comes back as a proposal.',
@@ -2905,7 +2905,7 @@ export const GUIDE = [
         + 'about one week; this is a fact about them.' },
 
       { sub: 'The register, out of a spreadsheet' },
-      { p: 'Settings → Staff and logins → Bulk upload, for a property whose staff list already exists '
+      { p: 'Settings › People & logins → Bulk upload, for a property whose staff list already exists '
         + 'somewhere else. The button opens a small menu: take Download template first, '
         + 'because what comes down is your own people with their own figures in it rather '
         + 'than a blank form. Change the lines that changed and send it back with Upload a '
@@ -2932,7 +2932,7 @@ export const GUIDE = [
 
       { sub: 'Somebody who is never rostered' },
       { p: 'A director, a consultant, an owner: on the payroll, with a record and a payslip and '
-        + 'a leave balance, and no business taking up a column on the grid. Settings → Staff and logins, '
+        + 'a leave balance, and no business taking up a column on the grid. Settings › People & logins, '
         + 'edit them, and set What they are here for to Attendance, but never rostered.' },
       { p: 'They come off the grid, out of the workload list and out of the draft. Anything '
         + 'already rostered for them from today onwards is taken off, and their standing pattern '
@@ -2975,7 +2975,7 @@ export const GUIDE = [
         + 'anybody\u2019s.' },
 
       { sub: 'How many a shift needs' },
-      { p: 'Under Settings → Shifts and clocking, People needed is what the draft aims at: three on '
+      { p: 'Under Settings › Rota & clocking, People needed is what the draft aims at: three on '
         + 'reception means three, whether or not the last few weeks managed it. Left blank the '
         + 'draft copies what those weeks actually did, which is right for a shift that has been '
         + 'running and no use at all for one you added yesterday.' },
@@ -3069,7 +3069,7 @@ export const GUIDE = [
         + 'at half past two and at three is three shifts. It is one job, and the rota\u2019s '
         + 'position view reads as a list of near duplicates until somebody says so.' },
       { steps: [
-        'Settings → Shifts and clocking.',
+        'Settings › Rota & clocking.',
         'Tick the shifts that are really the same job.',
         'Put under one position, and name it.',
       ] },
@@ -3137,7 +3137,7 @@ export const GUIDE = [
         + 'are found now rather than the morning a rota goes out. A mobile number under People '
         + 'is usually the quickest fix.' },
       { note: 'The addresses, the text gateway and the devices with alerts turned on used to '
-        + 'be a tab here. They are under Settings → Notifications now.' },
+        + 'be a tab here. They are under Settings › Notifications now.' },
 
       { sub: 'A login and a member of staff are different things' },
       { p: 'Almost nobody who clocks in has a login. A room attendant has a face on a terminal '

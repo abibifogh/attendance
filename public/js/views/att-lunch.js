@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { confirmAction, fmtDayShort, h, mount, shiftDay, toast } from '../util.js';
 import { card, emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
-import { replaceParams } from '../app.js';
+import { navigate, replaceParams } from '../app.js';
 import { printReport } from '../print.js';
 
 /**
@@ -181,9 +181,26 @@ export async function renderAttLunch(params = {}) {
         }, 'Put them down')))))
       : null,
 
-    linkCard(data, reload),
+    h('div.no-print', { style: { gridColumn: '1 / -1' } },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        `The list opens ${dayLabel(data.schedule?.opensDow)} at ${data.schedule?.opensAt} and shuts `
+        + `${dayLabel(data.schedule?.closesDow)} at ${data.schedule?.closesAt}. `,
+        h('a', { href: '#/settings?section=rota&panel=lunch', onclick: (e) => { e.preventDefault(); navigate('settings', { section: 'rota', panel: 'lunch' }); } },
+          'The times and the link are in Settings'))),
   );
 
+  return host;
+}
+
+/**
+ * When the list opens and shuts, whether it is on, and the link staff order
+ * on. Set once, so it lives in Settings › Rota & clocking.
+ */
+export async function renderLunchSetup() {
+  const host = h('div');
+  const data = await api.lunch().catch((err) => ({ error: err.message }));
+  const reload = async () => mount(host, ...(await renderLunchSetup()).childNodes);
+  mount(host, data.error ? emptyState('Lunch is not set up', data.error) : linkCard(data, reload));
   return host;
 }
 

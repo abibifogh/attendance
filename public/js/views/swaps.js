@@ -128,7 +128,7 @@ export async function renderSwaps() {
       mount(host,
         h('div.page-head', h('div', h('h1', 'My swaps'))),
         emptyState('Swaps are turned off',
-          'An administrator can turn them on under Settings → Features. With them on, you can put '
+          'An administrator can turn them on under Settings › Rota & clocking. With them on, you can put '
           + 'a shift you cannot work in front of the colleagues who could cover it, instead of '
           + 'ringing round.'));
       return;
@@ -404,7 +404,7 @@ export async function renderSwapQueue() {
       mount(host,
         h('div.page-head', h('div', h('h1', 'Swaps'))),
         emptyState('Swaps are turned off',
-          'Turn them on under Settings → Features and staff can put a shift they cannot work in '
+          'Turn them on under Settings › Rota & clocking and staff can put a shift they cannot work in '
           + 'front of the colleagues who could cover it. Nothing moves on the rota without '
           + 'somebody here approving it.'));
       return;

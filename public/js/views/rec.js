@@ -1487,7 +1487,7 @@ async function publishSlots(data, reload) {
           + 'the candidate’s own page, which is the difference between them finding the '
           + 'place and ringing to ask.'
         : 'Typed as it is. To have this find real places and give candidates directions, '
-          + 'set a Google maps key under Settings → Shifts and clocking → Clocking rules.'),
+          + 'set a Google maps key under Settings › Connections › Maps.'),
 
       field('Who is interviewing', who.el),
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },

@@ -76,9 +76,11 @@ export async function renderAttSetup(params) {
     ? body
     : body?.querySelector?.('form.att-rules');
   const guard = formEl ? watchForm(formEl) : null;
+  // One key per panel: Settings shows several of these on one page, and each
+  // has its own unsaved changes to warn about.
   warnBeforeLeaving(
     () => (guard?.changed() ? 'Changes on this form are not saved' : null),
-    { key: 'att-setup' },
+    { key: `att-setup:${tab}:${(params.bands ?? []).join('|')}:${(params.cards ?? []).join('|')}:${params.only ?? ''}` },
   );
 
   if (embedded) {
@@ -2466,7 +2468,7 @@ async function rulesTab(reload, params = {}) {
         ),
         h('p.muted.rules-note',
           'A new hire signing in for the first time lands on a welcome and a checklist rather '
-          + 'than on a rota with nothing on it yet. The list is written under First weeks, and '
+          + 'than on a rota with nothing on it yet. The list is written under Settings › People & logins, and '
           + 'the parts of it that already live elsewhere \u2014 the contract, the handbook, the '
           + 'documents \u2014 tick themselves off as they are done.'),
         h('p.muted.rules-note',
@@ -2671,44 +2673,59 @@ async function rulesTab(reload, params = {}) {
 
     bar,
   );
-  // Settings shows the rules a topic at a time. Only the bands asked for stay
-  // on the form, so saving one topic sends only its own settings.
+  // Settings shows the rules a topic at a time. Only the bands and cards asked
+  // for stay on the form, so saving one topic sends only its own settings.
   if (Array.isArray(params.bands) && params.bands.length) {
     for (const el of [...form.querySelectorAll(':scope > .rules-band')]) {
       if (!params.bands.includes(el.querySelector('h3')?.textContent)) el.remove();
+    }
+  }
+  if (Array.isArray(params.cards) && params.cards.length) {
+    for (const el of [...form.querySelectorAll('.rules-band .card')]) {
+      if (!params.cards.includes(el.querySelector('.card-head h2')?.textContent)) el.remove();
+    }
+    for (const el of [...form.querySelectorAll(':scope > .rules-band')]) {
+      if (!el.querySelector('.card')) el.remove();
     }
   }
 
   before = new FormData(form);
   check();
 
-  // The map key and the rebuild sit with the clocking rules, not with every
-  // topic Settings shows.
-  if (Array.isArray(params.bands) && params.bands.length && !params.extras) return h('div', form);
+  // The map key and the rebuild are drawn on their own, where Settings puts
+  // them: the key with the other connections, the rebuild with the data.
+  if (params.only === 'maps') return h('div', await mapsCard(reload));
+  if (params.only === 'rebuild') return h('div', rebuildCard());
+  if ((params.bands?.length || params.cards?.length) && !params.extras) return h('div', form);
 
   return h('div',
     form,
     await mapsCard(reload),
-    card('Rebuild', { note: 'Should never be necessary', wide: true },
-      h('p.muted',
-        'Everything that changes a verdict works the affected days out again on its own. This is here '
-        + 'for the first run after importing a year of history, and for the day something goes wrong anyway.'),
-      h('button.btn-sm', {
-        onclick: async () => {
-          const from = window.prompt('Rebuild from which date? (YYYY-MM-DD)', todayISO().slice(0, 8) + '01');
-          if (!from) return;
-          try {
-            const result = await api.attRecompute({ from, to: todayISO() });
-            toast(`${result.days} days worked out again.`, 'good');
-          } catch (err) {
-            toast(err.message, 'bad');
-          }
-        },
-      }, 'Work the days out again'),
-    ),
+    rebuildCard(),
     !data.staff.length
       ? emptyState('Nothing set up yet', 'Start with Staff — everything else hangs off who is on the list.')
       : null,
+  );
+}
+
+/** Work the days out again, for the day something has gone wrong anyway. */
+function rebuildCard() {
+  return card('Rebuild', { note: 'Should never be necessary', wide: true },
+    h('p.muted',
+      'Everything that changes a verdict works the affected days out again on its own. This is here '
+      + 'for the first run after importing a year of history, and for the day something goes wrong anyway.'),
+    h('button.btn-sm', {
+      onclick: async () => {
+        const from = window.prompt('Rebuild from which date? (YYYY-MM-DD)', todayISO().slice(0, 8) + '01');
+        if (!from) return;
+        try {
+          const result = await api.attRecompute({ from, to: todayISO() });
+          toast(`${result.days} days worked out again.`, 'good');
+        } catch (err) {
+          toast(err.message, 'bad');
+        }
+      },
+    }, 'Work the days out again'),
   );
 }
 

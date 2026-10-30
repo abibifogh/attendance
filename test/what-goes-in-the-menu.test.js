@@ -232,7 +232,7 @@ test('a link never promises a screen its holder cannot open', () => {
 
 test('Settings is one screen, and its old addresses still open it', () => {
   const settings = ROUTE_LIST.find((r) => r.path === 'settings');
-  assert.deepEqual(settings.permission, ['att_setup', 'users']);
+  assert.deepEqual(settings.permission, ['att_setup', 'users', 'hr_manage', 'lunch']);
   assert.equal(labels(['users'], { staffId: null }).includes('Settings'), true);
   assert.deepEqual(tabsOf(menuFor(roleHolds('admin'), { staffId: null }).find((g) => g.key === 'setup')), []);
   for (const path of ['att-setup', 'notifications', 'admin']) {

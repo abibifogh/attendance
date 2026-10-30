@@ -133,9 +133,9 @@ export async function renderAttToday(params) {
         : emptyState(
           'Nobody on the rota for this day',
           can('att_setup')
-            ? 'Add your staff and their shifts in Attendance setup, then the terminal\'s punches will start '
+            ? 'Add your staff and their shifts in Settings, then the terminal\'s punches will start '
               + 'landing against them. Punches for people who are not set up yet are kept, not thrown away.'
-            : 'Nobody has been set up for attendance yet. An administrator can do it in Attendance setup.',
+            : 'Nobody has been set up for attendance yet. An administrator can do it in Settings.',
         ),
     );
     return host;

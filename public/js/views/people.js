@@ -56,7 +56,7 @@ export async function renderPeople(params = {}) {
   if (!data.rows.length) {
     mount(host,
       h('div.page-head', h('h1', 'Staff')),
-      emptyState('Nobody yet', 'Add people under Attendance setup and their records appear here.'),
+      emptyState('Nobody yet', 'Add people under Settings › People & logins and their records appear here.'),
     );
     return host;
   }

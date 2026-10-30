@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { can } from '../app.js';
+import { can, navigate } from '../app.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
@@ -22,9 +22,10 @@ export async function renderLeavePlans(params = {}) {
     mount(host,
       h('div.page-head', h('div', h('h1', 'Leave'),
         h('div.sub', `Plans for ${data.year}. Ask everybody for their leave plan at once, remind them until it is in, and approve the year in one place.`))),
-      sets
-        ? setupForm(data, reload)
-        : emptyState('Planning is not open yet', 'An administrator opens leave planning for the year.'));
+      emptyState('Planning is not open yet', sets
+        ? 'Choose the dates, the busy seasons and how many can be away, then open it, in Settings › Leave & holidays.'
+        : 'An administrator opens leave planning for the year.'),
+      sets ? h('button.btn.btn-primary', { type: 'button', onclick: () => navigate('settings', { section: 'leave', panel: 'planning' }) }, 'Set up planning') : null);
     return host;
   }
 
@@ -56,7 +57,7 @@ export async function renderLeavePlans(params = {}) {
           ? h('select', { 'aria-label': 'Year', onchange: async (e) => mount(host, ...(await renderLeavePlans({ year: e.target.value })).childNodes) },
             data.years.map((y) => h('option', { value: y, selected: y === round.year }, String(y))))
           : null,
-        sets ? h('button.btn-sm', { type: 'button', onclick: () => setupDialog(data, reload) }, 'Settings') : null,
+        sets ? h('button.btn-sm', { type: 'button', onclick: () => navigate('settings', { section: 'leave', panel: 'planning' }) }, 'Settings') : null,
         counts.notSent && round.status === 'open' ? h('button.btn', { type: 'button', onclick: chase }, `Chase the ${counts.notSent} not sent`) : null,
         counts.clear ? h('button.btn.btn-primary', { type: 'button', onclick: approveClear }, `Approve the ${counts.clear} with no clash`) : null)),
 
@@ -187,15 +188,16 @@ async function personDialog(p, round, reload) {
   });
 }
 
-function setupDialog(data, reload) {
-  const form = setupForm(data, reload, { inDialog: true });
-  const dialog = h('dialog.app-dialog.app-dialog-wide',
-    h('div.dialog-head', h('h2', `Leave planning for ${data.year}`),
-      h('div.dialog-head-tools', h('button.dialog-close', { type: 'button', 'aria-label': 'Close', onclick: () => dialog.close() }, '✕'))),
-    form);
-  dialog.addEventListener('close', () => dialog.remove(), { once: true });
-  document.body.append(dialog);
-  dialog.showModal();
+/**
+ * The year's planning: when it opens, the busy seasons, how many can be away
+ * at once, and the reminders. In Settings › Leave & holidays.
+ */
+export async function renderLeavePlanSetup() {
+  const host = h('div');
+  const data = await api.leavePlans();
+  const reload = async () => mount(host, ...(await renderLeavePlanSetup()).childNodes);
+  mount(host, setupForm(data, reload));
+  return host;
 }
 
 /** Open leave planning for a year, or change its settings. */

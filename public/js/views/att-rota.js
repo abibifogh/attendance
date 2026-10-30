@@ -96,7 +96,7 @@ export async function renderAttRota(params) {
   if (!data.rows.length) {
     mount(host,
       h('div.page-head', h('h1', 'Rota')),
-      emptyState('No staff yet', 'Add people in Attendance setup and they will appear here.'),
+      emptyState('No staff yet', 'Add people in Settings › People & logins and they will appear here.'),
     );
     return host;
   }
@@ -106,7 +106,7 @@ export async function renderAttRota(params) {
       h('div.page-head', h('h1', 'Rota')),
       emptyState(
         'No shifts defined',
-        'A rota needs shifts to put on it. Create them in Attendance setup: a shift is a name, '
+        'A rota needs shifts to put on it. Create them in Settings › Rota & clocking: a shift is a name, '
         + 'a start and an end, and how much lateness you are prepared to overlook.',
       ),
     );
@@ -806,7 +806,7 @@ export async function renderAttRota(params) {
     // over it, because that is exactly when it is worth reading.
     if (entry.alwaysOff) {
       parts.push(h('small.rota-avail', {
-        title: 'A weekday this person never works, set under Settings → Staff and logins',
+        title: 'A weekday this person never works, set under Settings › People & logins',
       }, '✕ never works'));
     }
     // A Sunday somebody is on in a month where they are already on as many as
@@ -836,7 +836,7 @@ export async function renderAttRota(params) {
       parts.push(h('small.rota-sunday-note', {
         class: `rota-sunday-note ${over ? 'rota-sunday-loud' : ''}`.trim(),
         title: `On ${worked} of the ${of} Sundays in ${month}. `
-          + `This property marks it at ${cap} a month, set under Settings → Shifts and clocking → Workload.`,
+          + `This property marks it at ${cap} a month, set under Settings › Rota & clocking › Workload limits.`,
       },
       `⊙ ${worked}/${of}`,
       // Squeezed into a fortnight the column has no room for the word, and
@@ -3423,11 +3423,11 @@ function shiftQuestions(draft, reload) {
  * disagrees with the number needs to know which.
  */
 const WHERE_FROM = {
-  shift: 'That is what the shift asks for under Settings \u2192 Shifts and clocking.',
+  shift: 'That is what the shift asks for under Settings \u2192 Rota & clocking.',
   history: 'The shift does not say how many it needs, so this is what the last few weeks did. '
-    + 'Set People needed under Settings \u2192 Shifts and clocking to fix it.',
+    + 'Set People needed under Settings \u2192 Rota & clocking to fix it.',
   cards: 'The shift does not say how many it needs, so this is the number of cards already on '
-    + 'the day. Set People needed under Settings \u2192 Shifts and clocking to fix it.',
+    + 'the day. Set People needed under Settings \u2192 Rota & clocking to fix it.',
   floor: 'The shift does not say how many it needs and there is nothing behind it to go on, so '
     + 'one was assumed.',
 };
@@ -3622,7 +3622,7 @@ async function suggest(from, to, reload) {
             + 'the shift asks for.'
             + (unfilled > 20
               ? ' A long list usually means the shift list is claiming more than the property '
-                + 'runs: under Settings → Shifts and clocking, say which days each one runs, which of them '
+                + 'runs: under Settings › Rota & clocking, say which days each one runs, which of them '
                 + 'stand in for each other, and which are only wanted if somebody is spare.'
               : '')),
           h('ul.finding-list', shortest.map(([name, list]) => h('li',

@@ -7653,9 +7653,12 @@ button.lp-row:disabled { cursor: default; }
 .lp-setup p { margin: 0; font-size: .86rem; }
 .lp-busy { display: grid; gap: .4rem; }
 .lp-busy-row { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: .4rem; }
-.lp-limits { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .4rem; }
+.lp-limits { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .4rem; }
+.lp-limit span { min-width: 0; overflow-wrap: anywhere; }
+.lp-setup label.check { display: flex; align-items: flex-start; gap: .55rem; margin: 0; }
+.lp-setup label.check input { width: 1.1rem; height: 1.1rem; margin: .15rem 0 0; flex: none; }
 .lp-limit { display: flex; align-items: center; gap: .5rem; }
-.lp-limit input { width: 4.5rem; }
+.lp-limit input { width: 4.5rem; flex: none; }
 @media (max-width: 640px) {
   .lp-busy-row { grid-template-columns: 1fr 1fr; }
   .lp-busy-row input[type=text] { grid-column: 1 / -1; }
@@ -8100,3 +8103,26 @@ button.lp-row:disabled { cursor: default; }
 .pt-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .6rem 1rem; }
 .pt-group h4 { margin: 0 0 .2rem; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
 .pt-group .tickline { padding-block: .15rem; font-size: .88rem; }
+
+/* ---- Settings: one section is one page, its panels one under another ---- */
+.settings-section-head h2 { margin: 0; font-size: 1.35rem; }
+.settings-section-head p { margin: .2rem 0 0; }
+.settings-body { display: grid; gap: 1.6rem; }
+.settings-panel { display: grid; gap: .6rem; scroll-margin-top: calc(var(--topbar-h) + 1rem); }
+.settings-panel[hidden] { display: none; }
+.settings-panel-head { margin: 0; font-size: 1.05rem; font-weight: 650; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+/* The panel's own heading says what the band heading said. */
+.settings-panel .rules-band-head { display: none; }
+.settings-panel .rules-band { margin-top: 0; }
+/* The group's own switch sits under the column name it sets. */
+.notice-whole { display: grid; justify-items: center; gap: .2rem; cursor: pointer; }
+.settings-jumps { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
+.settings-jumps a {
+  font-size: .82rem; padding: .25rem .65rem; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-dim); text-decoration: none;
+}
+.settings-jumps a:hover { color: var(--text); border-color: var(--text-faint); }
+/* Wide tables scroll inside their panel; the panel never pushes past the column. */
+.settings-body { grid-template-columns: minmax(0, 1fr); }
+.settings-panel, .settings-panel-body, .settings-section-head { min-width: 0; }
+.settings-panel-body { overflow-x: auto; }

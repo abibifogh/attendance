@@ -23,7 +23,7 @@ export async function renderCompanies() {
     mount(host,
       h('p.muted.companies-lead',
         'Each company has its own payroll, payslips and GRA and SSNIT returns. Choose who works '
-        + 'for which under Staff and logins.'),
+        + 'for which under People & logins.'),
       h('div.grid.companies-grid',
         main ? card(main.legalName || 'The main company', { note: 'Main company' },
           h('p.muted', `${main.people} ${main.people === 1 ? 'person' : 'people'}. `

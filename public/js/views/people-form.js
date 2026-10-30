@@ -17,10 +17,12 @@ import { navigate } from '../app.js';
  * hides what it is hiding is a page nobody can use to find out why a form is
  * missing a question.
  */
-export async function renderPeopleForm() {
+export async function renderPeopleForm(params = {}) {
   const host = h('div');
+  // Inside Settings it is one card among several, with its own Save.
+  const embedded = Boolean(params.embedded);
   const data = await api.hrForm();
-  const reload = async () => mount(host, await renderPeopleForm());
+  const reload = async () => mount(host, await renderPeopleForm(params));
 
   // Held here and saved in one press. Twenty questions each saving on change is
   // twenty chances to half-save a plan over a bad connection.
@@ -92,16 +94,18 @@ export async function renderPeopleForm() {
   refresh();
 
   mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'What to ask for'),
-        h('div.sub', 'The form somebody fills in on their phone, and the paper they send with it'),
+    embedded
+      ? h('div.btn-row', { style: { justifyContent: 'flex-end' } }, h('button.btn.btn-primary', { onclick: save }, 'Save the form'))
+      : h('div.page-head',
+        h('div',
+          h('h1', 'New-starter form'),
+          h('div.sub', 'The form somebody fills in on their phone, and the paper they send with it'),
+        ),
+        h('div.btn-row',
+          h('button.btn-sm', { onclick: () => navigate('people') }, '‹ Staff'),
+          h('button.btn.btn-primary', { onclick: save }, 'Save'),
+        ),
       ),
-      h('div.btn-row',
-        h('button.btn-sm', { onclick: () => navigate('people') }, '‹ People'),
-        h('button.btn.btn-primary', { onclick: save }, 'Save'),
-      ),
-    ),
 
     h('div.alert.info',
       h('span.alert-icon', 'ℹ️'),
