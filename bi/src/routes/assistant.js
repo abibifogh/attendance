@@ -56,6 +56,24 @@ const SOURCES = [
   { id: 'report', label: 'Management report', read: readReport },
 ];
 
+/**
+ * The last list read for each admin, for a minute: the summary and Ask come
+ * a moment after the page and use it, rather than asking every system again.
+ */
+const recent = new Map();
+const RECENT_MS = 60_000;
+
+/** The list as just read for this page, or read now. Opening the page always reads it fresh. */
+export async function gatherOnce(env, account, { fresh = false } = {}) {
+  await requireAdmin(account);
+  const key = account?.id ?? 'owner';
+  const had = recent.get(key);
+  if (!fresh && had && Date.now() - had.at < RECENT_MS) return had.data;
+  const data = await gather(env, account);
+  recent.set(key, { at: Date.now(), data });
+  return data;
+}
+
 /** Everything, for an admin. */
 export async function gather(env, account, { now = Date.now(), sources = SOURCES } = {}) {
   await requireAdmin(account);
@@ -326,8 +344,8 @@ const VOICE = 'You are Insight, the assistant of the admin of a hotel group in G
   + 'Use only the facts given; never invent a figure, a name or a cause. If the facts do not answer, say so and say where to look.';
 
 /** The morning summary: three short paragraphs from the items. */
-export async function briefing(env, account, { now = Date.now() } = {}) {
-  const data = await gather(env, account, { now });
+export async function briefing(env, account, { now = Date.now(), once = false } = {}) {
+  const data = once ? await gatherOnce(env, account) : await gather(env, account, { now });
   let text = null;
   let by = 'plain';
   try {
@@ -339,11 +357,11 @@ export async function briefing(env, account, { now = Date.now() } = {}) {
 }
 
 /** A question about any of it, answered from the items. */
-export async function ask(env, body, account, { now = Date.now() } = {}) {
+export async function ask(env, body, account, { now = Date.now(), once = false } = {}) {
   const question = String(body?.question || '').trim().slice(0, 400);
   if (!question) throw badRequest('Ask a question.');
   // Read only: the Brief's figures would re-save Insight's checks, which a question must not do.
-  const data = await gather(env, account, { now });
+  const data = once ? await gatherOnce(env, account) : await gather(env, account, { now });
   if (!env.AI) return { answer: 'Questions need the reader (Workers AI), which is not available just now. Everything I know is in the list.', by: 'plain' };
   const answer = await askModel(env, VOICE,
     `Question: ${question}\n\nWhat needs the admin now: ${JSON.stringify(factsOf(data))}\n\nAnswer in at most four sentences. If these facts do not answer it, say which page of Insight would: Reports › Money for revenue and costs, Reports › Guests for occupancy, Reports › Staff costs for wages, Front desk › Shifts for drawers, Buying › Suppliers for what is owed.`, 300);

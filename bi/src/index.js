@@ -34,6 +34,7 @@ import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
 import * as assistant from './routes/assistant.js';
+import { meterDb, keep, speedView } from './lib/speed.js';
 import * as npPickup from './routes/nppickup.js';
 import * as approvals from './routes/approvals.js';
 import * as receipts from './routes/receipts.js';
@@ -121,6 +122,8 @@ const ROUTES = [
   // The management report: a week or a month of breakfast and maintenance, from each app.
   // Who sees which reports: an admin shares report pages with people who are not admins.
   ['GET', '/api/report-access', 'session', adminOnly((env) => reportAccess.list(env))],
+  // How long each page takes, and where the Worker runs, for Settings › Connections & files › Speed.
+  ['GET', '/api/admin/speed', 'session', adminOnly((env) => speedView(env))],
   ['POST', '/api/report-access', 'session', adminOnly((env, ctx) => reportAccess.save(env, ctx.body, ctx.account))],
   ['GET', '/api/reports/management', 'insight', (env, ctx) => mgmt.managementReport(env, ctx.query)],
   ['GET', '/api/reports/management/mail', 'insight', async (env, ctx) => {
@@ -362,9 +365,9 @@ const ROUTES = [
   ['GET', '/api/po/find', 'insight', adminOnly((env, ctx) => newpo.findPo(env, ctx.query))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
   // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
-  ['GET', '/api/assistant', 'session', adminOnly((env, ctx) => assistant.gather(env, ctx.account))],
-  ['GET', '/api/assistant/brief', 'session', adminOnly((env, ctx) => assistant.briefing(env, ctx.account).then(({ text, by }) => ({ text, by })))],
-  ['POST', '/api/assistant/ask', 'session', adminOnly((env, ctx) => assistant.ask(env, ctx.body, ctx.account))],
+  ['GET', '/api/assistant', 'session', adminOnly((env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true }))],
+  ['GET', '/api/assistant/brief', 'session', adminOnly((env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by })))],
+  ['POST', '/api/assistant/ask', 'session', adminOnly((env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true }))],
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.
@@ -499,9 +502,17 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
+    // Measured: the database's reads and time, the rest, and where it ran (lib/speed.js).
+    const started = Date.now();
+    const meter = meterDb(env.DB);
+    const plainDb = env.DB;
+    env = { ...env, DB: meter.db };
+    let routePath = url.pathname;
+    let response;
     try {
       const match = findRoute(request.method, url.pathname);
       if (!match) throw new HttpError(404, 'No such endpoint');
+      routePath = match[0][1];
       const [route, params] = match;
       const [, , permission, handler] = route;
 
@@ -560,10 +571,18 @@ export default {
       }
 
       const result = await handler(env, { request, query, body, params, url, account, execution });
-      return result instanceof Response ? result : json(result);
+      response = result instanceof Response ? result : json(result);
     } catch (err) {
-      return errorResponse(err);
+      response = errorResponse(err);
     }
+    const ms = Date.now() - started;
+    const colo = request.cf?.colo || null;
+    try {
+      response = new Response(response.body, response);
+      response.headers.set('Server-Timing', `db;dur=${meter.ms};desc="${meter.reads} reads", other;dur=${Math.max(0, ms - meter.ms)}, total;dur=${ms}${colo ? `, colo;desc="${colo}"` : ''}`);
+    } catch { /* a response that cannot be copied goes as it is */ }
+    execution?.waitUntil?.(keep(plainDb, { path: `${request.method} ${routePath}`, ms, meter, colo }).catch(() => {}));
+    return response;
   },
 
   /**
