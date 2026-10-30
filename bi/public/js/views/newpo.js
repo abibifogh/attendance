@@ -329,7 +329,7 @@ export function openNewPo({ receipt = null, bulk = false, after = null } = {}) {
       }
       const made = files.filter((f) => f.result?.po && ['complete', 'check'].includes(f.result.status)).length;
       const seen = files.filter((f) => f.result?.status === 'duplicate').length;
-      said.textContent = `${made} draft PO${made === 1 ? '' : 's'} made. Each is kept in Money › Receipts, with what to check.`
+      said.textContent = `${made} draft PO${made === 1 ? '' : 's'} made. Each is kept in Buying › Receipts, with what to check.`
         + (seen ? ` ${seen} looked like ${seen === 1 ? 'one' : 'ones'} seen before: make ${seen === 1 ? 'it' : 'each'} anyway, or say it is the same.` : '');
       if (after) after();
     });

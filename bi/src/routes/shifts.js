@@ -289,7 +289,7 @@ export async function pullOrders(env, body) {
 
   const sources = (await listSources(env.DB)).filter((s) => s.kind === 'odoo_json2' && s.config?.base);
   const source = sources.find((s) => s.enabled) || sources[0];
-  if (!source) throw new HttpError(409, 'Odoo is not set up yet. Setup → Odoo (books) first.');
+  if (!source) throw new HttpError(409, 'Odoo is not set up yet. Settings › Connections & files → Odoo (books) first.');
   const secret = secretNameFor(source);
   const result = await purchaseOrders({ config: source.config, token: secret ? env[secret] : null, names });
   await run(env.DB, 'UPDATE shift_expense SET odoo = ?3, pulled_at = ?4 WHERE day = ?1 AND slot = ?2',

@@ -79,7 +79,7 @@ shift, a small note at the end of the line says which; open it for what to do.
   and what was settled lately.
 - **Closing reports**: every report from HIVE and the shift it is on; one on
   the wrong shift can be moved (see `docs/till.md`).
-- **Files**: the three uploads. The safe book is under Money › **Safe**.
+- **Files**: the three uploads. The safe book is under Front desk › **Safe**.
 - **Settings** (admins): who sees what, who is told, the front desk (checks,
   rentals, whose ASSD login is whose), and the limits. See `docs/till.md`.
 
@@ -130,7 +130,7 @@ it is made, and each morning after, with the daily summary, until it is done;
 past the due day the email and the Inbox say it is overdue. The card shows
 its open to-dos ("To-do for …, due …").
 
-To-dos are in Shifts › Inbox › **To-do**. An admin sees all of them; a
+To-dos are in Front desk › Shifts › To sort out › **To-do**. An admin sees all of them; a
 supervisor, those for them and those they made. **Done** is for whoever it
 is for, whoever made it, or an admin; **Change** (what, for whom, when) and
 **Remove** are for whoever made it, or an admin. Given to somebody else, they
@@ -476,7 +476,7 @@ that is done in Odoo. It sees every activity that user may see, which with
 purchases and accounting shared is those on purchase orders and bills; give
 the user read access elsewhere in Odoo to see more.
 
-- **Who is who.** Admin › Accounts has an **Odoo user** column. Pick each
+- **Who is who.** Settings › People & access has an **Odoo user** column. Pick each
   person's Odoo login once; one with the same email in Odoo is suggested and
   linked only on **Confirm**. One Odoo user goes with one account.
 - **Inbox › Odoo** (admins): every activity overdue or due today: what it is
@@ -529,7 +529,7 @@ paid it, in whole or in part. Under a shift's Expenses details an admin
 picks the PO, the amount the safe paid (all of it, or part) and why, and
 presses **Paid from the big safe**. That amount comes off what the shift's
 drawer accounts for (the closing report's expenses and the POs set against
-the expenses), and a line goes in the safe book (Money › Safe) as a PO paid
+the expenses), and a line goes in the safe book (Front desk › Safe) as a PO paid
 from the safe that day, so each side holds only what it paid. **Undo** takes
 both back (`shift_po_safe`, migration 0046).
 
@@ -549,7 +549,7 @@ count said; the daily summary lists it.
 
 ## Unpaid stays
 
-Shifts → Inbox → **Unpaid stays** lists guests leaving in the next 24 hours who still
+Front desk › Shifts › To sort out → **Unpaid stays** lists guests leaving in the next 24 hours who still
 owe, and guests who have checked out owing (the last 60 days).
 
 Each ASSD reservation is one transaction in the journal, with every night and

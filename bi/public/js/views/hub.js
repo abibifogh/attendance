@@ -1,4 +1,4 @@
-import { add, h } from '../util.js';
+import { add, h, mount } from '../util.js';
 import { api } from '../api.js';
 import { banner } from './components.js';
 import { systemMark } from '../glyphs.js';
@@ -30,7 +30,7 @@ export async function renderHub(root) {
       h('h2', `Good to see you, ${account.name.split(' ')[0]}`),
       h('p.sub', reachable.length
         ? 'Everything you have been given. Signing in here is enough — you will not be asked again on the other side.'
-        : 'Your account has not been given any of the group\'s systems yet. An owner can change that under Accounts.'),
+        : 'Your account has not been given any of the group\'s systems yet. An owner can change that under Settings › People & access.'),
       h('div.grid.two', reachable.map((system) => systemCard(system)))),
 
     others.length ? h('div.card',
@@ -46,7 +46,7 @@ export async function renderHub(root) {
       // them, so the eye lands on the shape and reads across. A row of icons
       // stacked over a row of titles is two lists to scan instead of one.
       h('div.syshead',
-        h('span.sysmark-slot', { 'aria-hidden': 'true' }, systemMark(system.id, system.label)),
+        h('span.sysmark-slot', { 'aria-hidden': 'true' }, markOf(system)),
         h('div', { style: { minWidth: 0 } },
           h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '.5rem', flexWrap: 'wrap' } },
             h('h3', { style: { margin: 0 } }, system.label),
@@ -60,7 +60,7 @@ export async function renderHub(root) {
       // them is the same broken promise as a sign-in that does not sign them in.
       isHere
         ? (system.granted
-          ? h('button.btn', { onclick: () => { location.hash = '#/brief'; } }, 'Open the numbers')
+          ? h('button.btn', { onclick: () => { location.hash = '#/'; } }, 'Open the numbers')
           : h('p.small.muted', { style: { margin: 0 } }, 'You have not been given the reports.'))
         : system.handOff
           ? h('button.btn.primary', {
@@ -87,21 +87,43 @@ export async function renderHub(root) {
    * resolved that permission is gone and the pop-up is blocked. So the tab is
    * claimed immediately and pointed somewhere once the code exists.
    */
-  async function open(event, system) {
-    const button = event.currentTarget;
-    const tab = window.open('', '_blank', 'noopener');
-    button.disabled = true;
-    button.textContent = 'Signing you in…';
-    try {
-      const { url } = await api('/sso/start', { method: 'POST', body: { systemId: system.id } });
-      if (tab) tab.location = url;
-      else location.href = url;   // pop-ups blocked: go in this tab instead
-    } catch (err) {
-      if (tab) tab.close();
-      alert(err.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = `Open ${system.label} →`;
-    }
+  function open(event, system) {
+    return openSystem(event.currentTarget, system, `Open ${system.label} →`);
   }
 }
+
+async function openSystem(button, system, label) {
+  const tab = window.open('', '_blank', 'noopener');
+  button.disabled = true;
+  if (label) button.textContent = 'Signing you in…';
+  try {
+    const { url } = await api('/sso/start', { method: 'POST', body: { systemId: system.id } });
+    if (tab) tab.location = url;
+    else location.href = url;   // pop-ups blocked: go in this tab instead
+  } catch (err) {
+    if (tab) tab.close();
+    alert(err.message);
+  } finally {
+    button.disabled = false;
+    if (label) button.textContent = label;
+  }
+}
+
+/**
+ * The apps button's panel: each other system this person was given, opened
+ * signed in where it can be, and a plain link where it cannot.
+ */
+export async function appsPanel(el) {
+  el.textContent = 'Reading…';
+  let systems;
+  try { ({ systems } = await api('/hub')); } catch (err) { el.textContent = err.message; return; }
+  const mine = systems.filter((s) => s.granted && s.id !== 'insight');
+  mount(el,
+    h('p.pop-note', mine.length ? 'Open another system, already signed in' : 'You have not been given any other system yet.'),
+    h('div.apps', mine.map((system) => (system.handOff
+      ? h('button', { type: 'button', onclick: (event) => openSystem(event.currentTarget, system) }, h('span.apps-mark', markOf(system)), system.label)
+      : h('a', { href: system.homeUrl || '#', target: '_blank', rel: 'noopener', title: system.reason || '' }, h('span.apps-mark', markOf(system)), system.label)))));
+}
+
+/** A system's mark: the one place it is drawn, for its card and for the apps panel. */
+function markOf(system) { return systemMark(system.id, system.label); }

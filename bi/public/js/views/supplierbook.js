@@ -25,6 +25,11 @@ export async function renderSupplierBook(root, { range }) {
   const box = h('div.sb');
   mount(root, box);
   paint();
+  // A supplier picked in search opens here.
+  try {
+    const asked = sessionStorage.getItem('insight-supplier-open');
+    if (asked) { sessionStorage.removeItem('insight-supplier-open'); openOne(Number(asked)); }
+  } catch { /* private mode */ }
 
   async function load() { return api(`/suppliers/book?from=${range.from}&to=${range.to}`); }
   async function reload(message) { data = await load(); flash = message ? h('div.sb-flash', message) : null; paint(); }

@@ -116,7 +116,7 @@ export async function breakfastBase(env) {
 async function askBreakfast(env, p, fetchImpl) {
   const base = await breakfastBase(env);
   if (!env.SSO_SECRET_BREAKFAST) throw new Error('Breakfast is not linked: Insight has no SSO_SECRET_BREAKFAST. Run Actions › "Set Insight\'s secrets" in the attendance repository with Insight\'s address in the box.');
-  if (!base) throw new Error('Breakfast is not linked: Insight does not know its address. Set it under Accounts › Where each system lives.');
+  if (!base) throw new Error('Breakfast is not linked: Insight does not know its address. Set it under Settings › People & access › Where each system lives.');
   const body = p.period === 'month' ? { period: 'month', month: p.key } : { period: 'week', week: p.from };
   return ask({ url: `${base}/api/link/report`, secret: env.SSO_SECRET_BREAKFAST, path: '/api/link/report', body, fetchImpl, what: 'The breakfast app' });
 }

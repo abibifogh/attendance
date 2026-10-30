@@ -1,12 +1,12 @@
 # Who sees which reports
 
-**Admin › Who sees which reports.** Admins and owners see every report. For
+**Settings › People & access › Reports they see.** Admins and owners see every report. For
 everybody else an admin ticks the report pages they may open: Brief,
 Management, Overview, Yardstick, Prepaid stays, Tills & collections, Labour,
 Guests, Buying, Nice Place. A ticked page appears in their Reports menu;
 nothing else is opened to them.
 
-- A **supervisor** keeps Shifts as set under Shifts › Settings, and gets the
+- A **supervisor** keeps Shifts as set under Settings › Rules, and gets the
   ticked reports as well.
 - An **uploader** keeps the files, and gets the ticked reports as well.
 - Somebody with **only the hub** who is given a report gets Insight as

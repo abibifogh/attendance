@@ -3,7 +3,7 @@
 Two ways to turn receipts into draft purchase orders in Odoo, with no form to
 fill in:
 
-1. **In Insight:** ＋ PO › **Just the receipts**, or Money › Receipts ›
+1. **In Insight:** ＋ PO › **Just the receipts**, or Buying › Receipts ›
    **＋ Add receipts**. Take pictures, or choose several photos or PDFs, and
    press **Make the draft POs**. Each one is read and becomes a draft.
 2. **By email:** send or forward the receipts to the receipts address (for
@@ -41,7 +41,7 @@ one before it goes to Odoo.
   read off the receipt, and no PO is made yet. You decide: **Make it anyway**
   (a different receipt: another day misread, two of the same bought) makes the
   draft PO from the receipt kept here; **It is the same** sets it aside and
-  lets its file go. Both are on the upload form and in Money › Receipts.
+  lets its file go. Both are on the upload form and in Buying › Receipts.
 - **Could not be read** (too dark, cut off, an iPhone HEIC picture), or Odoo
   refused it: no PO is made. The receipt is kept, and **Fill it in** opens the
   usual ＋ PO form with the receipt already there. **Try again** reads it
@@ -52,14 +52,14 @@ one before it goes to Odoo.
 A PO made this way is like any PO made in Insight: staff cannot put it on a
 shift's expenses unless an admin allows it.
 
-## Money › Receipts
+## Buying › Receipts
 
 Every receipt, newest first: how it came in and from whom, what was read,
 the PO it became (with **Open in Odoo**), and what to check. **To look at**
 shows only those needing something. At the bottom, every email that came to
 the address and what was done with it, so a sender not on the list is seen.
 
-## Settings (Money › Receipts › Settings)
+## Settings (Buying › Receipts › Settings)
 
 - **Vendor used when the receipt's seller is not in Odoo:** make a contact in
   Odoo called "Vendor to confirm" once, then type its name here and pick it.
@@ -94,10 +94,10 @@ email you already use on niceoperation.com is not touched.
 3. Open **Routing rules** › **Create address**. Choose the `po` subdomain,
    type `receipts` as the address, set the action to **Send to a Worker**, and
    choose **niceoperation-insight**. Save.
-4. In Insight, open Money › Receipts › Settings. Type
+4. In Insight, open Buying › Receipts › Settings. Type
    `receipts@po.niceoperation.com` as the address, list who may send, choose
    the placeholders and the accountant, and press **Save**.
-5. Send one receipt from an address on the list. It shows in Money ›
+5. Send one receipt from an address on the list. It shows in Buying ›
    Receipts, and the reply comes back by email.
 
 The reply is sent through HIVE's email, like Insight's other emails, so HIVE's

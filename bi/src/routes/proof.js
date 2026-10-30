@@ -85,8 +85,8 @@ async function notify(env, r, { reminder = false, fetchImpl } = {}) {
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to: account.email, subject: title, kind: 'insight_proof', senderName: 'Insight',
-        text: `${text}\n\nOpen Insight › Shifts › Inbox › Proof asked, and send pictures or a PDF from there.`,
-        html: `<p>${esc(text)}</p><p>Open Insight › Shifts › Inbox › <b>Proof asked</b>, and send pictures or a PDF from there.</p>`,
+        text: `${text}\n\nOpen Insight › Front desk › Shifts › To sort out › Proof asked, and send pictures or a PDF from there.`,
+        html: `<p>${esc(text)}</p><p>Open Insight › Front desk › Shifts › To sort out › <b>Proof asked</b>, and send pictures or a PDF from there.</p>`,
       },
     });
     return true;

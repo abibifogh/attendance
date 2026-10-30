@@ -57,7 +57,7 @@ export async function setLock(env, body, account, { seqThrough = null } = {}) {
 
 /** Refused, saying which day and who locked it. */
 export function lockedError(lock, day) {
-  return new HttpError(423, `${sayDay(day)} is locked: everything up to ${sayDay(lock.through)} was locked by ${lock.by || 'an admin'}. An admin can move the lock back under Shifts › Settings › Locked dates.`);
+  return new HttpError(423, `${sayDay(day)} is locked: everything up to ${sayDay(lock.through)} was locked by ${lock.by || 'an admin'}. An admin can move the lock back under Settings › Rules › Locked dates.`);
 }
 
 /** Every day the request touches: days named, the days of keys named, of ASSD numbers, of links and moves and reports by id. */

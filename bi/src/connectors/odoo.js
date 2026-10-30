@@ -144,7 +144,7 @@ async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs 
       : `Odoo did not allow ${doing} ${model}${said ? `: ${said}` : '.'}`);
   }
   if (response.status === 404) {
-    throw new OdooError(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address in Setup.`);
+    throw new OdooError(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address in Settings › Connections & files.`);
   }
   if (!response.ok) {
     const said = await odooSaid();

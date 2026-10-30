@@ -24,14 +24,14 @@ import { roleOf } from './till.js';
 
 export const REPORTS = [
   { key: 'brief', label: 'Brief', note: 'The morning summary and its findings.' },
-  { key: 'management', label: 'Management', note: 'The weekly and monthly report: breakfast and maintenance.' },
-  { key: 'money', label: 'Overview', note: 'Revenue and costs, and how spending was paid.' },
-  { key: 'yardstick', label: 'Yardstick', note: 'Each part of the business against its targets.' },
+  { key: 'management', label: 'Management report', note: 'The weekly and monthly report: breakfast and maintenance.' },
+  { key: 'money', label: 'Profit & loss', note: 'Revenue and costs, and how spending was paid.' },
+  { key: 'yardstick', label: 'Health', note: 'Each part of the business against its targets.' },
   { key: 'prepaid', label: 'Prepaid stays', note: 'What guests paid before arrival.' },
-  { key: 'cash', label: 'Tills & collections', note: 'Takings by till and how they were collected.' },
-  { key: 'labour', label: 'Labour', note: 'Hours worked and wages against revenue.' },
+  { key: 'cash', label: 'Cash & collections', note: 'Takings by till and how they were collected.' },
+  { key: 'labour', label: 'Staff costs', note: 'Hours worked and wages against revenue.' },
   { key: 'guests', label: 'Guests', note: 'Guests in house and demand.' },
-  { key: 'buying', label: 'Buying', note: 'Spend by supplier, and the suppliers list (supervisors may also change it).' },
+  { key: 'buying', label: 'Suppliers & spend', note: 'Spend by supplier, and the suppliers list (supervisors may also change it).' },
   { key: 'niceplace', label: 'Nice Place', note: 'The washroom counters against takings.' },
 ];
 const KEYS = new Set(REPORTS.map((r) => r.key));
@@ -82,7 +82,7 @@ export async function requireReport(env, account, method, path) {
   if (!report) throw forbidden('Only an admin can open that.');
   if (!(await reportsOf(env, account)).includes(report)) {
     const label = REPORTS.find((r) => r.key === report)?.label || 'That report';
-    throw forbidden(`${label} has not been shared with you. An admin can share it under Admin › Who sees which reports.`);
+    throw forbidden(`${label} has not been shared with you. An admin can share it under Settings › People & access › Reports they see.`);
   }
 }
 

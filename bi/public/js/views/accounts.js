@@ -198,9 +198,9 @@ export async function renderAccounts(root) {
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and manages accounts'],
       ['admin', 'Admin', 'Every report and all of Shifts'],
-      ['supervisor', 'Supervisor', 'Shifts only, as set in Shifts → Settings'],
+      ['supervisor', 'Supervisor', 'Shifts only, as set in Settings › Rules › Who sees what'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, bank statement and card report. Sees nothing else'],
-      ['reports', 'Reports only', 'The reports an admin ticks under Admin › Who sees which reports. Nothing else'],
+      ['reports', 'Reports only', 'The reports an admin ticks under Settings › People & access › Reports they see. Nothing else'],
       ['none', 'No reports', 'The hub only: a way into other systems'],
     ];
     const others = systems.filter((sys) => sys.id !== 'insight');
@@ -409,10 +409,10 @@ export async function renderAccounts(root) {
         : account ? 'none' : (noOwnerYet ? 'owner' : 'supervisor');
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and can manage these accounts.'],
-      ['admin', 'Admin', 'Every report and all of Shifts, including the till settings. Cannot manage accounts or Setup.'],
-      ['supervisor', 'Supervisor', 'Shifts, with the parts an admin chooses under Shifts → Settings → Who sees what, and any reports shared under Admin › Who sees which reports.'],
+      ['admin', 'Admin', 'Every report and all of Shifts, including the till settings. Cannot manage accounts or connections.'],
+      ['supervisor', 'Supervisor', 'Shifts, with the parts an admin chooses under Settings › Rules › Who sees what, and any reports shared under Admin › Who sees which reports.'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, the bank statement and the card terminal report. Sees none of the numbers, and nothing else in Insight.'],
-      ['reports', 'Reports only', 'Reads the reports an admin ticks for them under Admin › Who sees which reports, and nothing else in Insight.'],
+      ['reports', 'Reports only', 'Reads the reports an admin ticks for them under Settings › People & access › Reports they see, and nothing else in Insight.'],
       ['none', 'No reports', 'Only the hub: a way into the other systems ticked below.'],
     ];
     const level = h('select', { required: true }, LEVELS.map(([value, label]) => h('option', { value, selected: value === current }, label)));

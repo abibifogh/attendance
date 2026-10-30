@@ -181,7 +181,7 @@ async function makePo(env, r, { data, today, fetchImpl, mark = null, anyway = fa
     unsure: match?.by === 'reader' && !match.sure ? product.name : null,
   });
   if (!useVendor || !useProduct) {
-    r.problem = `${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Money › Receipts › Settings. Choose it there, then Try again.`;
+    r.problem = `${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Buying › Receipts › Settings. Choose it there, then Try again.`;
     r.problem = r.problem.charAt(0).toUpperCase() + r.problem.slice(1);
     return;
   }
@@ -387,9 +387,9 @@ export function resultLine(x) {
   const what = [x.vendorOk === false ? `“${x.vendorText || 'no vendor'}”` : x.vendorName, x.amount != null ? ghs(x.amount) : null, x.day].filter(Boolean).join(' · ');
   if (x.status === 'complete') return `✓ ${x.po.name} · ${what}`;
   if (x.status === 'check') return `⚠ ${x.po.name} · ${what} · ${x.problem}`;
-  if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem} It is kept in Insight › Money › Receipts.`;
+  if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem} It is kept in Insight › Buying › Receipts.`;
   const why = String(x.problem || 'It could not be read').replace(/\.?\s*$/, '.');
-  return `✕ ${x.name || 'A receipt'}: no PO. ${why} It is kept in Insight › Money › Receipts.`;
+  return `✕ ${x.name || 'A receipt'}: no PO. ${why} It is kept in Insight › Buying › Receipts.`;
 }
 
 async function reply(env, { to, subject, results, skipped, settings }, { fetchImpl } = {}) {

@@ -64,7 +64,7 @@ export async function refresh(env, account, { fetchImpl } = {}) {
 /** Read Odoo's vendors into Insight (also each night). Those Odoo no longer lists stay, marked. */
 export async function refreshFromOdoo(env, { fetchImpl } = {}) {
   const s = await odooSource(env);
-  if (!s) throw new HttpError(409, 'Odoo is not set up in Insight yet: add it under Setup.');
+  if (!s) throw new HttpError(409, 'Odoo is not set up in Insight yet: add it under Settings › Connections & files.');
   const vendors = await vendorList({ ...s, ...(fetchImpl ? { fetchImpl } : {}) });
   const at = now();
   for (const v of vendors) {
