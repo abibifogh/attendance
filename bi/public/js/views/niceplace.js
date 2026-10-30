@@ -90,7 +90,7 @@ export async function renderNicePlace(root, { part = null } = {}) {
       h('button.btn', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch { window.prompt('Copy the link:', url); } } }, 'Copy'),
       h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'),
       h('span.np-ending', h('small', `${location.origin}/`), ending, h('button.btn', { type: 'button', onclick: setEnding }, 'Set the ending')),
-      h('small.np-apphint', 'Open it once on the desk phone and press “Put Nice Place on this phone”: it becomes an app that opens with one tap. A new link, or a new ending, stops the old one and its app.'), said);
+      h('small.np-apphint', 'Open it once on the desk phone and press “Put Nice Place on this phone”: it becomes an app that opens with one tap. A new link, or a new ending, stops the old one and its app. On an old phone where the app says “keeps stopping”: remove it, open the link with ?plain at the end, and press the button again for a simple shortcut instead.'), said);
   }
 
   // -------------------------------------------------------------- upload --
