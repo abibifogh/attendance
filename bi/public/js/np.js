@@ -17,12 +17,42 @@
  * the counters (niceplace.js).
  */
 
-import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS } from './install.js';
+/*
+ * Written for old phones as well as new: a plain script, not a module, and
+ * nothing newer than the browsers of 2017 (no ?., no ??, no .flat(), no
+ * replaceChildren, no { ...object }). The desk phone may be years old, and
+ * one unknown word stops the whole page at "Loading…".
+ */
+// Its own names, kept apart from the browser's (a plain script's `top` would be window.top).
+(function () {
+window.npStarted = true;
+
+// Putting the page on the phone as an app (as install.js does for Insight, here without modules).
+var offer = null;
+var waiting = [];
+window.addEventListener('beforeinstallprompt', function (event) { event.preventDefault(); offer = event; waiting.forEach(function (fn) { fn(); }); });
+window.addEventListener('appinstalled', function () { offer = null; waiting.forEach(function (fn) { fn(); }); });
+const installed = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const isIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const canInstall = () => !installed() && Boolean(offer || isIphone());
+async function install() {
+  if (!offer) return isIphone() ? 'iphone' : 'unavailable';
+  offer.prompt();
+  const choice = await offer.userChoice;
+  offer = null;
+  return choice.outcome;
+}
+const onInstallChange = (fn) => { waiting.push(fn); };
+const IPHONE_STEPS = 'On an iPhone: tap the Share button (the square with an arrow, at the bottom), then “Add to Home Screen”.';
+const registerWorker = () => { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); };
+/** An array of arrays, one level flat. */
+const flatten = (list) => list.reduce((out, x) => out.concat(Array.isArray(x) ? x : [x]), []);
 
 const page = document.getElementById('page');
 const head = document.getElementById('head');
 // The short link (/niceplace) names itself; the long one carries its code after #.
-const slug = (/^\/([A-Za-z0-9-]+)\/?$/.exec(location.pathname) || [])[1]?.toLowerCase();
+const ending = /^\/([A-Za-z0-9-]+)\/?$/.exec(location.pathname);
+const slug = ending ? ending[1].toLowerCase() : '';
 const short = slug && slug !== 'np' && slug !== 'np.html' ? slug : '';
 // The link's code: from the address, or kept on this phone from the first time it was opened.
 const token = short ? '' : (() => {
@@ -30,7 +60,7 @@ const token = short ? '' : (() => {
   try {
     if (fromLink) localStorage.setItem('np-token', fromLink);
     return fromLink || localStorage.getItem('np-token') || '';
-  } catch { return fromLink; }
+  } catch (e) { return fromLink; }
 })();
 /** What the server is shown to know the link: its ending, or its code. */
 const key = short ? { s: short } : { t: token };
@@ -50,11 +80,14 @@ const el = (tag, props = {}, ...kids) => {
     if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
     else if (v != null && v !== false) e.setAttribute(k, v === true ? '' : v);
   }
-  for (const k of kids.flat()) if (k != null) e.append(k);
+  flatten(kids).forEach((k) => { if (k != null && k !== false) e.append(k); });
   return e;
 };
 /** Fill a node, skipping what is not there. */
-const put = (node, ...kids) => node.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
+const put = (node, ...kids) => {
+  while (node.firstChild) node.removeChild(node.firstChild);
+  flatten(kids).forEach((k) => { if (k != null && k !== false) node.append(k); });
+};
 const dayText = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 const shortDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const cedi = (n) => `GH₵ ${Number(n || 0).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
@@ -81,8 +114,8 @@ async function shrink(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-const remember = (name) => { try { if (name) localStorage.setItem('np-name', name); else localStorage.removeItem('np-name'); } catch { /* not kept */ } };
-const remembered = () => { try { return localStorage.getItem('np-name'); } catch { return null; } };
+const remember = (name) => { try { if (name) localStorage.setItem('np-name', name); else localStorage.removeItem('np-name'); } catch (e) { /* not kept */ } };
+const remembered = () => { try { return localStorage.getItem('np-name'); } catch (e) { return null; } };
 
 /** The dark band at the top: small words over big ones, and how far through. */
 function top(small, big, step = 0, extra = null) {
@@ -162,7 +195,8 @@ function money() {
     if (!Object.values(inputs).some((i) => typed(i) > 0)) { put(said, el('p', { class: 'err' }, 'Type the money first. If a box had nothing, leave it empty.')); return; }
     picture();
   });
-  const sent = form.choices.find((c) => c.day === when.day && c.shift === when.shift)?.sent;
+  const chosen = form.choices.find((c) => c.day === when.day && c.shift === when.shift);
+  const sent = chosen && chosen.sent;
   put(page, 
     sent ? el('p', { class: 'warn' }, 'This shift is sent already. Send again only to correct it.') : null,
     el('section', { class: 'sale shower' }, el('h3', {}, '🚿 Shower'),
@@ -202,14 +236,14 @@ function picture() {
   file.addEventListener('change', async () => {
     if (!file.files[0]) return;
     put(said, el('p', { class: 'note' }, 'Getting the picture ready…'));
-    try { photo = await shrink(file.files[0]); } catch { photo = null; put(said, el('p', { class: 'err' }, 'That picture could not be used. Take it again.')); return; }
+    try { photo = await shrink(file.files[0]); } catch (e) { photo = null; put(said, el('p', { class: 'err' }, 'That picture could not be used. Take it again.')); return; }
     file.value = '';
     put(shot, el('img', { src: photo, alt: 'The counters' }));
     take.textContent = '📷 Take it again';
     send.hidden = false;
     put(said, el('p', { class: 'note' }, 'Reading the numbers…'));
     let out;
-    try { out = await call('read', { ...key, photo }); } catch { out = { available: false }; }
+    try { out = await call('read', Object.assign({}, key, { photo })); } catch (e) { out = { available: false }; }
     if (!out.available) { put(said, el('p', { class: 'warn' }, 'It could not be read just now. Send it: it will be read again, or the manager will read it.')); return; }
     if (!out.unreadable.length) { put(said, el('p', { class: 'readok' }, '✓ All four numbers read from the picture')); return; }
     put(said, el('p', { class: 'warn' }, `${out.unreadable.map((c) => c.toUpperCase()).join(' and ')} could not be read. Take it again, closer and straight, or send it as it is: the manager will read it.`));
@@ -217,7 +251,7 @@ function picture() {
   send.addEventListener('click', async () => {
     send.disabled = true; send.textContent = 'Sending…';
     try {
-      const out = await call('send', { ...key, name, day: when.day, shift: when.shift, photo, sales });
+      const out = await call('send', Object.assign({}, key, { name, day: when.day, shift: when.shift, photo, sales }));
       done(out);
     } catch (err) {
       put(said, el('p', { class: 'err' }, err.message));
@@ -247,3 +281,4 @@ function done(out) {
 onInstallChange(() => { if (head.textContent.includes('Who are you?')) who(); });
 
 start();
+})();

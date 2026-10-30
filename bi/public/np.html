@@ -83,6 +83,25 @@
 <body>
   <header id="head"><small>Nice Place</small><b>Loading…</b></header>
   <main id="page"></main>
-  <script type="module" src="/js/np.js"></script>
+  <script src="/js/np.js" defer></script>
+  <script>
+    // Anything that goes wrong is said on the page, in words the manager can be sent.
+    function npSay(words) {
+      var p = document.createElement('p');
+      p.className = 'err';
+      p.textContent = 'Something went wrong: ' + words + '. Take a picture of this screen and send it to the manager.';
+      var page = document.getElementById('page');
+      if (page) page.insertBefore(p, page.firstChild);
+    }
+    window.addEventListener('error', function (e) { npSay(e.message || 'an error'); });
+    window.addEventListener('unhandledrejection', function (e) { npSay((e.reason && e.reason.message) || 'an error'); });
+    // A phone whose browser cannot run the page says so, instead of "Loading…" for ever.
+    setTimeout(function () {
+      if (window.npStarted) return;
+      var b = document.querySelector('#head b');
+      if (b) b.textContent = 'Update this phone\'s browser';
+      document.getElementById('page').innerHTML = '<p class="warn">This phone\'s internet browser is too old for Nice Place. Open the <b>Play Store</b>, search for <b>Chrome</b> and press <b>Update</b> (or install it), then open the link again in Chrome.</p>';
+    }, 6000);
+  </script>
 </body>
 </html>

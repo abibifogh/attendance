@@ -32,6 +32,8 @@ import { openPalette } from './views/palette.js';
 import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS } from './install.js';
 
 registerWorker();
+// Reached only when every module could be read: index.html says so on a browser too old to.
+window.insightStarted = true;
 
 export const state = {
   boot: null,
