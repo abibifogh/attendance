@@ -198,7 +198,7 @@ export async function renderAccounts(root) {
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and manages accounts'],
       ['admin', 'Admin', 'Every report and all of Shifts'],
-      ['supervisor', 'Supervisor', 'Shifts only, as set in Settings › Rules › Who sees what'],
+      ['supervisor', 'Supervisor', 'Shifts only, as set in Settings › People & access › Supervisors'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, bank statement and card report. Sees nothing else'],
       ['reports', 'Reports only', 'The reports an admin ticks under Settings › People & access › Reports they see. Nothing else'],
       ['none', 'No reports', 'The hub only: a way into other systems'],
@@ -410,7 +410,7 @@ export async function renderAccounts(root) {
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and can manage these accounts.'],
       ['admin', 'Admin', 'Every report and all of Shifts, including the till settings. Cannot manage accounts or connections.'],
-      ['supervisor', 'Supervisor', 'Shifts, with the parts an admin chooses under Settings › Rules › Who sees what, and any reports shared under Admin › Who sees which reports.'],
+      ['supervisor', 'Supervisor', 'Shifts, with the parts an admin chooses under Settings › People & access › Supervisors, and any reports shared under Admin › Who sees which reports.'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, the bank statement and the card terminal report. Sees none of the numbers, and nothing else in Insight.'],
       ['reports', 'Reports only', 'Reads the reports an admin ticks for them under Settings › People & access › Reports they see, and nothing else in Insight.'],
       ['none', 'No reports', 'Only the hub: a way into the other systems ticked below.'],

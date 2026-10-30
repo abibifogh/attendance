@@ -198,7 +198,7 @@ export async function prepaidCsv(env, query = {}) {
 
 // ------------------------------------------------------------------ mail --
 
-async function mailSettings(env) {
+export async function mailSettings(env) {
   const raw = (await getSettings(env.DB).catch(() => ({})))[SETTING];
   let s = {};
   try { s = JSON.parse(raw || '{}'); } catch { s = {}; }

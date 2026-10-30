@@ -98,6 +98,11 @@ const ROUTES = [
     const { month, csv } = await prepaid.prepaidCsv(env, ctx.query);
     return new Response(`\ufeff${csv}`, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="prepaid-stays-${month}.csv"`, 'Cache-Control': 'no-store' } });
   }],
+  // Who gets the summary on the 5th, for Settings › Notifications.
+  ['GET', '/api/money/prepaid/mail', 'insight', async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    return prepaid.mailSettings(env);
+  }],
   ['POST', '/api/money/prepaid/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
     return prepaid.saveMailSettings(env, ctx.body, { origin: ctx.url.origin });
@@ -118,7 +123,7 @@ const ROUTES = [
   ['GET', '/api/reports/management', 'insight', (env, ctx) => mgmt.managementReport(env, ctx.query)],
   ['GET', '/api/reports/management/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
-    return { ...(await mgmt.mailSettings(env)), adminEmails: await prepaid.adminEmails(env) };
+    return { ...(await mgmt.mailSettings(env)), sections: mgmt.SECTIONS, adminEmails: await prepaid.adminEmails(env) };
   }],
   ['POST', '/api/reports/management/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);

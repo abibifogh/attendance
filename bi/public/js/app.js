@@ -17,7 +17,7 @@ import { renderShifts, shiftsParts } from './views/shifts.js';
 import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
 import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
-import { renderPrepaid } from './views/prepaid.js';
+import { renderPrepaid, renderPrepaidMail } from './views/prepaid.js';
 import { renderMgmt } from './views/mgmt.js';
 import { renderReportAccess } from './views/reportaccess.js';
 import { renderNicePlace } from './views/niceplace.js';
@@ -52,7 +52,7 @@ const SECTIONS = [
 ];
 
 /** One part of the Shifts screen as a page of its own, telling the menu when it moves to another part. */
-const shiftsPart = (part) => (root, ctx) => renderShifts(root, { ...ctx, section: part, onSection: (s) => ctx.moved(SHIFT_PATHS[s]) });
+const shiftsPart = (part, settingsParts = null) => (root, ctx) => renderShifts(root, { ...ctx, section: part, settingsParts, onSection: (s) => ctx.moved(SHIFT_PATHS[s]) });
 const SHIFT_PATHS = { shifts: 'shifts', inbox: 'inbox', people: 'people', reports: 'closing', files: 'files', settings: 'rules' };
 
 const ROUTES = [
@@ -85,12 +85,18 @@ const ROUTES = [
   { path: 'prepaid', label: 'Prepaid stays', section: 'reports', page: 'Guests', render: renderPrepaid, needs: 'insight', ownHash: true, own: true },
   { path: 'labour', label: 'Staff costs', section: 'reports', page: 'Staff costs', render: renderLabour, needs: 'insight' },
 
-  // Who may do what, where the systems connect, the front desk's rules, and reports shared by PIN.
+  // Who may do what, where the systems connect, how things are done, who is told, and reports shared by PIN.
   { path: 'accounts', label: 'People', section: 'settings', page: 'People & access', render: renderAccounts, needs: 'owner' },
+  { path: 'supervisors', label: 'Supervisors', section: 'settings', page: 'People & access', render: shiftsPart('settings', ['who']), needs: 'shifts', part: 'settings', still: true },
   { path: 'report-access', label: 'Reports they see', section: 'settings', page: 'People & access', render: renderReportAccess, needs: 'admin', own: true },
   { path: 'setup', label: 'Connections', section: 'settings', page: 'Connections & files', render: renderSetup, needs: 'owner' },
   { path: 'files', label: 'Shift files', section: 'settings', page: 'Connections & files', render: shiftsPart('files'), needs: 'shifts', part: 'files', still: true },
-  { path: 'rules', label: 'Front desk', section: 'settings', page: 'Rules', render: shiftsPart('settings'), needs: 'shifts', part: 'settings', still: true },
+  { path: 'rules', label: 'Front desk', section: 'settings', page: 'Rules', render: shiftsPart('settings', ['desk', 'limits', 'lock']), needs: 'shifts', part: 'settings', still: true },
+  { path: 'np-rules', label: 'Nice Place', section: 'settings', page: 'Rules', render: (root) => renderNicePlace(root, { part: 'settings' }), needs: 'admin' },
+  { path: 'receipt-rules', label: 'Receipts', section: 'settings', page: 'Rules', render: (root) => renderReceipts(root, { part: 'settings' }), needs: 'admin' },
+  { path: 'notify', label: 'HIVE alerts', section: 'settings', page: 'Notifications', render: shiftsPart('settings', ['told']), needs: 'shifts', part: 'settings', still: true },
+  { path: 'notify-mgmt', label: 'Management report', section: 'settings', page: 'Notifications', render: (root) => renderMgmt(root, { part: 'settings' }), needs: 'admin' },
+  { path: 'notify-prepaid', label: 'Prepaid summary', section: 'settings', page: 'Notifications', render: renderPrepaidMail, needs: 'admin' },
   { path: 'reports', label: 'Shared reports', section: 'settings', page: 'Shared reports', render: renderReports, needs: 'owner' },
 
   // The other systems, signed in: a page only for somebody given nothing here.

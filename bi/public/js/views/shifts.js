@@ -221,7 +221,7 @@ function inboxSources(who) {
  * tabs here; `onSection` is told when a click moves to another part (a shift
  * opened from the Inbox), so the menu and the address follow.
  */
-export async function renderShifts(root, { range, section: only = null, onSection = null }) {
+export async function renderShifts(root, { range, section: only = null, onSection = null, settingsParts = null }) {
   const view = h('div.sh');
   add(root, view);
 
@@ -637,7 +637,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       notice,
       // The title, tabs and period on a dark band of their own, so they read
       // apart from Insight's top bar above them.
-      h('div.sh-band',
+      // Settings and files on a page of their own need no title, count or period.
+      only && ['settings', 'files'].includes(section) ? null : h('div.sh-band',
       h('div.sh-head',
         // A part on its own page has its title over it, from Insight's menu.
         only ? null : h('h1', 'Shifts'),
@@ -660,7 +661,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       has && admin && data.totals && section === 'shifts' && !detail ? kpis() : null,
       v);
     if (section === 'settings') {
-      Promise.resolve(till.settings(v)).catch((err) => mount(v, banner('problem', err.message)));
+      Promise.resolve(till.settings(v, settingsParts)).catch((err) => mount(v, banner('problem', err.message)));
       return undefined;
     }
     if (section === 'inbox') return inboxView(v);
