@@ -23,6 +23,7 @@ import { renderReportAccess } from './views/reportaccess.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { openNewPo } from './views/newpo.js';
 import { renderApprovals, approvalsCount } from './views/approvals.js';
+import { renderAssistant } from './views/assistant.js';
 import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
@@ -56,7 +57,8 @@ const shiftsPart = (part, settingsParts = null) => (root, ctx) => renderShifts(r
 const SHIFT_PATHS = { shifts: 'shifts', inbox: 'inbox', people: 'people', reports: 'closing', files: 'files', settings: 'rules' };
 
 const ROUTES = [
-  // Everything waiting for an admin, in every system, decided here; and the morning summary.
+  // What needs an admin in every system, with advice; every approval, decided here; and the morning numbers.
+  { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'admin', own: true },
   { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
   { path: 'brief', label: 'Brief', section: 'assistant', page: 'Assistant', render: renderBrief, needs: 'insight' },
 

@@ -33,6 +33,7 @@ import * as lock from './routes/lock.js';
 import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
+import * as assistant from './routes/assistant.js';
 import * as approvals from './routes/approvals.js';
 import * as receipts from './routes/receipts.js';
 import { sendDailySummary } from './routes/summary.js';
@@ -358,6 +359,10 @@ const ROUTES = [
   // Contacts and products by name, for ones made in Odoo just now.
   ['GET', '/api/po/find', 'insight', adminOnly((env, ctx) => newpo.findPo(env, ctx.query))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
+  // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
+  ['GET', '/api/assistant', 'session', adminOnly((env, ctx) => assistant.gather(env, ctx.account))],
+  ['GET', '/api/assistant/brief', 'session', adminOnly((env, ctx) => assistant.briefing(env, ctx.account).then(({ text, by }) => ({ text, by })))],
+  ['POST', '/api/assistant/ask', 'session', adminOnly((env, ctx) => assistant.ask(env, ctx.body, ctx.account))],
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.

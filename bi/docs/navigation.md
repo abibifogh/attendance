@@ -5,7 +5,7 @@ they are the five buttons along the bottom.
 
 | Place | Pages |
 |---|---|
-| **Assistant** | Approvals (everything waiting for an admin, in every system) · Brief |
+| **Assistant** | Today (what needs you, with advice; see assistant.md) · Approvals (everything waiting for an admin, in every system) · Brief |
 | **Front desk** | Shifts (with To sort out and Closing reports) · People · Safe · Nice Place |
 | **Buying** | Suppliers · Receipts · Floats · Spend |
 | **Reports** | Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) · Staff costs |

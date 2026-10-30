@@ -168,7 +168,7 @@ export async function pnl(env, query) {
     daily,
     caveats: [
       (rows.find((r) => r.line === 'rooms')?.net || 0) > 0
-        ? 'Room revenue is read from the ASSD journal: what each reservation was charged, night by night, on the day of the night. It is only as complete as the journal loaded under Shifts → Files.'
+        ? 'Room revenue is read from the ASSD journal: what each reservation was charged, night by night, on the day of the night. It is only as complete as the journal loaded under Settings › Connections & files › Shift files.'
         : 'Room revenue comes from the ASSD journal, and none is loaded for these days. Load it under Settings › Connections & files › Shift files.',
       facts.costBasis?.sources?.includes('odoo-cash')
         ? 'Purchases include POs paid in cash from the drawer or the safe that Odoo has no bill for yet, on the day the cash left. When the bill is posted, the bill counts instead.'
