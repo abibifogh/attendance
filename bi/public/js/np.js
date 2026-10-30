@@ -37,13 +37,14 @@ const isIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 // Offered whenever it is not the app already: where the browser makes no offer of its own, the steps.
 const canInstall = () => !installed();
 const ANDROID_STEPS = 'Tap Chrome’s menu (the three dots ⋮ at the top right), then “Add to Home screen” or “Install app”.';
-// The link with ?plain: no app, only a shortcut that opens the page in Chrome. For an old phone
-// whose installed app will not start ("Nice Place keeps stopping").
-const plain = /[?&]plain(=|&|$)/.test(location.search);
+// Put on the phone as a plain shortcut that opens the page in Chrome: an installed app would not
+// even start on an old desk phone ("Nice Place keeps stopping"). Only the link with ?app makes the app.
+const plain = !/[?&]app(=|&|$)/.test(location.search);
 const SHORTCUT_STEPS = 'Tap Chrome’s menu (the three dots ⋮ at the top right), then “Add to Home screen”, then “Add”. Nice Place opens in Chrome from it.';
 async function install() {
+  if (isIphone()) return 'iphone';
   if (plain) return 'shortcut';
-  if (!offer) return isIphone() ? 'iphone' : 'android';
+  if (!offer) return 'android';
   offer.prompt();
   const choice = await offer.userChoice;
   offer = null;
