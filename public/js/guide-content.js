@@ -534,7 +534,7 @@ export const GUIDE = [
 
   {
     key: 'hr-faq',
-    title: 'The HR FAQ',
+    title: 'The handbook FAQ',
     permission: null,
     lede: 'Quick answers to the questions staff ask most, on top of the handbook.',
     blocks: [
@@ -1279,7 +1279,7 @@ export const GUIDE = [
 
   {
     key: 'advances',
-    title: 'Salary advances',
+    title: 'Advances',
     permission: 'hr_pay',
     lede: 'What was lent, what has come back, and what is still to come off.',
     blocks: [
@@ -1477,7 +1477,7 @@ export const GUIDE = [
 
   {
     key: 'medical',
-    title: 'Medical claims',
+    title: 'Medical',
     permission: 'hr_pay',
     lede: 'The year’s allowance for each person, and the bills claimed against it.',
     blocks: [
@@ -2438,7 +2438,7 @@ export const GUIDE = [
       { sub: 'A new starter, start to finish' },
       { steps: [
         'Settings › People & logins: add them, with the employee number exactly as the terminal has it.',
-        'People → open them → Issue a contract from a template.',
+        'People → Staff → open them → Issue a contract from a template.',
         'Send them a link. One link carries their details form and the contract together.',
         'They fill it in on their phone. It comes back as a proposal.',
         'Review it, accept what is right, and countersign the contract once they have signed.',
@@ -2456,7 +2456,7 @@ export const GUIDE = [
         + 'permanent test.' },
 
       { sub: 'Choosing what to ask for' },
-      { p: 'People → What to ask for. Every field, every list and every document gets one of '
+      { p: 'Settings › People & logins → New-starter form. Every field, every list and every document gets one of '
         + 'three answers: ask for it, insist on it, or do not ask at all. A property that pays '
         + 'everybody by mobile money has no use for a bank branch; one that has been caught out '
         + 'by an emergency contact nobody filled in wants that one refused rather than skipped.' },
@@ -2508,11 +2508,11 @@ export const GUIDE = [
   // =========================================================================
   {
     key: 'till-reports',
-    title: 'Till reports',
+    title: 'Till',
     permission: 'till_reports',
     lede: 'Every closing report from the front desk, who has not submitted theirs, and chasing them.',
     blocks: [
-      { p: 'Money → Till reports shows a week at a time. At the top, what is still not in, oldest '
+      { p: 'Money → Till shows a week at a time. At the top, what is still not in, oldest '
         + 'first; under it, every reception shift with its report: who signed it, when, what was in '
         + 'the drawer, and the one-line summary the owner gets.' },
       { steps: [

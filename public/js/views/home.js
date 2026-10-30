@@ -63,7 +63,7 @@ export async function renderHome() {
       decides
         ? h('section.card', { 'aria-labelledby': 'home-needs' },
           h('div.card-head',
-            h('h2', { id: 'home-needs' }, 'Needs you'),
+            h('h2', { id: 'home-needs' }, 'Waiting on you'),
             waiting.length ? h('a.btn-sm.btn-primary', { href: '#/inbox' }, `Open inbox · ${waiting.length}`) : null),
           waiting.length
             ? h('div.home-list',
@@ -72,7 +72,7 @@ export async function renderHome() {
                 h('span.home-row-main', `${item.who ? `${item.who}: ` : ''}${item.sub || item.title}`),
                 item.askedAt ? h('small.muted', fmtSince(item.askedAt)) : null)),
               waiting.length > 5 ? h('div.muted.home-more', `and ${waiting.length - 5} more`) : null)
-            : h('p.muted', 'Nothing waiting for a decision.'))
+            : h('p.muted', 'Nothing waiting on you.'))
         : null,
 
       h('section.card', { 'aria-labelledby': 'home-late' },

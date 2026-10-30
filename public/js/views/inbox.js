@@ -177,7 +177,7 @@ export async function renderInbox(params = {}) {
             onTick: approveOf(item) ? (on) => toggle(item, on) : null,
           }))),
           chosen ? h('aside.decide-detail.card', detail(chosen, decide)) : null)
-        : emptyState('All done', 'Nothing is waiting for a decision. New requests appear here as they come in.'),
+        : emptyState('All done', 'Nothing is waiting on you. New requests appear here as they come in.'),
     );
   };
 
