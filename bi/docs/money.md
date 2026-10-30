@@ -11,14 +11,14 @@ which no other system reports.
 
 - **Nights** (articles 100 to 289) are always the rooms. Room-nights are counted
   too.
-- **Every other article** is decided once, on Reports › Overview under **Revenue
+- **Every other article** is decided once, on Reports › Money › Profit & loss under **Revenue
   from the ASSD journal**:
   - revenue of a part of the business (a minibar under Bar, say);
   - **counted by another system** (laundry has its own, so it is not counted
     twice);
   - **not revenue**: a deposit, a tax.
 
-  A rental's deposit article (Shifts → Settings → Front desk) starts as *not revenue* and the
+  A rental's deposit article (Settings › Rules → Front desk) starts as *not revenue* and the
   laundry article as *counted by another system*. Anything else starts *not
   decided*, is not counted, and the page says how much is waiting.
 - It is written whenever a journal is uploaded, again each night, and again when
@@ -55,7 +55,7 @@ time Odoo is asked:
 | PO with no posted bill in Odoo | a PO confirmed in Odoo still has no posted bill 7 days after the cash left the drawer or the safe, or, for any other PO ordered in the last 90 days, after it was ordered; a draft bill is named on the item | the bill is posted in Odoo |
 | Paid is not what the PO says | what left the cash differs from the PO's total | the two agree |
 
-Both numbers are an admin's, under Shifts → Settings → Limits: **PO without a
+Both numbers are an admin's, under Settings › Rules → Limits: **PO without a
 posted bill** after [7] days, and **look for POs over the last** [90] days
 (7 to 730). A changed look-back asks Odoo again when saved; a shorter one closes
 the items for POs ordered before it ("Ordered before the N-day look-back"), and
@@ -76,7 +76,7 @@ Bills with no PO are no longer raised; the items they had raised were closed.
   alone.
 - **Refresh now**, at the top of the Inbox, asks Odoo again for everybody who
   has a list, supervisors included, so a bill posted a minute ago clears its
-  item straight away (the same as the button on Reports › Overview), and reads the
+  item straight away (the same as the button on Reports › Money › Profit & loss), and reads the
   laundry system for the last three days up to today (an admin sets how many,
   1 to 60, under Settings → Limits), so a finished shift's laundry is compared
   without waiting for the nightly run. Only the laundry system's own figures
@@ -142,7 +142,7 @@ month is sent once by the 5th.
 - **Only a whole month goes by itself.** If the journals loaded do not cover
   every day of the month, the 5th does not send it. Instead each admin gets an
   email saying the month is waiting and which days are loaded, and the page
-  shows the same prompt at the top. Load the rest under Shifts → Files, then
+  shows the same prompt at the top. Load the rest under Settings › Connections & files › Shift files, then
   press **Send … to everyone**; or send it as it is.
 - **Send … to everyone** sends the month on screen to all the addresses at any
   time. It asks first if the month is not complete, or was sent already.

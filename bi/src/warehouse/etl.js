@@ -522,8 +522,8 @@ export async function reloadLaundry(env, { from, to, days = 3 } = {}) {
   if (!source) return { ok: false, error: 'The laundry system is not set up in Insight.' };
   // Without its key the laundry is never read, at night either: say what to set, not the variable's name.
   if (!config.demoMode && !readiness(source, env).ready) {
-    const why = !source.config?.base ? 'Insight has no address for the laundry system. Put it in under Setup → The four systems.'
-      : !source.enabled ? 'The laundry system is switched off under Setup → The four systems.'
+    const why = !source.config?.base ? 'Insight has no address for the laundry system. Put it in under Settings › Connections & files.'
+      : !source.enabled ? 'The laundry system is switched off under Settings › Connections & files.'
         : `Insight has no key for the laundry system, so it cannot read it, now or at night. Add the repository secret INSIGHT_${secretNameFor(source)} and run "Set Insight's secrets".`;
     return { ok: false, error: why };
   }

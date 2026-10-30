@@ -21,7 +21,7 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
    Somebody who only loads the files (the ASSD journal, the bank statement
    and the card terminal report) gets **Uploads only**: an Upload files page
    and the hub, and none of the numbers.
-4. **Choose what supervisors see.** Insight → Shifts → Settings → Who sees
+4. **Choose what supervisors see.** Insight → Settings › Rules → Who sees
    what. Pick a preset for each supervisor: **Front desk supervisor** (shifts
    and closing reports without amounts; acts on staff answers, unpaid stays and
    advances, and reopens a report) or **Accounts** (amounts, bank and Odoo;
@@ -114,7 +114,7 @@ Every shift starts as not checked, including ones from before this came in.
 A drawer short, a drawer over or a hand-over difference belongs to whoever
 held that shift's drawer. When it is really somebody else's (two people held
 the drawer, a hand-over without a count, somebody covering), an admin opens it
-in Shifts → Inbox (or on the shift) and presses **Put on a staff account**:
+in Front desk › Shifts › To sort out (or on the shift) and presses **Put on a staff account**:
 
 - **Who and how much.** One person or several, front desk first. All of it is
   placed; to keep part on the shift's own person, add them as one of the lines.
@@ -152,14 +152,14 @@ the Inbox, See and act lets the supervisor answer and reconcile them. Card and
 bank lines follow **Bank statement and card matching** alone.
 
 A supervisor given **Correct cash movements → See and act** can correct a
-movement, but it counts only once an admin approves it under Shifts → Inbox →
+movement, but it counts only once an admin approves it under Front desk › Shifts › To sort out →
 Waiting for admin. Two exceptions count straight away, and the daily summary lists
 them: a movement at or under the small-differences limit (Settings →
 Limits), and cash no count labelled, labelled expenses, the safe or a split.
 Changing a label a count gave, and matching duplicates or reversals, still
 wait. The same goes for a supervisor's answer to an exception and for
 exceptions a supervisor reconciles together: they show as "Waiting for an
-admin" and stay on the list until an admin approves them (Shifts → Inbox → Waiting for admin,
+admin" and stay on the list until an admin approves them (Front desk › Shifts › To sort out → Waiting for admin,
 or Approve on the exception itself). Reject puts them back. An admin's own
 answers clear at once. Admins chosen under Who is told hear about each one.
 
@@ -214,7 +214,7 @@ people are told in HIVE; answers already given stay with whoever gave them.
 
 ## The safe
 
-Money › **Safe** (admins only) is the safe book. A page runs from one count of
+Front desk › **Safe** (admins only) is the safe book. A page runs from one count of
 the safe to the next, and its balance is what the safe should hold. Its
 "Confirmed in Odoo, not claimed" list follows the days chosen at the top of
 Insight.
@@ -250,7 +250,7 @@ count.
 
 ### Envelopes received
 
-Money › Safe › **Envelopes received** (admins, and supervisors given
+Front desk › Safe › **Envelopes received** (admins, and supervisors given
 "Envelopes received" under Settings → Who sees what: See to look, See and act
 to mark them received) is the check that the
 envelopes receptionists moved to the safe actually arrived. It is separate

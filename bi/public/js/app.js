@@ -7,12 +7,13 @@ import { renderLabour } from './views/labour.js';
 import { renderDemand } from './views/demand.js';
 import { renderCash } from './views/cash.js';
 import { renderSafe } from './views/safe.js';
-import { renderSuppliers } from './views/suppliers.js';
+import { renderSpend } from './views/suppliers.js';
+import { renderSupplierBook } from './views/supplierbook.js';
 import { renderSetup } from './views/setup.js';
-import { renderHub } from './views/hub.js';
+import { renderHub, appsPanel } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
 import { renderReports } from './views/reports.js';
-import { renderShifts } from './views/shifts.js';
+import { renderShifts, shiftsParts } from './views/shifts.js';
 import { renderLogin as renderLoginView, markGlyph } from './views/login.js';
 import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
@@ -25,6 +26,7 @@ import { renderApprovals, approvalsCount } from './views/approvals.js';
 import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
+import { openPalette } from './views/palette.js';
 
 export const state = {
   boot: null,
@@ -34,70 +36,90 @@ export const state = {
 };
 
 /**
- * The screens, in the order somebody grows into them.
+ * Five places, each a few pages, some pages a few tabs.
  *
- * Brief first, because it is the one that gets opened every morning and the
- * only one most people will ever open. Setup last, because it is opened twice.
+ * The menu down the left (five buttons along the bottom of a phone) is the
+ * sections; under the one open, its pages; across the top of a page, its tabs
+ * when it has more than one. A route is one tab: its page groups it with the
+ * others under the same heading. Old addresses still open (ALIASES).
  */
+const SECTIONS = [
+  { id: 'assistant', label: 'Assistant', icon: 'spark' },
+  { id: 'desk', label: 'Front desk', icon: 'desk' },
+  { id: 'buying', label: 'Buying', icon: 'cart' },
+  { id: 'reports', label: 'Reports', icon: 'chart' },
+  { id: 'settings', label: 'Settings', icon: 'gear' },
+];
+
+/** One part of the Shifts screen as a page of its own, telling the menu when it moves to another part. */
+const shiftsPart = (part) => (root, ctx) => renderShifts(root, { ...ctx, section: part, onSection: (s) => ctx.moved(SHIFT_PATHS[s]) });
+const SHIFT_PATHS = { shifts: 'shifts', inbox: 'inbox', people: 'people', reports: 'closing', files: 'files', settings: 'rules' };
+
 const ROUTES = [
-  // The hub first, and reachable by everybody who can sign in at all. For most
-  // people it is the only screen here they will ever open: it is how they get
-  // into the four systems they actually work in.
-  { path: 'hub', label: 'Hub', render: renderHub, needs: 'session' },
-  { path: 'brief', label: 'Brief', render: renderBrief, needs: 'insight' },
-  // A week or a month of the other systems (breakfast, maintenance), on one page and by email.
-  { path: 'management', label: 'Management', render: renderMgmt, ownHash: true },
-  { path: 'money', label: 'Overview', render: renderPnl },
-  { path: 'yardstick', label: 'Yardstick', render: renderFinancials },
-  { path: 'labour', label: 'Labour', render: renderLabour },
-  { path: 'guests', label: 'Guests', render: renderDemand },
-  { path: 'cash', label: 'Tills & collections', render: renderCash },
-  // The safe book (admins) and Envelopes received (admins, and supervisors given it).
-  { path: 'safe', label: 'Safe', render: renderSafe, needs: 'safe' },
-  // A month of its own rather than the window: its address names the month.
-  { path: 'prepaid', label: 'Prepaid stays', render: renderPrepaid, ownHash: true },
-  // The one screen a supervisor gets, with the parts an admin gave them.
-  { path: 'shifts', label: 'Shifts', render: renderShifts, needs: 'shifts' },
+  // Everything waiting for an admin, in every system, decided here; and the morning summary.
+  { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
+  { path: 'brief', label: 'Brief', section: 'assistant', page: 'Assistant', render: renderBrief, needs: 'insight' },
+
+  // The front desk's control sheet, its people, the safe the shifts fill, and the washroom.
+  { path: 'shifts', label: 'Shifts', section: 'desk', page: 'Shifts', render: shiftsPart('shifts'), needs: 'shifts', part: 'shifts' },
+  { path: 'inbox', label: 'To sort out', section: 'desk', page: 'Shifts', render: shiftsPart('inbox'), needs: 'shifts', part: 'inbox' },
+  { path: 'closing', label: 'Closing reports', section: 'desk', page: 'Shifts', render: shiftsPart('reports'), needs: 'shifts', part: 'reports' },
+  { path: 'people', label: 'People', section: 'desk', page: 'People', render: shiftsPart('people'), needs: 'shifts', part: 'people' },
+  { path: 'safe', label: 'Safe', section: 'desk', page: 'Safe', render: renderSafe, needs: 'safe' },
+  { path: 'niceplace', label: 'Nice Place', section: 'desk', page: 'Nice Place', render: renderNicePlace, needs: 'insight' },
   // The one screen an uploader gets: the three shift files, nothing in them.
-  { path: 'upload', label: 'Upload files', render: renderUpload, needs: 'upload' },
-  // The public washroom: its door counters against the money reported.
-  { path: 'niceplace', label: 'Nice Place', render: renderNicePlace },
-  { path: 'buying', label: 'Buying', render: renderSuppliers },
-  // Receipts made into draft POs, uploaded or emailed in. Admins.
-  { path: 'receipts', label: 'Receipts', render: renderReceipts, needs: 'admin' },
-  // Money given to people to spend; their receipts become POs with their reference. Admins.
-  { path: 'floats', label: 'Floats', render: renderFloats, needs: 'admin' },
-  { path: 'accounts', label: 'Accounts', render: renderAccounts, needs: 'owner' },
-  // Which report pages each person who is not an admin may open. Admins.
-  { path: 'report-access', label: 'Who sees which reports', render: renderReportAccess, needs: 'admin' },
-  { path: 'reports', label: 'Shared reports', render: renderReports, needs: 'owner' },
-  { path: 'setup', label: 'Setup', render: renderSetup, needs: 'owner' },
-  // Every system's approvals, decided here. Its own button on the menu bar, with the count.
-  { path: 'approvals', label: 'Approvals', render: renderApprovals, needs: 'admin', button: true },
+  { path: 'upload', label: 'Upload files', section: 'desk', page: 'Upload files', render: renderUpload, needs: 'upload', own: true },
+
+  // Odoo's suppliers, receipts made into POs, money given out to buy with, and what it all cost.
+  { path: 'suppliers', label: 'Suppliers', section: 'buying', page: 'Suppliers', render: renderSupplierBook, needs: 'insight', report: 'buying' },
+  { path: 'receipts', label: 'Receipts', section: 'buying', page: 'Receipts', render: renderReceipts, needs: 'admin', own: true },
+  { path: 'floats', label: 'Floats', section: 'buying', page: 'Floats', render: renderFloats, needs: 'admin', own: true },
+  { path: 'spend', label: 'Spend', section: 'buying', page: 'Spend', render: renderSpend, needs: 'insight', report: 'buying' },
+
+  // What the business made, the week's report from the other apps, the guests and the staff.
+  { path: 'money', label: 'Profit & loss', section: 'reports', page: 'Money', render: renderPnl, needs: 'insight' },
+  { path: 'yardstick', label: 'Health', section: 'reports', page: 'Money', render: renderFinancials, needs: 'insight' },
+  { path: 'cash', label: 'Cash & collections', section: 'reports', page: 'Money', render: renderCash, needs: 'insight' },
+  { path: 'management', label: 'Management report', section: 'reports', page: 'Management report', render: renderMgmt, needs: 'insight', ownHash: true, own: true },
+  { path: 'guests', label: 'Occupancy & spend', section: 'reports', page: 'Guests', render: renderDemand, needs: 'insight' },
+  { path: 'prepaid', label: 'Prepaid stays', section: 'reports', page: 'Guests', render: renderPrepaid, needs: 'insight', ownHash: true, own: true },
+  { path: 'labour', label: 'Staff costs', section: 'reports', page: 'Staff costs', render: renderLabour, needs: 'insight' },
+
+  // Who may do what, where the systems connect, the front desk's rules, and reports shared by PIN.
+  { path: 'accounts', label: 'People', section: 'settings', page: 'People & access', render: renderAccounts, needs: 'owner' },
+  { path: 'report-access', label: 'Reports they see', section: 'settings', page: 'People & access', render: renderReportAccess, needs: 'admin', own: true },
+  { path: 'setup', label: 'Connections', section: 'settings', page: 'Connections & files', render: renderSetup, needs: 'owner' },
+  { path: 'files', label: 'Shift files', section: 'settings', page: 'Connections & files', render: shiftsPart('files'), needs: 'shifts', part: 'files', still: true },
+  { path: 'rules', label: 'Front desk', section: 'settings', page: 'Rules', render: shiftsPart('settings'), needs: 'shifts', part: 'settings', still: true },
+  { path: 'reports', label: 'Shared reports', section: 'settings', page: 'Shared reports', render: renderReports, needs: 'owner' },
+
+  // The other systems, signed in: a page only for somebody given nothing here.
+  { path: 'hub', label: 'Systems', section: null, page: 'Systems', render: renderHub, needs: 'session' },
 ];
 
-/**
- * The screens in five groups, each a menu in the header. What somebody works
- * in (the front desk, the money they hold and spend) apart from what they
- * only read (Reports). Old addresses (#/findings, #/books) open the Brief.
- */
-const NAV_GROUPS = [
-  ['Today', ['hub', 'brief']],
-  ['Front desk', ['shifts', 'niceplace', 'upload']],
-  ['Money', ['safe', 'floats', 'receipts']],
-  ['Reports', ['management', 'money', 'yardstick', 'prepaid', 'cash', 'labour', 'guests', 'buying', 'reports']],
-  ['Admin', ['accounts', 'report-access', 'setup']],
-];
+/** Where an old address now goes: `#/buying` was Spend | Suppliers, `#/shifts?tab=inbox` the Inbox. */
+const ALIASES = { buying: 'spend', findings: 'brief', books: 'brief' };
 
-/** Everything on the reports side needs the reports grant. */
-for (const route of ROUTES) if (!route.needs) route.needs = 'insight';
+const ICONS = {
+  spark: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
+  desk: '<path d="M3 10h18M5 10v10M19 10v10M3 20h18M7 10V6a2 2 0 012-2h6a2 2 0 012 2v4"/>',
+  cart: '<path d="M3 4h2l2.4 10.5a2 2 0 002 1.5h7.7a2 2 0 002-1.5L21 8H6"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
+};
+export const icon = (name) => h('span.ic', { html: `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>` });
 
 function allowed(route) {
   const me = state.me?.account;
   if (!me) return false;
   if (route.needs === 'session') return true;
-  // Owners and admins load files under Shifts → Files; this page is for uploaders.
+  // Owners and admins load files under Settings › Connections & files; this page is for uploaders.
   if (route.needs === 'upload') return me.till?.role === 'uploader';
+  if (route.part && !(me.isOwner || me.bootstrap) && !shiftsParts(me.till)[route.part]) return false;
   if (me.isOwner || me.bootstrap) return true;
   if (route.needs === 'shifts') return ['admin', 'supervisor'].includes(me.till?.role);
   if (route.needs === 'owner') return false;
@@ -105,7 +127,7 @@ function allowed(route) {
   // The safe book is the admins'; a supervisor given Envelopes received sees that tab.
   if (route.needs === 'safe') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.envelopes || 0) >= 1);
   // A report page: every one for an admin, the ones shared with them for anybody else.
-  return me.canSeeReports === true || (me.reports || []).includes(route.path);
+  return me.canSeeReports === true || (me.reports || []).includes(route.report || route.path);
 }
 
 const root = document.getElementById('app');
@@ -117,11 +139,13 @@ start();
 async function start() {
   // An invitation's link opens its own page, signed in or not: the person
   // following it may be on a shared desk PC where somebody else is signed in.
-  // A to-do's email links straight to it: Shifts › Inbox with the to-do open.
+  // A to-do's email links straight to it: Front desk › Shifts › To sort out with the to-do open.
   const todo = /^#\/shifts\?(?:.*&)?todo=(\d+)/.exec(location.hash);
   if (todo) {
-    try { sessionStorage.setItem('insight-shifts-section', 'inbox'); sessionStorage.setItem('insight-shifts-opentodo', todo[1]); } catch { /* private mode */ }
+    try { sessionStorage.setItem('insight-shifts-opentodo', todo[1]); } catch { /* private mode */ }
+    history.replaceState(null, '', '#/inbox');
   }
+  if (/^#\/shifts\?(?:.*&)?tab=inbox/.test(location.hash)) history.replaceState(null, '', '#/inbox');
   const invited = /^#join=([A-Za-z0-9_-]+)/.exec(location.hash);
   if (invited) {
     return renderJoin(root, invited[1], () => {
@@ -146,6 +170,7 @@ function renderLogin(me = {}) {
 async function renderApp() {
   state.me = state.me?.account ? state.me : await api('/auth/me');
   const visible = ROUTES.filter(allowed);
+  const account = state.me.account || {};
 
   // Somebody who only has the hub must not be blocked by a warehouse that has
   // never been loaded, so the reports bootstrap is only fetched by people who
@@ -168,142 +193,178 @@ async function renderApp() {
   const last = boot.data.lastDay || boot.group.today;
   state.range = rangeFromHash(boot) || { from: shift(last, -29), to: last };
 
-  const view = h('div');
-  // The picker's own button says which days are on screen, so the label that
-  // used to sit beside the name would now be the same sentence twice.
-  const picker = rangePicker();
+  // The hub is a page only for somebody given nothing else; everybody else
+  // reaches the other systems from the apps button.
+  const shown = visible.some((r) => r.path !== 'hub') ? visible.filter((r) => r.path !== 'hub') : visible;
+  const sections = SECTIONS.map((s) => ({ ...s, routes: shown.filter((r) => r.section === s.id) })).filter((s) => s.routes.length);
+  const pagesOf = (s) => [...new Set(s.routes.map((r) => r.page))].map((page) => ({ page, routes: s.routes.filter((r) => r.page === page) }));
 
-  // Somebody with a handful of screens (a supervisor, an uploader) gets them
-  // as plain links; menus are for sorting many, not for hiding two.
-  const links = new Map();
-  const groupOf = new Map();
-  const menus = [];
-  const link = (route, spec) => {
-    const b = h(spec, { type: 'button', onclick: () => { closeMenus(); go(route.path); }, dataset: { path: route.path } }, route.label);
-    links.set(route.path, b);
-    return b;
-  };
-  // In each menu, in the order NAV_GROUPS gives.
-  const grouped = NAV_GROUPS.map(([name, paths]) => [name, paths.map((p) => visible.find((r) => r.path === p)).filter(Boolean)]).filter(([, rs]) => rs.length);
-  const loose = visible.filter((r) => !r.button && !NAV_GROUPS.some(([, paths]) => paths.includes(r.path)));
-  const flat = visible.filter((r) => !r.button).length <= 5;
-  const nav = h('nav.navgroups', { 'aria-label': 'Screens' },
-    flat ? visible.filter((r) => !r.button).map((r) => link(r, 'button.navlink'))
-      : [...grouped.map(([name, rs]) => {
-        if (rs.length === 1) return link(rs[0], 'button.navlink');
-        const menu = h('details.navmenu', h('summary', name), h('div.navpanel', rs.map((r) => link(r, 'button'))));
-        for (const r of rs) groupOf.set(r.path, [name, menu]);
-        menus.push(menu);
-        return menu;
-      }), ...loose.map((r) => link(r, 'button.navlink'))]);
-  // The two buttons used on the go, ✓ Approvals and ＋ PO: beside the menus, or
-  // on the top row beside the name on a phone, where the menus take a row of their own.
-  const quick = h('span.navquick');
-  // ✓ Approvals, with how many wait, for admins: read now, every five minutes, and after each decision.
-  if (visible.some((r) => r.path === 'approvals')) {
-    const n = h('span.ap-n');
-    const b = h('button.ap-nav', { type: 'button', 'aria-label': 'Approvals', onclick: () => { closeMenus(); go('approvals'); }, dataset: { path: 'approvals' } },
-      '✓', h('span.ap-w', ' Approvals'), n);
-    links.set('approvals', b);
-    quick.append(b);
-    const say = (count) => { n.textContent = count ? String(count) : ''; b.setAttribute('aria-label', `Approvals${count ? `, ${count} waiting` : ''}`); };
+  const view = h('div.pg-body');
+  const head = h('div.pg-head');
+  const picker = rangePicker();
+  const side = h('nav.side-nav', { 'aria-label': 'Main menu' });
+  const bottom = h('nav.bottom-nav', { 'aria-label': 'Main menu' });
+  const counts = h('span.cnt');
+  let currentRoute = null;
+
+  // The count of what waits for an admin, on the Assistant: read now, every five minutes, and after each decision.
+  if (shown.some((r) => r.count)) {
+    const say = (n) => { counts.textContent = n ? String(n) : ''; for (const el of document.querySelectorAll('.cnt-assistant')) el.textContent = n ? String(n) : ''; };
     window.addEventListener('approvals:count', (e) => say(e.detail));
     const ask = () => approvalsCount().then(say).catch(() => {});
     ask();
-    setInterval(() => { if (document.visibilityState === 'visible' && current() !== 'approvals') ask(); }, 300_000);
+    setInterval(() => { if (document.visibilityState === 'visible' && currentRoute?.path !== 'approvals') ask(); }, 300_000);
   }
-  // ＋ PO: Create PO from any screen, for admins.
-  const isAdmin = (state.me?.account?.till?.role || (state.me?.account?.isOwner ? 'admin' : null)) === 'admin';
-  if (isAdmin) quick.append(h('button.po-new', { type: 'button', 'aria-label': 'Create a purchase order', onclick: () => { closeMenus(); openNewPo(); } }, '＋ PO'));
-  // Where you are, said once beside the window: "Operations › Shifts".
-  const where = h('span.navwhere');
 
-  const account = h('details.navmenu.account',
-    h('summary', h('span.navav', (state.me.account?.name || '?').trim().charAt(0).toUpperCase()), h('span.navname', state.me.account?.name || 'Account')),
-    h('div.navpanel',
-      // An admin can look at Insight as somebody else sees it (look only).
-      state.me.account?.mayViewAs ? h('button', { type: 'button', onclick: () => { closeMenus(); openViewAs(); } }, '👁 View as somebody else…') : null,
-      h('button', { type: 'button', onclick: () => { toggleTheme(); closeMenus(); } }, '◐ Light or dark'),
-      h('button', {
-        type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); },
-      }, 'Sign out')));
-  menus.push(account);
-
-  // One menu open at a time, closed by a click elsewhere or Escape.
-  for (const menu of menus) {
-    menu.addEventListener('toggle', () => {
-      if (!menu.open) return;
-      for (const other of menus) if (other !== menu) other.open = false;
-      menu.querySelector('.navpanel button')?.focus();
-    });
+  function drawNav() {
+    const here = currentRoute;
+    mount(side, sections.map((s) => {
+      const on = here?.section === s.id;
+      const pages = pagesOf(s);
+      return h('div.side-sec',
+        h('button.side-b', { type: 'button', 'aria-current': on ? 'page' : null, onclick: () => go(s.routes[0].path) },
+          icon(s.icon), h('span', s.label), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null),
+        on && pages.length > 1 ? h('div.side-sub', pages.map((p) => h('button', {
+          type: 'button', 'aria-current': here.page === p.page ? 'page' : null, onclick: () => go(p.routes[0].path),
+        }, p.page))) : null);
+    }));
+    mount(bottom, sections.map((s) => h('button', { type: 'button', 'aria-current': here?.section === s.id ? 'page' : null, onclick: () => go(s.routes[0].path) },
+      icon(s.icon), h('span', s.label.split(' ')[0]), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null)));
   }
-  function closeMenus() { for (const menu of menus) menu.open = false; }
-  document.addEventListener('click', (event) => { if (!menus.some((m) => m.contains(event.target))) closeMenus(); });
-  document.addEventListener('keydown', (event) => {
-    const open = menus.find((m) => m.open);
-    if (!open) return;
-    if (event.key === 'Escape') { open.open = false; open.querySelector('summary').focus(); return; }
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const items = [...open.querySelectorAll('.navpanel button')];
-    const at = items.indexOf(document.activeElement);
-    items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
-    event.preventDefault();
+
+  /** Over the page: on a phone the section's pages; the page's own title, unless it says it itself; and its tabs. */
+  function drawHead(route) {
+    const s = sections.find((x) => x.id === route.section);
+    const pages = s ? pagesOf(s) : [];
+    const tabs = pages.find((p) => p.page === route.page)?.routes || [route];
+    mount(head,
+      pages.length > 1 ? h('div.seg.pg-pages', { role: 'tablist', 'aria-label': s.label }, pages.map((p) => h('button', {
+        type: 'button', role: 'tab', 'aria-selected': String(p.page === route.page), onclick: () => go(p.routes[0].path),
+      }, p.page))) : null,
+      route.own && tabs.length < 2 ? null : h('div.pg-title', route.own ? null : h('h1', route.page),
+        tabs.length > 1 ? h('div.seg', { role: 'tablist', 'aria-label': route.page }, tabs.map((r) => h('button', {
+          type: 'button', role: 'tab', 'aria-selected': String(r.path === route.path), onclick: () => go(r.path),
+        }, r.label))) : null));
+  }
+
+  const isAdmin = (account.till?.role || (account.isOwner ? 'admin' : null)) === 'admin';
+  const apps = h('div.pop.apps-pop', { hidden: true });
+  const appsBtn = h('button.icon-b', { type: 'button', 'aria-label': 'Open another system', 'aria-expanded': 'false', onclick: (e) => { e.stopPropagation(); toggle(apps, appsBtn); if (!apps.hidden && !apps.childElementCount) appsPanel(apps); } }, icon('grid'));
+  const me = h('div.pop.me-pop', { hidden: true },
+    h('div.me-who', h('b', account.name || 'Account'), h('small', roleName(account))),
+    account.mayViewAs ? h('button', { type: 'button', onclick: () => { closePops(); openViewAs(); } }, '👁 View as somebody else…') : null,
+    h('button', { type: 'button', onclick: () => { toggleTheme(); closePops(); } }, '◐ Light or dark'),
+    h('button', { type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); } }, 'Sign out'));
+  const meBtn = (cls) => h(`button.${cls}`, { type: 'button', 'aria-label': 'Your account', onclick: (e) => { e.stopPropagation(); e.currentTarget.parentElement.append(me); toggle(me, e.currentTarget); } },
+    h('span.av', (account.name || '?').trim().charAt(0).toUpperCase()),
+    cls === 'side-me' ? h('span.side-who', h('b', account.name || 'Account'), h('small', roleName(account))) : null);
+
+  function toggle(pop, btn) {
+    const open = pop.hidden;
+    closePops();
+    pop.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+  }
+  function closePops() {
+    for (const p of [apps, me]) p.hidden = true;
+    for (const b of document.querySelectorAll('[aria-expanded]')) b.setAttribute('aria-expanded', 'false');
+  }
+  document.addEventListener('click', (e) => { if (!apps.contains(e.target) && !me.contains(e.target)) closePops(); });
+
+  const palette = () => openPalette({
+    pages: shown.map((r) => ({ label: r.page === r.label ? r.label : `${r.page} › ${r.label}`, section: sections.find((s) => s.id === r.section)?.label || '', go: () => go(r.path) })),
+    actions: [
+      isAdmin ? { label: 'New purchase order', go: () => openNewPo() } : null,
+      shown.some((r) => r.path === 'floats') ? { label: 'Give money (floats)', go: () => go('floats') } : null,
+      shown.some((r) => r.path === 'safe') ? { label: 'Count the safe', go: () => go('safe') } : null,
+      account.mayViewAs ? { label: 'View as somebody else', go: () => openViewAs() } : null,
+      { label: 'Light or dark', go: toggleTheme },
+    ].filter(Boolean),
+    suppliers: shown.some((r) => r.path === 'suppliers') ? () => go('suppliers') : null,
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palette(); }
+    if (e.key === 'Escape') closePops();
   });
 
   mount(root,
-    h('header.top',
-      // Looking as somebody else: said on top of every screen, with the way back.
-      state.me.account?.viewedBy ? viewAsBar(state.me.account) : null,
-      h('span.brand', markGlyph(), h('span.brand-n', boot.group.name, h('span.brand-x', ' · Insight'))),
-      nav,
-      quick.childElementCount ? quick : null,
-      h('span.spacer'),
-      where,
-      picker,
-      account),
-    h('main', view));
+    h('div.shell',
+      h('aside.side',
+        h('div.side-brand', markGlyph(), h('span', h('b', boot.group.name), h('small', 'Insight'))),
+        side,
+        h('span.grow'),
+        h('div.side-foot', meBtn('side-me'))),
+      h('div.shell-main',
+        account.viewedBy ? viewAsBar(account) : null,
+        h('header.top',
+          h('button.search', { type: 'button', onclick: palette }, icon('search'), h('span', 'Search Insight…'), h('kbd', 'Ctrl K')),
+          h('span.spacer'),
+          picker,
+          isAdmin ? h('button.chip-b.po-new', { type: 'button', 'aria-label': 'Create a purchase order', onclick: () => openNewPo() }, icon('plus'), h('span', 'New PO')) : null,
+          h('div.pop-at', appsBtn, apps),
+          h('div.pop-at.top-me', meBtn('icon-b'), me)),
+        h('main', head, view))),
+    bottom);
 
   state.reload = () => go(current());
-  window.addEventListener('hashchange', () => (location.hash.startsWith('#join=') ? start() : go(current())));
+  // A part of Shifts that moved to another (a shift opened from To sort out):
+  // the address and the menu follow without drawing the page again.
+  let quiet = null;
+  window.addEventListener('hashchange', () => {
+    if (location.hash.startsWith('#join=')) { start(); return; }
+    if (quiet && location.hash === quiet) { quiet = null; return; }
+    go(current());
+  });
   await go(current());
 
   function current() {
-    const path = location.hash.replace(/^#\/?/, '').split('?')[0];
-    if (visible.some((r) => r.path === path)) return path;
-    // The hub for anybody whose account is only a way into the other systems;
-    // the brief for anybody who came here for the numbers.
-    return visible.some((r) => r.path === 'brief') ? 'brief' : visible.some((r) => r.path === 'shifts') ? 'shifts'
-      : visible.some((r) => r.path === 'upload') ? 'upload'
-        : visible.find((r) => r.needs === 'insight')?.path || 'hub';
+    const raw = location.hash.replace(/^#\/?/, '').split('?')[0];
+    const path = ALIASES[raw] || raw;
+    if (shown.some((r) => r.path === path)) return path;
+    // Whatever needs this person first: the Assistant, the shifts, the files, the reports, or the systems.
+    return shown.find((r) => r.section === 'assistant')?.path || shown.find((r) => r.section === 'desk')?.path
+      || shown.find((r) => r.needs === 'insight')?.path || shown[0].path;
+  }
+
+  function hashFor(route) {
+    const own = route.ownHash && location.hash.split('?')[0] === `#/${route.path}`;
+    return own ? location.hash
+      : windowed(route) ? `#/${route.path}?from=${state.range.from}&to=${state.range.to}`
+        : `#/${route.path}`;
+  }
+
+  /** Days matter on this page: the window rides in its address and the picker shows. */
+  function windowed(route) {
+    return !route.ownHash && !route.still && (route.needs === 'insight' || route.needs === 'shifts');
+  }
+
+  function moved(path) {
+    const route = shown.find((r) => r.path === path);
+    if (!route || route === currentRoute) return;
+    currentRoute = route;
+    const want = hashFor(route);
+    if (location.hash !== want) { quiet = want; location.hash = want; }
+    drawNav();
+    drawHead(route);
   }
 
   async function go(path) {
-    const route = visible.find((r) => r.path === path) || visible[0];
+    const route = shown.find((r) => r.path === path) || shown[0];
+    currentRoute = route;
     // The window rides in the address, so a reload keeps it and a link to a
     // screen is a link to the days somebody was actually looking at.
-    const own = route.ownHash && location.hash.split('?')[0] === `#/${route.path}`;
-    const want = own ? location.hash
-      : !route.ownHash && (route.needs === 'insight' || route.needs === 'shifts')
-        ? `#/${route.path}?from=${state.range.from}&to=${state.range.to}`
-        : `#/${route.path}`;
-    if (location.hash !== want) location.hash = want;
-    for (const [path, button] of links) {
-      if (path === route.path) button.setAttribute('aria-current', 'page');
-      else button.removeAttribute('aria-current');
-    }
-    for (const menu of menus) menu.classList.toggle('on', groupOf.get(route.path)?.[1] === menu);
-    const [group] = groupOf.get(route.path) || [];
-    where.textContent = group ? `${group} › ` : '';
-    if (group) where.append(h('b', route.label));
-    // The window means nothing on the hub or the accounts screen, so neither
-    // the label nor the picker appears there.
-    const windowed = !route.ownHash && (route.needs === 'insight' || route.needs === 'shifts');
-    if (picker) picker.style.display = windowed ? '' : 'none';
+    const want = hashFor(route);
+    if (location.hash !== want) { quiet = want; location.hash = want; }
+    closePops();
+    drawNav();
+    drawHead(route);
+    document.title = `${route.page === route.label ? route.label : `${route.page} · ${route.label}`} · Insight`;
+    if (picker) picker.style.display = windowed(route) ? '' : 'none';
     mount(view, h('p.muted', 'Reading…'));
     try {
       const fresh = h('div');
-      await route.render(fresh, { range: state.range, boot });
-      mount(view, fresh);
+      await route.render(fresh, { range: state.range, boot, moved });
+      if (currentRoute === route) mount(view, fresh);
     } catch (err) {
       mount(view, h('div.card',
         h('h2', 'That did not work'),
@@ -411,7 +472,7 @@ async function renderApp() {
       }
       if (first && state.range.from < first) {
         return `The warehouse only holds ${first} onwards, so the days before that will be empty. `
-          + 'Setup → Loads → "Load these days instead" goes and fetches them.';
+          + 'Settings › Connections & files › Loads → "Load these days instead" goes and fetches them.';
       }
       return '';
     }
@@ -489,3 +550,9 @@ try {
   const saved = localStorage.getItem('insight-theme');
   if (saved) document.documentElement.dataset.theme = saved;
 } catch { /* private browsing */ }
+
+/** What somebody is, in a word, under their name. */
+function roleName(account) {
+  if (account.isOwner) return 'Owner';
+  return ({ admin: 'Admin', supervisor: 'Supervisor', uploader: 'Uploader', reports: 'Reports only' })[account.till?.role] || '';
+}

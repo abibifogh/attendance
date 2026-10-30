@@ -7,7 +7,7 @@ a receipt or invoice, or something else.
 
 ## Who can ask
 
-Admins, always. An admin can let a supervisor ask too: Shifts › Settings ›
+Admins, always. An admin can let a supervisor ask too: Settings › Rules ›
 access, **Ask for proof** (*See* shows the proof sent; *See and act* lets them
 ask). It is in neither preset.
 
@@ -20,7 +20,7 @@ what ("the MoMo message showing the 9:51pm payment was declined"), and
 
 The request goes to whoever gave the answer:
 
-- **A supervisor's answer in Insight:** their Shifts › Inbox › **Proof asked**,
+- **A supervisor's answer in Insight:** their Front desk › Shifts › To sort out › **Proof asked**,
   and an email. The card of the answer itself also has a **Send it here** box
   for them, wherever they open it, so they can send from there too.
 - **A staff member's answer from HIVE (My till):** their **To sort out** in

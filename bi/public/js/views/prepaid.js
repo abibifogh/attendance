@@ -63,7 +63,7 @@ export async function renderPrepaid(root) {
         tile('Reservations arriving', String(t.count), `${money(t.charged)} charged`),
         tile('Prepaid', money(t.prepaid), `${pct(t.share)} of what was charged`),
         tile('Prepaid in full', String(t.full), `and ${t.part} part prepaid · ${t.none} not prepaid`),
-        tile('Still owing', money(t.owing), t.owingCount ? `${t.owingCount} reservation${t.owingCount === 1 ? '' : 's'} · see Shifts → Inbox → Unpaid stays` : 'Nothing owed')),
+        tile('Still owing', money(t.owing), t.owingCount ? `${t.owingCount} reservation${t.owingCount === 1 ? '' : 's'} · see Front desk › Shifts › To sort out › Unpaid stays` : 'Nothing owed')),
 
       h('div.pp-grid',
         h('section.card',

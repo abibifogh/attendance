@@ -35,7 +35,7 @@ const AREA_TEXT = {
   proof: ['Ask for proof', 'Act means ask whoever gave an answer for pictures or a PDF (a MoMo screenshot, a slip, a statement). See means see the proof sent.'],
   niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
   check: ['Check shifts', 'Act means mark a shift checked once its report, drawer and payments are looked at. Until then its person sees its differences as “not checked yet”: the amounts may change.'],
-  envelopes: ['Envelopes received (Money › Safe)', 'Every envelope moved to the safe, with its amount, and which have reached it. Act means mark them received, with the count, or undo that.'],
+  envelopes: ['Envelopes received (Front desk › Safe)', 'Every envelope moved to the safe, with its amount, and which have reached it. Act means mark them received, with the count, or undo that.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
@@ -690,7 +690,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         }, label))))));
     };
     return h('div.card',
-      h('div.sh-cardhead', h('h2', 'Who sees what'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Accounts. Pick what each one gets; Custom sets each part by hand.')),
+      h('div.sh-cardhead', h('h2', 'Who sees what'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Settings › People & access. Pick what each one gets; Custom sets each part by hand.')),
       s.supervisors.length ? null : banner('info', 'Nobody is a supervisor yet. Under Accounts, set somebody’s Insight access to Supervisor.'),
       h('div.tl-people', people.map((p) => {
         const custom = customFor === p.id || presetOf(levelsFor(p.id)) === 'custom';

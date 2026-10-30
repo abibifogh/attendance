@@ -23,7 +23,7 @@ export async function renderBrief(root, { range }) {
   add(root, 
     data.demoMode ? banner('demo',
       h('strong', 'Demonstration data. '),
-      'Nothing here comes from the business. Every figure is generated from a fixed seed so the screens can be judged before a single system is connected. Connect a source in Setup and the whole of it is replaced.') : null,
+      'Nothing here comes from the business. Every figure is generated from a fixed seed so the screens can be judged before a single system is connected. Connect a source in Settings › Connections & files and the whole of it is replaced.') : null,
 
     problems.length ? banner('problem',
       h('strong', `${problems.length} source${problems.length > 1 ? 's are' : ' is'} not being read. `),

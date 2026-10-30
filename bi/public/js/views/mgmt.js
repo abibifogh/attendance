@@ -99,18 +99,10 @@ export async function renderMgmt(root) {
       r.maintenance?.skipped ? null : maintenance(r.maintenance),
       r.skip.length ? h('p.small.muted.mg-left', `Left out of this report: ${r.sections.filter((x) => r.skip.includes(x.key)).map((x) => x.label).join(', ')}. Press it under Include to put it back.`) : null,
 
-      h('section.mg-src.mg-soonsec.mg-noprint',
-        h('div.mg-srchead', h('h2', 'Coming next'), h('span', 'each a section like the two above, and lines in “Needs your attention”')),
-        h('div.mg-soon',
-          soon('Front desk & shifts', 'Drawer differences, card and MoMo, unpaid stays.'),
-          soon('Laundry', 'Orders and takings, against ASSD.'),
-          soon('Restaurant & bar', 'POS sales and food cost.'),
-          soon('Nice Place', 'The washroom counters against takings.'))),
       isAdmin ? mailCard() : null,
       h('p.mg-foot', `Made by Insight, ${new Date(r.made).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}. Each system's figures are its own, as its own screens show them.`));
   }
 
-  function soon(title, words) { return h('div', h('b', title), h('br'), words); }
 
   // ------------------------------------------------------------ breakfast --
   function breakfast(b) {

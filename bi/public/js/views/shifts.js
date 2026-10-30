@@ -189,7 +189,39 @@ const GLYPHS = {
 };
 const glyph = (slot) => h('span', { html: GLYPHS[slot], style: 'display:inline-flex' });
 
-export async function renderShifts(root, { range }) {
+/**
+ * Which parts of Shifts somebody may open: an admin, all of them; a
+ * supervisor, what an admin gave them under Settings. Insight's menu asks
+ * this too, so it only offers the parts a person will get.
+ */
+export function shiftsParts(till) {
+  const who = till || { role: 'admin', access: {} };
+  const admin = who.role === 'admin';
+  const may = (area, level = 1) => admin || (who.access?.[area] || 0) >= level;
+  const can = inboxSources(who);
+  return {
+    shifts: PERIODS.some((p) => may(p)) || may('money'),
+    inbox: Object.values(can).some(Boolean),
+    people: may('net') || may('answers'), reports: may('reports'), files: may('files'), settings: admin,
+  };
+}
+
+/** What each source of the Inbox needs. */
+function inboxSources(who) {
+  const admin = who.role === 'admin';
+  const may = (area, level = 1) => admin || (who.access?.[area] || 0) >= level;
+  return {
+    exceptions: may('bank') || may('moves'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
+    answers: may('answers'), advances: may('advances'), approvals: admin, niceplace: may('niceplace'),
+  };
+}
+
+/**
+ * `section` opens one part, the rest reached from Insight's menu rather than
+ * tabs here; `onSection` is told when a click moves to another part (a shift
+ * opened from the Inbox), so the menu and the address follow.
+ */
+export async function renderShifts(root, { range, section: only = null, onSection = null }) {
   const view = h('div.sh');
   add(root, view);
 
@@ -210,18 +242,10 @@ export async function renderShifts(root, { range }) {
   const seesEx = (x) => may('bank') || (may('moves') && CASH_GROUPS.has(x.group));
   const actsOn = (x) => may('bank', 2) || (may('moves', 2) && CASH_GROUPS.has(x.group));
   const periods = PERIODS.filter((p) => may(p));
-  // What each source of the Inbox needs.
-  const can = {
-    exceptions: may('bank') || may('moves'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
-    answers: may('answers'), advances: may('advances'), approvals: admin, niceplace: may('niceplace'),
-  };
-  const allowed = {
-    shifts: periods.length > 0 || may('money'),
-    inbox: Object.values(can).some(Boolean),
-    people: may('net') || may('answers'), reports: may('reports'), files: may('files'), settings: admin,
-  };
+  const can = inboxSources(who);
+  const allowed = shiftsParts(who);
   const views = TABS.filter(([id]) => allowed[id]);
-  let section = store.get('section', 'shifts');
+  let section = only || store.get('section', 'shifts');
   section = MOVED[section] || section;
   if (!views.some(([id]) => id === section)) section = views[0]?.[0] || 'shifts';
   // Day, week or month, and the day it is anchored on. The anchor follows the
@@ -603,7 +627,9 @@ export async function renderShifts(root, { range }) {
   /** The number on a tab: what waits in it. */
   const badgeOf = (id) => (id === 'inbox' ? inboxItems().filter((x) => x.counts).length : 0);
 
+  let said = only;
   function paint(notice = null) {
+    if (onSection && section !== said) { said = section; onSection(section); }
     const has = shifts.length > 0;
     const v = h('div.sh-view');
     const people = new Set(shifts.map((s) => s.user)).size;
@@ -613,10 +639,11 @@ export async function renderShifts(root, { range }) {
       // apart from Insight's top bar above them.
       h('div.sh-band',
       h('div.sh-head',
-        h('h1', 'Shifts'),
+        // A part on its own page has its title over it, from Insight's menu.
+        only ? null : h('h1', 'Shifts'),
         h('span.sh-count', has ? `${shifts.length} shift${shifts.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}` : 'No shifts loaded for these days')),
       h('div.sh-nav',
-        views.length > 1 ? h('div.sh-groups', { role: 'tablist', 'aria-label': 'Parts of Shifts' }, views.map(([id, label]) => h('button', {
+        views.length > 1 && !only ? h('div.sh-groups', { role: 'tablist', 'aria-label': 'Parts of Shifts' }, views.map(([id, label]) => h('button', {
           type: 'button', role: 'tab', 'aria-selected': String(section === id), dataset: { tab: id }, onclick: () => go(id),
         }, label, badgeOf(id) ? h('span.sh-badge', String(badgeOf(id))) : null))) : null,
         h('span.sh-rule', { 'aria-hidden': 'true' }),

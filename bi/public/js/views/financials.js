@@ -104,7 +104,7 @@ function basisCard(data) {
         h('strong', 'Odoo does not reach every line yet.'),
         ` ${b.uncovered.map((l) => `${l.label} (${money(l.amount)})`).join(', ')} still come from the `
         + 'operating systems, because no Odoo bill in this window was attributed to them. That is '
-        + 'usually the line map in Setup rather than missing bills — until it is fixed, those lines '
+        + 'usually the line map in Settings › Connections & files rather than missing bills — until it is fixed, those lines '
         + 'are costed from a delivery note rather than an invoice.')
       : null);
 }
@@ -126,7 +126,7 @@ function standingCard(data, t) {
       stat('Operating profit', money(t.operatingProfit),
         data.structure.standingKnown
           ? `after ${money(t.standing)} of rent, power and the rest`
-          : 'rent and power are in no connected system, so this is contribution — set them in Setup'),
+          : 'rent and power are in no connected system, so this is contribution — set them in Settings › Connections & files'),
       tile({ label: 'Wages', value: t.labour, unit: 'money', changePct: data.movement.labour, goodWhen: 'down' })));
 }
 
@@ -156,7 +156,7 @@ function breakEvenCard(data, be) {
       ? banner('warning',
         h('strong', 'Rent and power are not in this figure.'),
         ' They are in none of the five connected systems, so the break-even below is understated by '
-        + 'exactly that amount and the margin of safety is flattered by it. One number in Setup — '
+        + 'exactly that amount and the margin of safety is flattered by it. One number in Settings › Connections & files — '
         + 'roughly right is enough — makes every figure on this card true.')
       : null,
 

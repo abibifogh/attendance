@@ -5,7 +5,7 @@ supplies. They send a picture of each receipt from their own link; each
 becomes a draft PO in Odoo marked with **their reference**, and comes off what
 they hold.
 
-## Giving money (Money › Floats)
+## Giving money (Buying › Floats)
 
 - **＋ Give money**: choose the person, or somebody new (their name and their
   reference, e.g. `KOFI`), how much, the day, and where it came from (the
@@ -28,7 +28,7 @@ On their link they see what they still hold, add receipts (one or several
 pictures, or a PDF), and see each one's state: Being checked, ✓ Accepted,
 ✕ Refused (with why), or Could not be read (the office fills it in).
 
-Each receipt is read like Money › Receipts (vendor, total, date, what was
+Each receipt is read like Buying › Receipts (vendor, total, date, what was
 bought) and becomes a **draft PO** in Odoo with:
 
 | In Odoo | What goes there |
@@ -74,6 +74,6 @@ On a person, **⬇ Statement**: choose the dates, then
   statements. `src/routes/receipts.js` reads the receipt and makes the PO
   (`mark` carries the reference); `src/connectors/odoo.js` `createDraftPo`
   sets `partner_ref`.
-- `public/js/views/floats.js` (Money › Floats), `public/float.html` and
+- `public/js/views/floats.js` (Buying › Floats), `public/float.html` and
   `public/js/float.js` (their link).
 - Tables `float_person`, `float_move`, `float_receipt` (migration 0040).

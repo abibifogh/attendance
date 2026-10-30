@@ -35,7 +35,7 @@ clearer picture, or send this one as it is:
   with that counter empty, and the phone says the manager will read it. The
   shift is not counted until all four are in.
 - **An admin or a supervisor** then reads it off the picture. It shows in
-  Shifts › Inbox under **Nice Place** ("Read GT off the picture"), and on the
+  Front desk › Shifts › To sort out under **Nice Place** ("Read GT off the picture"), and on the
   Nice Place page as **! Counter to read**, with a banner. The picture sits
   beside four boxes: the counters read are filled in, the missing one is
   empty, and each shows the last reading under it. **Try reading again** asks

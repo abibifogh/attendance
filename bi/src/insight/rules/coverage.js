@@ -45,7 +45,7 @@ export const coverageGaps = {
         line: null,
         headline: `${source.label} is not being read`,
         detail: `${source.detail || 'No reason given.'} Every figure on this dashboard is missing whatever ${source.label.toLowerCase()} would have contributed.`,
-        action: 'Connect it in Setup, or switch it off so the totals stop pretending it is there.',
+        action: 'Connect it in Settings › Connections & files, or switch it off so the totals stop pretending it is there.',
         impactMonthly: 0,
         confidence: 'high',
         sources: [source.id],

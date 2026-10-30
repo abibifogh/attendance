@@ -56,7 +56,7 @@ The item then leaves the list and the count goes down.
 
 **Open in HIVE ↗** opens the same screen in HIVE, in a new tab, for anything
 you want to look at more closely (a document's file, a medical receipt, the
-rota around a swap). An Insight item opens Shifts › Inbox.
+rota around a swap). An Insight item opens Front desk › Shifts › To sort out.
 
 ## When something goes wrong
 
