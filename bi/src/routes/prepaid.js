@@ -198,7 +198,7 @@ export async function prepaidCsv(env, query = {}) {
 
 // ------------------------------------------------------------------ mail --
 
-async function mailSettings(env) {
+export async function mailSettings(env) {
   const raw = (await getSettings(env.DB).catch(() => ({})))[SETTING];
   let s = {};
   try { s = JSON.parse(raw || '{}'); } catch { s = {}; }
@@ -343,10 +343,10 @@ async function askAdmins(env, { month, coverage, base, fetchImpl }) {
   const html = frame(`
     <h1 style="margin:0 0 10px;font-size:21px;color:#111110">${esc(name)}’s prepaid summary is waiting for you</h1>
     <p style="margin:0 0 12px">It was not sent this morning: ${esc(where)}, so the month is not complete and the figures would be short.</p>
-    <p style="margin:0 0 16px">Load the rest of ${esc(name)}’s ASSD journal under Shifts → Files, then open Prepaid stays and press <strong>Send to everyone</strong>. Or send it as it is from the same page.</p>
+    <p style="margin:0 0 16px">Load the rest of ${esc(name)}’s ASSD journal under Settings › Connections & files › Shift files, then open Prepaid stays and press <strong>Send to everyone</strong>. Or send it as it is from the same page.</p>
     ${link ? `<a href="${esc(link)}" style="display:inline-block;background:#2a78d6;color:#ffffff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 20px">Open Prepaid stays</a>` : ''}
     <p style="margin:18px 0 0;padding-top:12px;border-top:1px solid #ecebe6;font-size:12px;color:#6b6a64">You get this because you are an admin in Insight.</p>`);
-  const text = `${name}'s prepaid summary is waiting for you. ${where}, so the month is not complete. Load the rest of the journal under Shifts → Files, then open Prepaid stays and press Send to everyone.${link ? `\n${link}` : ''}`;
+  const text = `${name}'s prepaid summary is waiting for you. ${where}, so the month is not complete. Load the rest of the journal under Settings › Connections & files › Shift files, then open Prepaid stays and press Send to everyone.${link ? `\n${link}` : ''}`;
   for (const one of (await adminEmails(env)).slice(0, 10)) {
     // eslint-disable-next-line no-await-in-loop
     await callLink({

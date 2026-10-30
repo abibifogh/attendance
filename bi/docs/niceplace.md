@@ -4,24 +4,95 @@ Nice Place is the public washroom. Four door counters count movements: **GB**
 gents bath, **GT** gents toilet, **LB** ladies bath, **LT** ladies toilet. A
 person going in and out is 2. The counters keep adding up.
 
-Insight holds the counters, shift by shift (day and night), against the money
-the monthly income workbook reports, the toilets and the showers apart.
+Insight holds the counters, shift by shift, against the money the desk sends
+with them (or, for older months, the income workbook), the toilets and the
+showers apart. From the money for children and adults, and the prices, it
+works out how many people paid, and holds that against the people counted.
+
+The shifts: **Day 03:30 to 13:30**, **Night 13:30 to 23:00** (Accra time).
+
+## The short link
+
+Under the staff link, **Set the ending** gives it a short address you choose,
+like the floats': `https://insight.niceoperation.com/niceplace`. 2 to 30
+letters, numbers or dashes; not one of Insight's own (api, np, float, …) nor a
+published report's. The short link opens the desk page, and the app put on a
+phone from it opens there too. A new ending stops the old one; an empty one
+takes the short link away and the long one (`/np#code`) still works. Anybody
+who knows the short link can open the page, so choose one that is not
+guessed by chance if that matters.
+
+## On the phone, as an app
+
+**The desk.** Open the staff link once on the desk phone and press **Put
+Nice Place on this phone** (on an iPhone: Share, then Add to Home Screen). It
+becomes the Nice Place app, a water drop on the home screen, opening straight
+on the desk page with one tap. The link's code is built into the app (an app
+on an iPhone's home screen keeps nothing the browser knew), so **New link**
+stops the old app as well: open the new link and put it on the phone again.
+
+**The supervisor.** Insight installs the same way: **Install Insight on this
+phone** in the account menu, in search, or at the top of Pickups. Its
+shortcuts open the Assistant, Shifts and Nice Place pickups.
+
+Neither keeps anything on the phone: everything is read fresh each time, and
+with no connection a page says so plainly.
+
+## The desk: each shift's sales
+
+On the phone at the desk, from the staff link, made as big and plain as it
+can be for the ladies who use it:
+
+1. **Tap your name.** The phone remembers it ("Not you?" changes it).
+2. **The money.** The date and the shift are already there in big letters,
+   from the clock read an hour back, so at 13:40 it is still the day shift
+   being sent; "This is not my shift" offers the last four. Four big boxes:
+   the shower for children and adults, the toilet for children and adults,
+   in GH₵. The shower total, the toilet total and all the money add up as she
+   types. A shift sent already says so.
+3. **One picture of the counters**, read as below.
+4. **Sent**: a big tick, what was sent, and what to write on the envelope
+   (e.g. "30 Oct · Day").
+
+The money goes where the workbook's did (`np_revenue`, marked "Desk: name"),
+so everything below works from it unchanged, and the workbook is only needed
+for months before the desk sent its own.
+
+## Pickups
+
+Front desk › Nice Place › **Pickups**: for admins, and supervisors given
+**Nice Place pickups** (Settings › People & access › Supervisors; the preset
+of the same name gives it with Nice Place counters). See looks; Act makes
+pickups.
+
+1. **Start a pickup.** Every shift sent since the last pickup is listed with
+   its money, all ticked; untick one not in the safe. Shifts with no sales
+   sent are listed in red, to chase.
+2. **Paid from this money.** What, how much, from whom, and a picture of the
+   receipt. Each is read and made a draft PO in Odoo carrying its reference
+   (`NP/PU/014-1`, on the PO as Vendor Reference and Source Document), as a
+   float's receipts are. One can be taken off before recording; its draft PO
+   stays in Odoo to cancel there.
+3. **The money.** Sales of the ticked shifts, less what was spent, is the
+   net cash. Type what was counted; if it differs, say why. **Record the
+   pickup.**
+
+Each envelope is picked up once. The counted cash goes into the main safe's
+book (Front desk › Safe) on the day of the pickup, and into the next count.
+Admins see every pickup (sales, spent, net cash, counted, the difference) and
+**Approve** or **Ask** the supervisor; the Assistant lists the ones waiting,
+and shifts with no sales sent.
 
 ## The staff link
 
-Operations › Nice Place › **Make the link** (admins). Copy it and send it to
+Front desk › Nice Place › **Make the link** (admins). Copy it and send it to
 the staff; they keep it on their phone. It needs no account: the code after
 `#` in the address is the key. **New link** makes another, and the old one
 stops working.
 
-At the end of each shift, the person on:
-
-1. chooses their name (Settings › Names on the link holds the list);
-2. checks the date and shift (the one after the last sent is suggested);
-3. takes one picture of the four counters: the four numbers fill in by
-   themselves, read off the picture, and cannot be typed over;
-4. checks them against the counters (one wrong means a new picture) and
-   presses **Send**. Only the name and the picture are needed.
+At the end of each shift, the person on sends the money and one picture, as
+under The desk above. Settings › Rules › Nice Place › Names on the link holds
+the names.
 
 **Reading the picture.** Cloudflare's Workers AI (model Llama 4 Scout, on
 the same Cloudflare account, no key) reads each counter. A counter it cannot
@@ -35,7 +106,7 @@ clearer picture, or send this one as it is:
   with that counter empty, and the phone says the manager will read it. The
   shift is not counted until all four are in.
 - **An admin or a supervisor** then reads it off the picture. It shows in
-  Shifts › Inbox under **Nice Place** ("Read GT off the picture"), and on the
+  Front desk › Shifts › To sort out under **Nice Place** ("Read GT off the picture"), and on the
   Nice Place page as **! Counter to read**, with a banner. The picture sits
   beside four boxes: the counters read are filled in, the missing one is
   empty, and each shows the last reading under it. **Try reading again** asks

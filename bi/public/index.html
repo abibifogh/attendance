@@ -3,10 +3,72 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script>
+    // Always the secure address: typed without https://, a phone opens it as http://, says "Not secure",
+    // and will not put it on the home screen as an app.
+    if (location.protocol === 'http:' && location.hostname !== 'localhost') location.replace('https:' + location.href.slice(5));
+  </script>
   <title>Insight</title>
   <meta name="description" content="The group's attendance, front desk, breakfast, restaurant, laundry and accounts, read together.">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f7f9">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Insight">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- The font loads beside the page, not before it: until it comes, the phone's own font is used. -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"></noscript>
   <link rel="stylesheet" href="/styles.css">
+  <!-- Every module app.js loads, fetched at once rather than one layer at a time (test/preload.test.js keeps this list whole). -->
+  <link rel="modulepreload" href="/js/api.js">
+  <link rel="modulepreload" href="/js/charts.js">
+  <link rel="modulepreload" href="/js/crypto.js">
+  <link rel="modulepreload" href="/js/difftable.js">
+  <link rel="modulepreload" href="/js/glyphs.js">
+  <link rel="modulepreload" href="/js/install.js">
+  <link rel="modulepreload" href="/js/pdf-lines.js">
+  <link rel="modulepreload" href="/js/recon.js">
+  <link rel="modulepreload" href="/js/shift-files.js">
+  <link rel="modulepreload" href="/js/util.js">
+  <link rel="modulepreload" href="/js/views/accounts.js">
+  <link rel="modulepreload" href="/js/views/advances.js">
+  <link rel="modulepreload" href="/js/views/approvals.js">
+  <link rel="modulepreload" href="/js/views/assistant.js">
+  <link rel="modulepreload" href="/js/views/brief.js">
+  <link rel="modulepreload" href="/js/views/cash.js">
+  <link rel="modulepreload" href="/js/views/components.js">
+  <link rel="modulepreload" href="/js/views/demand.js">
+  <link rel="modulepreload" href="/js/views/files.js">
+  <link rel="modulepreload" href="/js/views/financials.js">
+  <link rel="modulepreload" href="/js/views/floats.js">
+  <link rel="modulepreload" href="/js/views/hub.js">
+  <link rel="modulepreload" href="/js/views/join.js">
+  <link rel="modulepreload" href="/js/views/labour.js">
+  <link rel="modulepreload" href="/js/views/login.js">
+  <link rel="modulepreload" href="/js/views/mgmt.js">
+  <link rel="modulepreload" href="/js/views/moneycash.js">
+  <link rel="modulepreload" href="/js/views/newpo.js">
+  <link rel="modulepreload" href="/js/views/niceplace.js">
+  <link rel="modulepreload" href="/js/views/np-review.js">
+  <link rel="modulepreload" href="/js/views/nppickups.js">
+  <link rel="modulepreload" href="/js/views/palette.js">
+  <link rel="modulepreload" href="/js/views/pnl.js">
+  <link rel="modulepreload" href="/js/views/prepaid.js">
+  <link rel="modulepreload" href="/js/views/proof.js">
+  <link rel="modulepreload" href="/js/views/receipts.js">
+  <link rel="modulepreload" href="/js/views/reportaccess.js">
+  <link rel="modulepreload" href="/js/views/reports.js">
+  <link rel="modulepreload" href="/js/views/safe.js">
+  <link rel="modulepreload" href="/js/views/setup.js">
+  <link rel="modulepreload" href="/js/views/shifts.js">
+  <link rel="modulepreload" href="/js/views/speed.js">
+  <link rel="modulepreload" href="/js/views/supplierbook.js">
+  <link rel="modulepreload" href="/js/views/suppliers.js">
+  <link rel="modulepreload" href="/js/views/till.js">
+  <link rel="modulepreload" href="/js/views/todo.js">
+  <link rel="modulepreload" href="/js/views/viewas.js">
   <!-- The letter i made of the four systems' bars, the tallest one dotted. -->
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-180.png">
@@ -17,5 +79,12 @@
     <p style="padding:2rem;color:#898781">Loading…</p>
   </div>
   <script type="module" src="/js/app.js"></script>
+  <script>
+    // A phone whose browser cannot run Insight says so, instead of "Loading…" for ever.
+    setTimeout(function () {
+      if (window.insightStarted) return;
+      document.getElementById('app').innerHTML = '<div style="padding:2rem;max-width:30rem;margin:0 auto;font:17px/1.5 system-ui,sans-serif"><b style="font-size:1.3rem">Update this phone\'s browser</b><p>Its internet browser is too old for Insight. Open the <b>Play Store</b> (or the App Store), search for <b>Chrome</b> and press <b>Update</b>, then open Insight again in Chrome.</p></div>';
+    }, 10000);
+  </script>
 </body>
 </html>

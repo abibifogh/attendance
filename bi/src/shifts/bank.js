@@ -18,7 +18,9 @@ import { toMinor } from '../lib/money.js';
  * - **commission**: `comm_` and the same particular. The bank's fee, about 1%,
  *   debited separately. Never a shift's shortfall.
  * - **momo**: a mobile-money receipt, posted to the second:
- *   `GTB/<MERCHANT>//<ref><dd/mm/yyyy hh:mm:ss>`. A second, batched form
+ *   `GTB/<MERCHANT>//<ref><dd/mm/yyyy hh:mm:ss>`, or with words between the
+ *   slashes when the guest paid from a wallet:
+ *   `GTB/<MERCHANT>/DEBIT WALLET/<ref><dd/mm/yyyy hh:mm:ss>`. A second, batched form
  *   (`<MERCHANT> GTB<MERCHANT><ref>/…`) carries only the posting time.
  *
  * Finacle exports every row it ever touched, including the ones it threw
@@ -30,7 +32,7 @@ import { toMinor } from '../lib/money.js';
 
 const MONTHS = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
 const CARD = /^(?:comm_)?(\d{6})\*{4,}(\d{4})_(\d{1,2})-([A-Za-z]{3})-(\d{4})_([^_\s]+)(?:_([^_\s]+))?/;
-const MOMO_STAMP = /^GTB\/[^/]+\/\/(\S+?)(\d\d)\/(\d\d)\/(\d{4}) (\d\d:\d\d:\d\d)\s*$/;
+const MOMO_STAMP = /^GTB\/[^/]+\/[^/]*\/(\S+?)(\d\d)\/(\d\d)\/(\d{4}) (\d\d:\d\d:\d\d)\s*$/;
 const MOMO_BATCH = /^[A-Z0-9]+ GTB[A-Z0-9]+\/[A-Z0-9]+\//;
 
 /**

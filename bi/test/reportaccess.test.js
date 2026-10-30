@@ -51,7 +51,7 @@ test('a supervisor given Labour opens Labour and nothing else of the reports', a
   assert.notEqual((await call(3, 'GET', '/api/labour')).status, 403);
   const pnl = await call(3, 'GET', '/api/pnl');
   assert.equal(pnl.status, 403);
-  assert.match(pnl.data.error, /Overview has not been shared with you/);
+  assert.match(pnl.data.error, /Profit & loss has not been shared with you/);
   assert.equal((await call(3, 'POST', '/api/findings/1', {})).status, 403, 'what only an admin does stays an admin\'s');
   const me = await call(3, 'GET', '/api/auth/me');
   assert.deepEqual(me.data.account.reports, ['labour']);

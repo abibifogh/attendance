@@ -75,7 +75,7 @@ async function insightList(env) {
         { key: 'approve', label: 'Approve', primary: true, note: 'none' },
         { key: 'refuse', label: 'Send back', note: 'none', hint: 'It goes back on the list, as if never answered.' },
       ],
-      open: '#/shifts?tab=inbox',
+      open: '#/inbox',
     });
   }
   for (const m of moves) {
@@ -93,7 +93,7 @@ async function insightList(env) {
         { key: 'approve', label: 'Approve', primary: true, note: 'none' },
         { key: 'refuse', label: 'Refuse', note: 'none' },
       ],
-      open: '#/shifts?tab=inbox',
+      open: '#/inbox',
     });
   }
   for (const p of drawer.items) {
@@ -111,7 +111,7 @@ async function insightList(env) {
         { key: 'approve', label: 'Allow on a shift', primary: true, note: 'none' },
         { key: 'refuse', label: 'Refuse', note: 'required' },
       ],
-      open: '#/shifts?tab=inbox',
+      open: '#/inbox',
     });
   }
   return { items };
@@ -157,7 +157,7 @@ async function posBase(env) {
  */
 async function pos(env, path, body, { fetchImpl = fetch } = {}) {
   const base = await posBase(env);
-  if (!base || !env.SSO_SECRET_POS) throw new Error('The POS is not linked: it needs its reports address in Setup and SSO_SECRET_POS.');
+  if (!base || !env.SSO_SECRET_POS) throw new Error('The POS is not linked: it needs its reports address in Settings › Connections & files and SSO_SECRET_POS.');
   const text = JSON.stringify(body ?? {});
   const headers = { 'Content-Type': 'application/json', ...(await signLink(env.SSO_SECRET_POS, path, text)) };
   let response;

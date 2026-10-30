@@ -181,7 +181,7 @@ async function makePo(env, r, { data, today, fetchImpl, mark = null, anyway = fa
     unsure: match?.by === 'reader' && !match.sure ? product.name : null,
   });
   if (!useVendor || !useProduct) {
-    r.problem = `${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Money › Receipts › Settings. Choose it there, then Try again.`;
+    r.problem = `${missing.join(', and ')}, and no placeholder ${!useVendor ? 'vendor' : 'item'} is chosen in Buying › Receipts › Settings. Choose it there, then Try again.`;
     r.problem = r.problem.charAt(0).toUpperCase() + r.problem.slice(1);
     return;
   }
@@ -244,9 +244,24 @@ async function makePo(env, r, { data, today, fetchImpl, mark = null, anyway = fa
 export async function floatMark(env, receiptId) {
   const row = await first(env.DB, `SELECT f.ref, p.name, p.id AS person_id FROM float_receipt f JOIN float_person p ON p.id = f.person_id
     WHERE f.receipt_id = ?1`, Number(receiptId)).catch(() => null);
-  if (!row) return null;
+  if (!row) {
+    // Paid out of Nice Place's takings at a pickup.
+    const paid = await first(env.DB, `SELECT e.ref, p.day, p.by_name FROM np_pickup_expense e JOIN np_pickup p ON p.id = e.pickup_id
+      WHERE e.receipt_id = ?1`, Number(receiptId)).catch(() => null);
+    return paid ? pickupMarkFor({ ref: paid.ref, day: paid.day, by: paid.by_name }) : null;
+  }
   const given = await first(env.DB, "SELECT day, amount FROM float_move WHERE person_id = ?1 AND kind = 'given' ORDER BY day DESC, id DESC LIMIT 1", row.person_id).catch(() => null);
   return markFor({ ref: row.ref, name: row.name, given });
+}
+
+/** The words a PO paid from Nice Place's takings carries: its reference, the pickup and who made it. */
+export function pickupMarkFor({ ref, day, by }) {
+  return {
+    ref,
+    origin: `${ref} · Nice Place pickup`,
+    label: 'Nice Place pickup',
+    note: `Paid from Nice Place takings at the pickup of ${day} by ${by}. Reference ${ref}.`,
+  };
 }
 
 /** The words a float's PO carries, from its reference and whose it is. */
@@ -387,9 +402,9 @@ export function resultLine(x) {
   const what = [x.vendorOk === false ? `“${x.vendorText || 'no vendor'}”` : x.vendorName, x.amount != null ? ghs(x.amount) : null, x.day].filter(Boolean).join(' · ');
   if (x.status === 'complete') return `✓ ${x.po.name} · ${what}`;
   if (x.status === 'check') return `⚠ ${x.po.name} · ${what} · ${x.problem}`;
-  if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem} It is kept in Insight › Money › Receipts.`;
+  if (x.status === 'duplicate') return `= ${x.name || 'A receipt'}: ${x.problem} It is kept in Insight › Buying › Receipts.`;
   const why = String(x.problem || 'It could not be read').replace(/\.?\s*$/, '.');
-  return `✕ ${x.name || 'A receipt'}: no PO. ${why} It is kept in Insight › Money › Receipts.`;
+  return `✕ ${x.name || 'A receipt'}: no PO. ${why} It is kept in Insight › Buying › Receipts.`;
 }
 
 async function reply(env, { to, subject, results, skipped, settings }, { fetchImpl } = {}) {

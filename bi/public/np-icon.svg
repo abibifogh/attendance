@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Nice Place: a water drop on teal, big enough to find on a phone's home screen. -->
+  <rect width="512" height="512" fill="#0e7490"/>
+  <path d="M256 92c-62 86-118 154-118 222a118 118 0 0 0 236 0c0-68-56-136-118-222z" fill="#ffffff"/>
+  <path d="M206 318a50 50 0 0 0 50 50" fill="none" stroke="#0e7490" stroke-width="22" stroke-linecap="round"/>
+</svg>

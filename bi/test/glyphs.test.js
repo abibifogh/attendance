@@ -89,7 +89,7 @@ test('the marks use the app\'s categorical colours, not colours of their own', (
 test('the hub renders the mark it is given, for every card', () => {
   const hub = readFileSync(new URL('../public/js/views/hub.js', import.meta.url), 'utf8');
   assert.match(hub, /import \{ systemMark \} from '\.\.\/glyphs\.js'/);
-  // One call, inside systemCard, so no card can be built without one.
+  // One call, in markOf, which every card and the apps panel draw with, so none is built without one.
   assert.equal((hub.match(/systemMark\(/g) || []).length, 1);
   assert.match(hub, /systemMark\(system\.id, system\.label\)/);
 });

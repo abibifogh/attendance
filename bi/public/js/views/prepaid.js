@@ -28,6 +28,37 @@ const monthInHash = () => {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(m || '') ? m : null;
 };
 
+/** Settings › Notifications › Prepaid summary: who gets the summary on the 5th. */
+export async function renderPrepaidMail(root) {
+  let mail = await api('/money/prepaid/mail');
+  const box = h('section.card.pp-mail');
+  mount(root, box);
+  draw();
+  function draw() {
+    const emails = [...mail.emails];
+    const typed = h('input', { type: 'email', placeholder: 'Add an email address', 'aria-label': 'Email address' });
+    const said = h('span.small');
+    const save = async (next) => {
+      said.textContent = 'Saving…'; said.className = 'small';
+      try { mail = { ...mail, ...(await api('/money/prepaid/mail', { method: 'POST', body: { emails: next } })) }; draw(); } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+    };
+    const add = () => {
+      const value = typed.value.trim().toLowerCase();
+      if (!value) return;
+      if (emails.includes(value)) { said.textContent = 'Already on the list.'; return; }
+      save([...emails, value]);
+    };
+    mount(box,
+      h('h2', 'Prepaid summary'),
+      h('p.sub', 'On the 5th of every month, in the morning, the month before goes to these addresses: the figures, every prepaid reservation, and the whole list as a CSV. Any address works, not only people with an account. If the journals loaded do not cover that month whole, it is not sent: the admins are asked to load the rest and send it from Reports › Guests › Prepaid stays.'),
+      h('div.pp-emails', emails.length ? emails.map((e) => h('span.pp-email', e,
+        h('button', { type: 'button', 'aria-label': `Remove ${e}`, title: 'Remove', onclick: () => save(emails.filter((x) => x !== e)) }, '×')))
+        : h('span.muted', 'Nobody yet: the summary is not sent until an address is added.')),
+      h('div.pp-row', typed, h('button.btn', { type: 'button', onclick: add }, 'Add')),
+      said);
+  }
+}
+
 export async function renderPrepaid(root) {
   const isAdmin = (state.me?.account?.till?.role || (state.me?.account?.isOwner ? 'admin' : null)) === 'admin';
   const data = await api(`/money/prepaid${monthInHash() ? `?month=${monthInHash()}` : ''}`);
@@ -63,7 +94,7 @@ export async function renderPrepaid(root) {
         tile('Reservations arriving', String(t.count), `${money(t.charged)} charged`),
         tile('Prepaid', money(t.prepaid), `${pct(t.share)} of what was charged`),
         tile('Prepaid in full', String(t.full), `and ${t.part} part prepaid · ${t.none} not prepaid`),
-        tile('Still owing', money(t.owing), t.owingCount ? `${t.owingCount} reservation${t.owingCount === 1 ? '' : 's'} · see Shifts → Inbox → Unpaid stays` : 'Nothing owed')),
+        tile('Still owing', money(t.owing), t.owingCount ? `${t.owingCount} reservation${t.owingCount === 1 ? '' : 's'} · see Front desk › Shifts › To sort out › Unpaid stays` : 'Nothing owed')),
 
       h('div.pp-grid',
         h('section.card',
@@ -160,30 +191,15 @@ export async function renderPrepaid(root) {
     const send = h('button.btn.primary', { type: 'button', onclick: () => sendToEveryone(send, said) }, `Send ${name} to everyone`);
     return h('div.pp-held',
       h('div', h('b', `${name}’s prepaid summary was not sent on the 5th.`),
-        h('span', ` ${held.words || (held.through ? `The journal reached only ${day(held.through)}` : `No journal covered ${name}`)}, so the month was not complete. Load the rest under Shifts → Files, then send it, or send it as it is.`)),
+        h('span', ` ${held.words || (held.through ? `The journal reached only ${day(held.through)}` : `No journal covered ${name}`)}, so the month was not complete. Load the rest under Settings › Connections & files › Shift files, then send it, or send it as it is.`)),
       h('div.pp-row', data.month === held.month ? send : h('a.btn.primary', { href: `#/prepaid?month=${held.month}` }, `Open ${name}`), said));
   }
 
-  /** Who gets the summary on the 5th, and a try now, to yourself. */
+  /** Sending it now, to everyone or as a test; who gets it on the 5th is in Settings › Notifications. */
   function mailCard() {
     const mail = data.mail || { emails: [] };
     const emails = [...mail.emails];
-    const typed = h('input', { type: 'email', placeholder: 'Add an email address', 'aria-label': 'Email address' });
     const said = h('span.small');
-    const save = async (next) => {
-      said.textContent = 'Saving…'; said.className = 'small';
-      try {
-        data.mail = { ...data.mail, ...(await api('/money/prepaid/mail', { method: 'POST', body: { emails: next } })) };
-        flash = null;
-        paint();
-      } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
-    };
-    const add = () => {
-      const value = typed.value.trim().toLowerCase();
-      if (!value) return;
-      if (emails.includes(value)) { said.textContent = 'Already on the list.'; return; }
-      save([...emails, value]);
-    };
     const tryIt = h('button.btn', {
       type: 'button',
       onclick: async () => {
@@ -203,11 +219,8 @@ export async function renderPrepaid(root) {
     const last = mail.lastSent;
     return h('section.card.pp-mail',
       h('h2', 'Monthly prepaid summary'),
-      h('p.sub', 'On the 5th of every month, in the morning, the month before goes to these addresses: the figures, every prepaid reservation, and the whole list as a CSV. Any address works, not only people with an account. If the journals loaded do not cover that month whole, it is not sent: the admins are asked to load the rest and send it from here.'),
-      h('div.pp-emails', emails.length ? emails.map((e) => h('span.pp-email', e,
-        h('button', { type: 'button', 'aria-label': `Remove ${e}`, title: 'Remove', onclick: () => save(emails.filter((x) => x !== e)) }, '×')))
-        : h('span.muted', 'Nobody yet: the summary is not sent until an address is added.')),
-      h('div.pp-row', typed, h('button.btn', { type: 'button', onclick: add }, 'Add')),
+      h('p.sub', `Sent by itself on the 5th to ${emails.length ? `${emails.length} address${emails.length === 1 ? '' : 'es'}` : 'nobody yet'}. `,
+        h('a', { href: '#/notify-prepaid' }, 'Change who gets it')),
       h('div.pp-row', everyone, tryIt,
         h('span.small.muted', last ? `Last sent: ${new Date(last.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}, for ${monthName(last.month)}, to ${last.count} address${last.count === 1 ? '' : 'es'}${last.by ? `, ${last.by}` : ''}` : 'Not sent yet.')),
       said);

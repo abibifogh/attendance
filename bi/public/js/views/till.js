@@ -33,9 +33,10 @@ const AREA_TEXT = {
   files: ['Upload journal, statement and card report', 'The Files view. Act means load files.'],
   advances: ['Advances', 'In the Inbox: cash given out before a purchase, and POs whose final price differs. Act means give more time or close one with a reason.'],
   proof: ['Ask for proof', 'Act means ask whoever gave an answer for pictures or a PDF (a MoMo screenshot, a slip, a statement). See means see the proof sent.'],
+  pickups: ['Nice Place pickups', 'Front desk › Nice Place › Pickups. See means the pickups; Act means take the envelopes: add what was paid out of them, with receipts, and count what is left.'],
   niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
   check: ['Check shifts', 'Act means mark a shift checked once its report, drawer and payments are looked at. Until then its person sees its differences as “not checked yet”: the amounts may change.'],
-  envelopes: ['Envelopes received (Money › Safe)', 'Every envelope moved to the safe, with its amount, and which have reached it. Act means mark them received, with the count, or undo that.'],
+  envelopes: ['Envelopes received (Front desk › Safe)', 'Every envelope moved to the safe, with its amount, and which have reached it. Act means mark them received, with the count, or undo that.'],
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
@@ -634,18 +635,27 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
 
   let settingsTab = 'who';
   let customFor = null;
+  // The parts the page asked for, kept for redraws from inside a part.
+  let shownParts = null;
 
-  /** Settings, in four parts: who sees what, who is told, the front desk, and the limits. */
-  async function settings(v) {
+  /**
+   * Settings, in five parts: who sees what, who is told, the front desk, the
+   * limits and the locked dates. `parts` picks some, for the Settings pages
+   * that hold them (People & access, Notifications, Rules).
+   */
+  async function settings(v, parts = shownParts) {
+    shownParts = parts;
     mount(v, h('p.muted', 'Reading the settings…'));
     const d = await read(true);
     const s = d.settings;
-    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits'], ['lock', 'Locked dates']];
+    const tabs = [['who', 'Who sees what'], ['told', 'Who is told'], ['desk', 'Front desk'], ['limits', 'Limits'], ['lock', 'Locked dates']]
+      .filter(([k]) => !parts || parts.includes(k));
+    if (!tabs.some(([k]) => k === settingsTab)) settingsTab = tabs[0][0];
     const save = async (body) => {
       try {
         await api('/till/settings', { method: 'POST', body });
         forget();
-        await settings(v);
+        await settings(v, parts);
       } catch (err) { alert(err.message); }
     };
     const body = settingsTab === 'lock' ? await lockView(v)
@@ -655,7 +665,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
           : await limitsView(s, save, v);
     mount(v,
       notLinked(d),
-      h('div.tl-subtabs', tabs.map(([k, l]) => h('button', { type: 'button', 'aria-selected': String(settingsTab === k), onclick: () => { settingsTab = k; settings(v); } }, l))),
+      tabs.length > 1 ? h('div.tl-subtabs', tabs.map(([k, l]) => h('button', { type: 'button', 'aria-selected': String(settingsTab === k), onclick: () => { settingsTab = k; settings(v, parts); } }, l))) : null,
       body);
   }
 
@@ -690,8 +700,8 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         }, label))))));
     };
     return h('div.card',
-      h('div.sh-cardhead', h('h2', 'Who sees what'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Accounts. Pick what each one gets; Custom sets each part by hand.')),
-      s.supervisors.length ? null : banner('info', 'Nobody is a supervisor yet. Under Accounts, set somebody’s Insight access to Supervisor.'),
+      h('div.sh-cardhead', h('h2', 'Who sees what'), h('span.sh-sub', 'A supervisor is an account given Insight with the Supervisor role under Settings › People & access. Pick what each one gets; Custom sets each part by hand.')),
+      s.supervisors.length ? null : banner('info', 'Nobody is a supervisor yet. Under Settings › People & access, set somebody’s Insight access to Supervisor.'),
       h('div.tl-people', people.map((p) => {
         const custom = customFor === p.id || presetOf(levelsFor(p.id)) === 'custom';
         return h('div.tl-person',

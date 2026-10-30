@@ -21,7 +21,8 @@ const ANSWERS = ['Counter fault', 'Free use (staff, cleaning)', 'Staff to accoun
 const dayText = (d, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
 const whole = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-GB'));
 
-export async function renderNicePlace(root) {
+/** `part: 'settings'` is Settings › Rules › Nice Place: names, prices, walk-throughs and the reader. */
+export async function renderNicePlace(root, { part = null } = {}) {
   const isAdmin = (state.me?.account?.till?.role || (state.me?.account?.isOwner ? 'admin' : null)) === 'admin';
   const view = h('div.np');
   mount(root, view);
@@ -40,6 +41,7 @@ export async function renderNicePlace(root) {
   }
 
   function paint() {
+    if (part === 'settings') { mount(view, flash ? h(`div.banner.${flash[0]}`, flash[1]) : null, settingsBlock()); return; }
     const rows = data.rows;
     const count = (st) => rows.filter((r) => r.status === st && !r.answer).length;
     const waiting = rows.filter((r) => ['no-revenue', 'no-reading'].includes(r.status)).length;
@@ -60,7 +62,7 @@ export async function renderNicePlace(root) {
       h('section.card', chartBlock(rows)),
       h('section.card', tableBlock(rows)),
       open ? detailBlock(rows.find((r) => r.key === open)) : null,
-      isAdmin ? settingsBlock() : null);
+      isAdmin ? h('p.small.muted', 'Names on the link, prices and walk-throughs: Settings › Rules › Nice Place.') : null);
   }
 
   const tile = (label, n, tone) => h(`div.np-tile${tone ? `.${tone}` : ''}`, h('small', label), h('b.num', String(n)));
@@ -74,11 +76,21 @@ export async function renderNicePlace(root) {
       try { await api('/np/settings', { method: 'POST', body: { newLink: true } }); await load(['good', 'A new link is ready. Copy it and send it to the staff.']); } catch (err) { said.textContent = err.message; }
     };
     if (!data.link?.token) return h('span', h('b', 'Staff link '), h('button.btn.primary', { type: 'button', onclick: () => make(false) }, 'Make the link'), said);
-    const url = `${location.origin}/np.html#${data.link.token}`;
+    // The short link (/niceplace) when an ending is set, the long one with its code otherwise.
+    const url = data.link.slug ? `${location.origin}/${data.link.slug}` : `${location.origin}/np#${data.link.token}`;
+    const ending = h('input.np-slug', { type: 'text', value: data.link.slug || '', placeholder: 'niceplace', 'aria-label': 'The link’s ending', maxlength: '30' });
+    const setEnding = async () => {
+      try {
+        await api('/np/settings', { method: 'POST', body: { slug: ending.value } });
+        await load(['good', ending.value.trim() ? `The link is now ${location.origin}/${ending.value.trim().toLowerCase()}. The old one stops working: send the new one to the staff.` : 'The short link is taken away; the long one works.']);
+      } catch (err) { said.textContent = err.message; }
+    };
     return h('span.np-link',
       h('b', 'Staff link'), h('code', url),
       h('button.btn', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch { window.prompt('Copy the link:', url); } } }, 'Copy'),
-      h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'), said);
+      h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'),
+      h('span.np-ending', h('small', `${location.origin}/`), ending, h('button.btn', { type: 'button', onclick: setEnding }, 'Set the ending')),
+      h('small.np-apphint', 'Open it once on the desk phone and press “Put Nice Place on this phone”: it becomes an app that opens with one tap. A new link, or a new ending, stops the old one and its app.'), said);
   }
 
   // -------------------------------------------------------------- upload --
@@ -368,7 +380,7 @@ export async function renderNicePlace(root) {
         out);
     };
     return h('section.card.np-settings',
-      h('h2', 'Settings'),
+      h('h2', 'Nice Place'),
       h('div.np-setgrid',
         h('div',
           h('b', 'Names on the link'),

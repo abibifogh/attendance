@@ -42,7 +42,7 @@
 
 ## Who sees it
 
-Insight → Shifts → Inbox → **Advances**. Admins always. A supervisor only if
+Insight → Front desk › Shifts › To sort out → **Advances**. Admins always. A supervisor only if
 an admin gives them **Advances** under Settings → Who sees what:
 *See* shows the list; *See and act* also allows More time, Give it to and Close. Shift
 variances are shown only to those who also see amounts.

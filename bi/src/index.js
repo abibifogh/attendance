@@ -33,6 +33,9 @@ import * as lock from './routes/lock.js';
 import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
+import * as assistant from './routes/assistant.js';
+import { meterDb, keep, speedView } from './lib/speed.js';
+import * as npPickup from './routes/nppickup.js';
 import * as approvals from './routes/approvals.js';
 import * as receipts from './routes/receipts.js';
 import { sendDailySummary } from './routes/summary.js';
@@ -98,6 +101,11 @@ const ROUTES = [
     const { month, csv } = await prepaid.prepaidCsv(env, ctx.query);
     return new Response(`\ufeff${csv}`, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="prepaid-stays-${month}.csv"`, 'Cache-Control': 'no-store' } });
   }],
+  // Who gets the summary on the 5th, for Settings › Notifications.
+  ['GET', '/api/money/prepaid/mail', 'insight', async (env, ctx) => {
+    await till.requireAdmin(ctx.account);
+    return prepaid.mailSettings(env);
+  }],
   ['POST', '/api/money/prepaid/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
     return prepaid.saveMailSettings(env, ctx.body, { origin: ctx.url.origin });
@@ -114,11 +122,13 @@ const ROUTES = [
   // The management report: a week or a month of breakfast and maintenance, from each app.
   // Who sees which reports: an admin shares report pages with people who are not admins.
   ['GET', '/api/report-access', 'session', adminOnly((env) => reportAccess.list(env))],
+  // How long each page takes, and where the Worker runs, for Settings › Connections & files › Speed.
+  ['GET', '/api/admin/speed', 'session', adminOnly((env) => speedView(env))],
   ['POST', '/api/report-access', 'session', adminOnly((env, ctx) => reportAccess.save(env, ctx.body, ctx.account))],
   ['GET', '/api/reports/management', 'insight', (env, ctx) => mgmt.managementReport(env, ctx.query)],
   ['GET', '/api/reports/management/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
-    return { ...(await mgmt.mailSettings(env)), adminEmails: await prepaid.adminEmails(env) };
+    return { ...(await mgmt.mailSettings(env)), sections: mgmt.SECTIONS, adminEmails: await prepaid.adminEmails(env) };
   }],
   ['POST', '/api/reports/management/mail', 'insight', async (env, ctx) => {
     await till.requireAdmin(ctx.account);
@@ -309,6 +319,7 @@ const ROUTES = [
   // Nice Place: the open link staff send the counters from (its own token
   // in the address, no account), and the page that holds them to the money.
   ['GET', '/api/np/form', 'public', (env, ctx) => np.linkForm(env, ctx.query)],
+  ['GET', '/api/np/manifest', 'public', (env, ctx) => np.appManifest(env, ctx.query)],
   ['POST', '/api/np/send', 'public', (env, ctx) => np.sendReading(env, ctx.body)],
   // The counters read off the picture, so the numbers fill in by themselves.
   ['POST', '/api/np/read', 'public', (env, ctx) => np.readCounters(env, ctx.body)],
@@ -353,6 +364,10 @@ const ROUTES = [
   // Contacts and products by name, for ones made in Odoo just now.
   ['GET', '/api/po/find', 'insight', adminOnly((env, ctx) => newpo.findPo(env, ctx.query))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
+  // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
+  ['GET', '/api/assistant', 'session', adminOnly((env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true }))],
+  ['GET', '/api/assistant/brief', 'session', adminOnly((env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by })))],
+  ['POST', '/api/assistant/ask', 'session', adminOnly((env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true }))],
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.
@@ -361,6 +376,13 @@ const ROUTES = [
   ['GET', '/api/np', 'insight', (env, ctx) => np.npView(env, ctx.query, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' })],
   // A picture of the counters: for an admin, and a supervisor given Nice Place, who reads one the reader could not.
   ['GET', '/api/np/photo/:id', 'shifts', area('niceplace', 1, (env, ctx) => np.photo(env, ctx.params.id))],
+  // Nice Place pickups: the envelopes taken from the safe, what was paid out of them, the count, and admin's review.
+  ['GET', '/api/np/pickups', 'shifts', (env, ctx) => npPickup.pickupsView(env, ctx.account)],
+  ['POST', '/api/np/pickups/start', 'shifts', (env, ctx) => npPickup.startPickup(env, ctx.account)],
+  ['POST', '/api/np/pickups/expense', 'shifts', (env, ctx) => npPickup.addExpense(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/pickups/expense/remove', 'shifts', (env, ctx) => npPickup.removeExpense(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/pickups/record', 'shifts', (env, ctx) => npPickup.recordPickup(env, ctx.body, ctx.account)],
+  ['POST', '/api/np/pickups/review', 'shifts', (env, ctx) => npPickup.reviewPickup(env, ctx.body, ctx.account)],
   ['GET', '/api/np/pending', 'shifts', area('niceplace', 1, (env) => np.pendingReadings(env))],
   ['POST', '/api/np/review', 'shifts', area('niceplace', 2, (env, ctx) => np.reviewReading(env, ctx.body, ctx.account, { admin: till.roleOf(ctx.account) === 'admin' }))],
   ['POST', '/api/np/reread', 'shifts', area('niceplace', 2, (env, ctx) => np.rereadReading(env, ctx.body))],
@@ -458,9 +480,17 @@ const UPLOADER_MAY = new Set([
 export default {
   async fetch(request, env, execution) {
     const url = new URL(request.url);
+    // Never over plain http: a phone would say "Not secure", sign-in cookies are https only, and nothing installs.
+    if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 301);
+    }
     if (!url.pathname.startsWith('/api/')) {
       // A float's short link, /float/igna: their page, which reads the ending itself.
       if (/^\/float\/[A-Za-z0-9-]{2,30}\/?$/.test(url.pathname)) return floatPage(env, request, url);
+      // Nice Place's short link, /niceplace: the desk page, which reads the ending itself.
+      const ending = /^\/([a-z0-9][a-z0-9-]{1,29})\/?$/.exec(url.pathname.toLowerCase())?.[1];
+      if (ending && ending !== 'np' && ending === await np.shortLink(env).catch(() => null)) return floatPage(env, request, url, '/np.html');
       // A published report lives at its own address, in front of the app's
       // own files. Anything that is not one falls through to them as before.
       try {
@@ -472,9 +502,17 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
+    // Measured: the database's reads and time, the rest, and where it ran (lib/speed.js).
+    const started = Date.now();
+    const meter = meterDb(env.DB);
+    const plainDb = env.DB;
+    env = { ...env, DB: meter.db };
+    let routePath = url.pathname;
+    let response;
     try {
       const match = findRoute(request.method, url.pathname);
       if (!match) throw new HttpError(404, 'No such endpoint');
+      routePath = match[0][1];
       const [route, params] = match;
       const [, , permission, handler] = route;
 
@@ -533,10 +571,18 @@ export default {
       }
 
       const result = await handler(env, { request, query, body, params, url, account, execution });
-      return result instanceof Response ? result : json(result);
+      response = result instanceof Response ? result : json(result);
     } catch (err) {
-      return errorResponse(err);
+      response = errorResponse(err);
     }
+    const ms = Date.now() - started;
+    const colo = request.cf?.colo || null;
+    try {
+      response = new Response(response.body, response);
+      response.headers.set('Server-Timing', `db;dur=${meter.ms};desc="${meter.reads} reads", other;dur=${Math.max(0, ms - meter.ms)}, total;dur=${ms}${colo ? `, colo;desc="${colo}"` : ''}`);
+    } catch { /* a response that cannot be copied goes as it is */ }
+    execution?.waitUntil?.(keep(plainDb, { path: `${request.method} ${routePath}`, ms, meter, colo }).catch(() => {}));
+    return response;
   },
 
   /**
@@ -588,8 +634,8 @@ export default {
 };
 
 /** The float page's own file, whatever the short link's address; the assets may answer with a redirect to it. */
-async function floatPage(env, request, url) {
-  let response = await env.ASSETS.fetch(new Request(new URL('/float.html', url), request));
+async function floatPage(env, request, url, file = '/float.html') {
+  let response = await env.ASSETS.fetch(new Request(new URL(file, url), request));
   for (let hops = 0; hops < 2 && response.status >= 300 && response.status < 400 && response.headers.get('Location'); hops += 1) {
     response = await env.ASSETS.fetch(new Request(new URL(response.headers.get('Location'), url), request));
   }

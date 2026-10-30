@@ -23,3 +23,11 @@
   Cache-Control: no-cache
 /float.html
   Cache-Control: no-cache
+# The service worker and the app icons: always the newest, so an update reaches every installed phone.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+# Once a phone has opened Insight securely, it never asks for it over plain http again.
+/*
+  Strict-Transport-Security: max-age=31536000

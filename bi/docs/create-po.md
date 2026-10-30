@@ -58,7 +58,7 @@ used to cover cash missing from a drawer.
   it will come out of a drawer. Left off, it is not allowed (yet).
 - **When staff try:** a member of staff who types it on a closing report (or
   as the PO for cash out on their list) is told it is waiting for an admin,
-  and the admins are asked: Shifts › Inbox › Waiting for admin, "Ama wants to
+  and the admins are asked: Front desk › Shifts › To sort out › Waiting for admin, "Ama wants to
   pay P02517 from a drawer". **Allow on a shift**, or **Refuse** with a reason
   (then it can never go on a shift). Once allowed, "check again" on HIVE
   counts it like any other PO.

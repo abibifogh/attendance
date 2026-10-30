@@ -168,8 +168,8 @@ export async function pnl(env, query) {
     daily,
     caveats: [
       (rows.find((r) => r.line === 'rooms')?.net || 0) > 0
-        ? 'Room revenue is read from the ASSD journal: what each reservation was charged, night by night, on the day of the night. It is only as complete as the journal loaded under Shifts → Files.'
-        : 'Room revenue comes from the ASSD journal, and none is loaded for these days. Load it under Shifts → Files.',
+        ? 'Room revenue is read from the ASSD journal: what each reservation was charged, night by night, on the day of the night. It is only as complete as the journal loaded under Settings › Connections & files › Shift files.'
+        : 'Room revenue comes from the ASSD journal, and none is loaded for these days. Load it under Settings › Connections & files › Shift files.',
       facts.costBasis?.sources?.includes('odoo-cash')
         ? 'Purchases include POs paid in cash from the drawer or the safe that Odoo has no bill for yet, on the day the cash left. When the bill is posted, the bill counts instead.'
         : null,
@@ -543,7 +543,7 @@ export async function financials(env, query) {
       'Purchases are treated as varying with takings and wages as fixed, because a rota is set a '
         + 'week ahead and does not shrink because Tuesday was quiet. Both are measured, not modelled. '
         + 'Rent, power, water and depreciation are in none of the connected systems and are taken '
-        + 'from Setup; left unset, every break-even here is understated by exactly that amount.',
+        + 'from Settings › Connections & files; left unset, every break-even here is understated by exactly that amount.',
       wageBasisNote(facts, config),
       'The previous period is the same number of days immediately before this one. It is not the '
         + 'same period last year, so a seasonal business will read a season change as a decline.',

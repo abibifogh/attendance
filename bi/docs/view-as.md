@@ -7,7 +7,7 @@ Inbox, only the areas and amounts they are given. Useful when somebody says
 ## Using it
 
 - Your name (top right) › **👁 View as somebody else…**, choose the person,
-  **View as**. Or Admin › Accounts › **👁 View as** on their row.
+  **View as**. Or Settings › People & access › **👁 View as** on their row.
 - A purple bar on top (and a purple frame round the screen) says whom you are
   viewing as. Switch to somebody else from the bar, or press **Stop viewing**.
 - It is **look only**. Anything that would change something is refused with
@@ -26,7 +26,7 @@ Inbox, only the areas and amounts they are given. Useful when somebody says
 
 ## The log
 
-Owners see every time under Admin › Accounts › **Who viewed as whom**: who,
+Owners see every time under Settings › People & access › **Who viewed as whom**: who,
 as whom, from and until.
 
 ## For whoever runs it
