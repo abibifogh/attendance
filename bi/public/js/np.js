@@ -21,17 +21,23 @@ import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS } fr
 
 const page = document.getElementById('page');
 const head = document.getElementById('head');
+// The short link (/niceplace) names itself; the long one carries its code after #.
+const slug = (/^\/([A-Za-z0-9-]+)\/?$/.exec(location.pathname) || [])[1]?.toLowerCase();
+const short = slug && slug !== 'np' && slug !== 'np.html' ? slug : '';
 // The link's code: from the address, or kept on this phone from the first time it was opened.
-const token = (() => {
+const token = short ? '' : (() => {
   const fromLink = location.hash.replace(/^#/, '').trim();
   try {
     if (fromLink) localStorage.setItem('np-token', fromLink);
     return fromLink || localStorage.getItem('np-token') || '';
   } catch { return fromLink; }
 })();
-if (token) {
+/** What the server is shown to know the link: its ending, or its code. */
+const key = short ? { s: short } : { t: token };
+const keyQuery = short ? `s=${encodeURIComponent(short)}` : `t=${encodeURIComponent(token)}`;
+if (short || token) {
   // So it can be put on the phone as the Nice Place app, opening on this link.
-  document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: `/api/np/manifest?t=${encodeURIComponent(token)}` }));
+  document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: `/api/np/manifest?${keyQuery}` }));
 }
 registerWorker();
 const SHIFT = { day: 'DAY SHIFT', night: 'NIGHT SHIFT' };
@@ -92,9 +98,9 @@ let sales = { showerChild: '', showerAdult: '', toiletChild: '', toiletAdult: ''
 let photo = null;
 
 async function start() {
-  if (!token) { top('Nice Place', 'This link is not complete'); put(page, el('p', { class: 'err' }, 'Ask the manager for the Nice Place link.')); return; }
+  if (!short && !token) { top('Nice Place', 'This link is not complete'); put(page, el('p', { class: 'err' }, 'Ask the manager for the Nice Place link.')); return; }
   top('Nice Place', 'Loading…');
-  try { form = await call(`form?t=${encodeURIComponent(token)}`); } catch (err) { top('Nice Place', 'This link does not open'); put(page, el('p', { class: 'err' }, err.message)); return; }
+  try { form = await call(`form?${keyQuery}`); } catch (err) { top('Nice Place', 'This link does not open'); put(page, el('p', { class: 'err' }, err.message)); return; }
   name = form.staff.includes(remembered()) ? remembered() : null;
   when = { day: form.suggest.day, shift: form.suggest.shift };
   sales = { showerChild: '', showerAdult: '', toiletChild: '', toiletAdult: '' };
@@ -203,7 +209,7 @@ function picture() {
     send.hidden = false;
     put(said, el('p', { class: 'note' }, 'Reading the numbers…'));
     let out;
-    try { out = await call('read', { t: token, photo }); } catch { out = { available: false }; }
+    try { out = await call('read', { ...key, photo }); } catch { out = { available: false }; }
     if (!out.available) { put(said, el('p', { class: 'warn' }, 'It could not be read just now. Send it: it will be read again, or the manager will read it.')); return; }
     if (!out.unreadable.length) { put(said, el('p', { class: 'readok' }, '✓ All four numbers read from the picture')); return; }
     put(said, el('p', { class: 'warn' }, `${out.unreadable.map((c) => c.toUpperCase()).join(' and ')} could not be read. Take it again, closer and straight, or send it as it is: the manager will read it.`));
@@ -211,7 +217,7 @@ function picture() {
   send.addEventListener('click', async () => {
     send.disabled = true; send.textContent = 'Sending…';
     try {
-      const out = await call('send', { t: token, name, day: when.day, shift: when.shift, photo, sales });
+      const out = await call('send', { ...key, name, day: when.day, shift: when.shift, photo, sales });
       done(out);
     } catch (err) {
       put(said, el('p', { class: 'err' }, err.message));

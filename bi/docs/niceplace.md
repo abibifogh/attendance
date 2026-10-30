@@ -11,6 +11,17 @@ works out how many people paid, and holds that against the people counted.
 
 The shifts: **Day 03:30 to 13:30**, **Night 13:30 to 23:00** (Accra time).
 
+## The short link
+
+Under the staff link, **Set the ending** gives it a short address you choose,
+like the floats': `https://insight.niceoperation.com/niceplace`. 2 to 30
+letters, numbers or dashes; not one of Insight's own (api, np, float, …) nor a
+published report's. The short link opens the desk page, and the app put on a
+phone from it opens there too. A new ending stops the old one; an empty one
+takes the short link away and the long one (`/np#code`) still works. Anybody
+who knows the short link can open the page, so choose one that is not
+guessed by chance if that matters.
+
 ## On the phone, as an app
 
 **The desk.** Open the staff link once on the desk phone and press **Put

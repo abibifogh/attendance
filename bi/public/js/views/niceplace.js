@@ -76,12 +76,21 @@ export async function renderNicePlace(root, { part = null } = {}) {
       try { await api('/np/settings', { method: 'POST', body: { newLink: true } }); await load(['good', 'A new link is ready. Copy it and send it to the staff.']); } catch (err) { said.textContent = err.message; }
     };
     if (!data.link?.token) return h('span', h('b', 'Staff link '), h('button.btn.primary', { type: 'button', onclick: () => make(false) }, 'Make the link'), said);
-    const url = `${location.origin}/np#${data.link.token}`;
+    // The short link (/niceplace) when an ending is set, the long one with its code otherwise.
+    const url = data.link.slug ? `${location.origin}/${data.link.slug}` : `${location.origin}/np#${data.link.token}`;
+    const ending = h('input.np-slug', { type: 'text', value: data.link.slug || '', placeholder: 'niceplace', 'aria-label': 'The link’s ending', maxlength: '30' });
+    const setEnding = async () => {
+      try {
+        await api('/np/settings', { method: 'POST', body: { slug: ending.value } });
+        await load(['good', ending.value.trim() ? `The link is now ${location.origin}/${ending.value.trim().toLowerCase()}. The old one stops working: send the new one to the staff.` : 'The short link is taken away; the long one works.']);
+      } catch (err) { said.textContent = err.message; }
+    };
     return h('span.np-link',
       h('b', 'Staff link'), h('code', url),
       h('button.btn', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch { window.prompt('Copy the link:', url); } } }, 'Copy'),
       h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'),
-      h('small.np-apphint', 'Open it once on the desk phone and press “Put Nice Place on this phone”: it becomes an app that opens with one tap. A new link stops the old app too.'), said);
+      h('span.np-ending', h('small', `${location.origin}/`), ending, h('button.btn', { type: 'button', onclick: setEnding }, 'Set the ending')),
+      h('small.np-apphint', 'Open it once on the desk phone and press “Put Nice Place on this phone”: it becomes an app that opens with one tap. A new link, or a new ending, stops the old one and its app.'), said);
   }
 
   // -------------------------------------------------------------- upload --

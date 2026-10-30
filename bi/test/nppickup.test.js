@@ -103,3 +103,23 @@ test('the desk page as an app: it opens on its own link, and a new link stops it
   await np.saveSettings(env, { newLink: true });
   await assert.rejects(np.appManifest(env, { t: token }), /no longer in use/);
 });
+
+test('the short link: an ending the manager chooses, /niceplace, opens the desk page and its app; a new ending stops the old', async () => {
+  const { db } = freshDb();
+  const env = { DB: db };
+  await assert.rejects(np.saveSettings(env, { slug: 'niceplace' }), /Make the link first/);
+  await np.saveSettings(env, { newLink: true, addName: 'Ama Test' });
+  await assert.rejects(np.saveSettings(env, { slug: 'api' }), /a part of Insight/);
+  await assert.rejects(np.saveSettings(env, { slug: 'a b!' }), /2 to 30 letters/);
+  await np.saveSettings(env, { slug: ' NicePlace ' });
+  assert.equal(await np.shortLink(env), 'niceplace');
+  assert.deepEqual((await np.linkForm(env, { s: 'niceplace' })).staff, ['Ama Test']);
+  const app = await np.appManifest(env, { s: 'niceplace' });
+  assert.deepEqual([app.start_url, app.scope], ['/niceplace', '/niceplace']);
+  const out = await np.sendReading(env, { s: 'niceplace', name: 'Ama Test', day: today(), shift: 'day', photo: PIC, sales: { toiletAdult: '50' } });
+  assert.equal(out.sales.total, 5000);
+  await np.saveSettings(env, { slug: 'washroom' });
+  await assert.rejects(np.linkForm(env, { s: 'niceplace' }), /no longer in use/);
+  await np.saveSettings(env, { slug: '' });
+  assert.equal(await np.shortLink(env), null);
+});
