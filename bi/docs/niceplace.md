@@ -24,20 +24,18 @@ guessed by chance if that matters.
 
 ## On the phone, as an app
 
-**The desk.** Open the staff link once on the desk phone and press **Put
-Nice Place on this phone** (on an iPhone: Share, then Add to Home Screen). It
-becomes the Nice Place app, a water drop on the home screen, opening straight
-on the desk page with one tap. The link's code is built into the app (an app
-on an iPhone's home screen keeps nothing the browser knew), so **New link**
-stops the old app as well: open the new link and put it on the phone again.
+**The desk.** Open the staff link once in Chrome on the desk phone and press
+**Put Nice Place on this phone**: it says how (Chrome's menu ⋮, then **Add
+to Home screen**, then **Add**; on an iPhone: Share, then Add to Home
+Screen). A water drop on the home screen then opens the desk page in Chrome
+with one tap. A shortcut, not an installed app: on an old desk phone the
+installed app would not even start (**Nice Place keeps stopping**), while
+Chrome itself opens the page fine. **New link** stops the old link: open
+the new one and add it again.
 
-**An old phone.** If tapping the app only says **Nice Place keeps
-stopping**, the phone cannot start it (an old Android whose Chrome can no
-longer be updated). Hold the water drop, choose **Uninstall** (or drag it
-to Uninstall), and open the link with `?plain` at the end, e.g.
-`/niceplace?plain`. Press **Put Nice Place on this phone**: it says how to
-add a plain shortcut from Chrome's menu, which opens the same page in
-Chrome.
+The link with `?app` at the end (e.g. `/niceplace?app`) is put on the phone
+as an installed app instead, with the link's code built in, for a phone new
+enough to run it.
 
 **The supervisor.** Insight installs the same way: **Install Insight on this
 phone** in the account menu, in search, or at the top of Pickups. Its
