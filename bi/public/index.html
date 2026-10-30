@@ -26,5 +26,12 @@
     <p style="padding:2rem;color:#898781">Loading…</p>
   </div>
   <script type="module" src="/js/app.js"></script>
+  <script>
+    // A phone whose browser cannot run Insight says so, instead of "Loading…" for ever.
+    setTimeout(function () {
+      if (window.insightStarted) return;
+      document.getElementById('app').innerHTML = '<div style="padding:2rem;max-width:30rem;margin:0 auto;font:17px/1.5 system-ui,sans-serif"><b style="font-size:1.3rem">Update this phone\'s browser</b><p>Its internet browser is too old for Insight. Open the <b>Play Store</b> (or the App Store), search for <b>Chrome</b> and press <b>Update</b>, then open Insight again in Chrome.</p></div>';
+    }, 10000);
+  </script>
 </body>
 </html>
