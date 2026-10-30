@@ -33,7 +33,7 @@ export async function renderAttMyMedical(params) {
 
   if (!data.linked) {
     mount(host,
-      h('div.page-head', h('div', h('h1', 'My claims'))),
+      h('div.page-head', h('div', h('h1', 'Medical'))),
       emptyState('This login is not linked to your staff record',
         'Ask whoever set it up to point it at you under Users, and this will fill in.'));
     return host;
@@ -45,7 +45,7 @@ export async function renderAttMyMedical(params) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'My claims'),
+        h('h1', 'Medical'),
         h('div.sub', `Medical bills you have claimed for in ${year}`),
       ),
       s

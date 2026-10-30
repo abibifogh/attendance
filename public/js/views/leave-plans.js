@@ -20,8 +20,8 @@ export async function renderLeavePlans(params = {}) {
 
   if (!data.round) {
     mount(host,
-      h('div.page-head', h('div', h('h1', `Leave plans for ${data.year}`),
-        h('div.sub', 'Ask everybody for their leave plan at once, remind them until it is in, and approve the year in one place.'))),
+      h('div.page-head', h('div', h('h1', 'Leave'),
+        h('div.sub', `Plans for ${data.year}. Ask everybody for their leave plan at once, remind them until it is in, and approve the year in one place.`))),
       sets
         ? setupForm(data, reload)
         : emptyState('Planning is not open yet', 'An administrator opens leave planning for the year.'));
@@ -50,7 +50,7 @@ export async function renderLeavePlans(params = {}) {
 
   mount(host,
     h('div.page-head',
-      h('div', h('h1', `Leave plans for ${round.year}`), h('div.sub', statusLine)),
+      h('div', h('h1', 'Leave'), h('div.sub', `Plans for ${round.year} · ${statusLine}`)),
       h('div.btn-row',
         data.years.length > 1
           ? h('select', { 'aria-label': 'Year', onchange: async (e) => mount(host, ...(await renderLeavePlans({ year: e.target.value })).childNodes) },

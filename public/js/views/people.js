@@ -15,8 +15,10 @@ import { field, formDialog } from './att-shared.js';
  * their phone last night and nobody has looked at is worth more attention than
  * a list that has been incomplete for a month.
  */
-export async function renderPeople() {
+export async function renderPeople(params = {}) {
   const host = h('div');
+  // Everybody, or only what staff have sent in to be looked at.
+  const sentIn = params.part === 'sent';
   const [data, pending, files] = await Promise.all([
     api.hrPeople(),
     api.hrSubmissions().catch(() => ({ rows: [] })),
@@ -25,11 +27,35 @@ export async function renderPeople() {
     api.hrWaitingDocuments().catch(() => ({ documents: [] })),
   ]);
 
-  const reload = async () => mount(host, await renderPeople());
+  const reload = async () => mount(host, await renderPeople(params));
+
+  if (sentIn) {
+    mount(host,
+      h('div.page-head',
+        h('div', h('h1', 'Staff'), h('div.sub', 'Details and papers staff have sent in, waiting to be looked at.'))),
+      inbox(pending.rows, data.canManage, reload),
+      files.documents.length
+        ? card('Papers sent in', { note: `${files.documents.length} waiting`, wide: true },
+          table([
+            { key: 'staff_name', label: 'Name' },
+            { key: 'title', label: 'What', format: (v, r) => v || r.kind || r.filename },
+            { key: 'uploaded_at', label: 'Sent', format: (v) => (v ? fmtDay(String(v).slice(0, 10)) : '') },
+            {
+              key: 'staff_id', label: '',
+              format: (v) => h('button.btn-sm', { onclick: () => navigate('person', { id: v, tab: 'documents' }) }, 'Look at it'),
+            },
+          ], files.documents))
+        : null,
+      !pending.rows.length && !files.documents.length
+        ? emptyState('Nothing sent in', 'Details and photographed papers staff send from their phones wait here to be looked at.')
+        : null,
+    );
+    return host;
+  }
 
   if (!data.rows.length) {
     mount(host,
-      h('div.page-head', h('h1', 'People')),
+      h('div.page-head', h('h1', 'Staff')),
       emptyState('Nobody yet', 'Add people under Attendance setup and their records appear here.'),
     );
     return host;
@@ -41,13 +67,11 @@ export async function renderPeople() {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'People'),
+        h('h1', 'Staff'),
         h('div.sub', 'Personal details, emergency contacts, documents and contracts.'),
       ),
       data.canManage
         ? h('div.btn-row',
-          h('button.btn-sm', { onclick: () => navigate('people-form') }, 'What to ask for'),
-          h('button.btn-sm', { onclick: () => navigate('people-templates') }, 'Templates'),
           h('button.btn.btn-primary', { onclick: () => sendToMany(data.rows, reload) }, 'Send a document to several'),
         )
         : null,
@@ -69,7 +93,13 @@ export async function renderPeople() {
         pending.rows.length + files.documents.length ? 'var(--accent)' : null),
     ),
 
-    inbox(pending.rows, data.canManage, reload),
+    pending.rows.length + files.documents.length
+      ? h('div.alert.info',
+        h('span.alert-icon', '📥'),
+        h('div', h('div.alert-title', 'Staff have sent something in'),
+          h('div.alert-detail', 'It waits under Sent in until somebody looks at it.')),
+        h('button.btn-sm', { onclick: () => navigate('people-sent') }, 'Look at it'))
+      : null,
 
     peopleList(data.rows),
   );

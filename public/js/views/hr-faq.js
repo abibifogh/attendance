@@ -100,7 +100,7 @@ export async function renderHrFaq() {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'HR FAQ'),
+        h('h1', 'Handbook'),
         h('div.sub', 'Quick answers for everyday questions. The handbook has the full rules.')),
       data.me
         ? h('button.btn.btn-primary', {

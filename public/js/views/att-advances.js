@@ -153,7 +153,7 @@ export async function renderAttAdvances(params) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Salary advances'),
+        h('h1', 'Advances'),
         h('div.sub', 'What was lent, what has come back, and what is left'),
       ),
       h('div.btn-row',
@@ -379,7 +379,7 @@ async function shiftShown(month, reload) {
 // --------------------------------------------------------------------------
 
 function requestsCard(data, reload, cash) {
-  return card('Asked for and not decided', {
+  return card('Waiting on you', {
     wide: true,
     note: `${data.requests.length} waiting`,
   },

@@ -153,7 +153,7 @@ export async function renderPeopleTemplates() {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Templates'),
+        h('h1', 'Documents'),
         h('div.sub', 'What a contract is made from'),
       ),
       h('div.btn-row',

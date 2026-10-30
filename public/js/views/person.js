@@ -7,6 +7,7 @@ import { field, formDialog } from './att-shared.js';
 import { control, listEditor } from '../fields.js';
 import { EVENTS, STATUS } from './contract.js';
 import { renderAttStaff } from './att-staff.js';
+import { openFirstWeek } from './onboarding.js';
 import { welcomeSummary } from './rec-candidate.js';
 
 /**
@@ -83,7 +84,7 @@ export async function renderPerson(params) {
                 + 'done.')) return;
               try {
                 await api.onboardingStart(id);
-                toast('Started. It is under First weeks.', 'good');
+                toast('Started. It is under Staff › New starters.', 'good');
               } catch (err) { toast(err.message || 'That did not work.', 'bad'); }
             },
           }, 'Start a first week')
@@ -123,9 +124,9 @@ export async function renderPerson(params) {
         h('span.alert-icon', '📥'),
         h('div',
           h('div.alert-title', 'They have sent something in'),
-          h('div.alert-detail', 'Waiting to be looked at — it is on the People screen.'),
+          h('div.alert-detail', 'Waiting to be looked at, under Staff › Sent in.'),
         ),
-        h('button.btn-sm', { onclick: () => navigate('people') }, 'Review'))
+        h('button.btn-sm', { onclick: () => navigate('people-sent') }, 'Review'))
       : null,
 
     h('div.toolbar', tabs),
@@ -226,7 +227,20 @@ async function overviewTab(data, model, reload, go) {
     .slice(0, 4)
     .map((f) => pair(f.label, String(data.profile[f.key])));
 
+  // Their first week, while they have one, so nobody has to go looking for it
+  // under Staff › New starters.
+  const first = await api.onboardingFor(data.person.id).catch(() => null);
+
   return h('div.person-overview',
+    first?.started ? card('First week', {
+      note: first.finishedAt ? 'Settled in' : `${first.progress.done} of ${first.progress.of} done`,
+      actions: h('button.btn-sm', { type: 'button', onclick: () => openFirstWeek(data.person.id, reload) }, 'Open'),
+    },
+    h('div.ob-bar', h('div.ob-bar-fill', { style: { width: `${first.progress.percent}%` } })),
+    (() => {
+      const next = first.steps.find((s) => !s.done);
+      return next && !first.finishedAt ? h('p.muted', `Next: ${next.title}`) : null;
+    })()) : null,
     t ? card('This month', { actions: open('attendance', 'Every day') },
       h('div.person-figures',
         h('div', h('strong', n(t.daysWorked)), h('span', 'days worked')),

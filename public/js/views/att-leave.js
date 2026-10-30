@@ -15,24 +15,23 @@ import { field, formDialog, monthLabel, signOffDialog } from './att-shared.js';
  */
 export async function renderAttLeave(params = {}) {
   const host = h('div');
+  // One page in three views: what is asked for, what is booked, what is left.
+  // Next year's plans are the fourth, on their own screen.
+  const part = ['booked', 'balances'].includes(params.part) ? params.part : 'requests';
   // Recording leave is for whoever decides it. A rota planner sees what is
   // waiting as well as what is approved, to plan around, and answers none of it.
   const requests = can('att_manage');
   const decides = can('att_manage');
-  // Closing a period off is its own permission, so a rota planner can be given
-  // it without being given the balances alongside.
-  const signs = can('att_signoff');
-  const seesReview = signs || can('att_reports');
 
-  const month = params.month || monthOf(todayISO());
-  const [leaveData, balanceData, bootstrap, review] = await Promise.all([
+  // The balance is beside a request as well as on its own view: the question
+  // is never "how much has Ama left" alone, it is "can Ama have Friday off".
+  const [leaveData, balanceData, bootstrap] = await Promise.all([
     api.attLeave(),
-    can('att_reports') ? api.attBalances() : Promise.resolve({ rows: [] }),
+    can('att_reports') && part !== 'booked' ? api.attBalances() : Promise.resolve({ rows: [] }),
     api.attBootstrap(),
-    seesReview ? api.attReview({ month }).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const reload = async (next = month) => mount(host, await renderAttLeave({ month: next }));
+  const reload = async () => mount(host, await renderAttLeave({ part }));
 
   const leaveKinds = bootstrap.reasons.filter((r) => r.kind === 'leave' && r.active);
   const pending = leaveData.leave.filter((l) => l.status === 'pending');
@@ -258,12 +257,22 @@ export async function renderAttLeave(params = {}) {
     }
   };
 
+  const leftFor = (row) => balanceData.rows.find((b) => b.staff.id === row.staff_id)?.balance;
   const columns = (kind) => [
     {
       key: 'staff_name',
       label: 'Name',
       format: (v, r) => h('div', h('div', v), h('small.muted', `No. ${r.employee_no}`)),
     },
+    ...(kind === 'pending' && balanceData.rows.length ? [{
+      key: 'left',
+      label: 'Left',
+      align: 'right',
+      format: (v, r) => {
+        const b = leftFor(r);
+        return b ? h('span', { title: 'Annual leave left, before this request' }, fmtNum(b.remaining, 1)) : h('span.muted', '—');
+      },
+    }] : []),
     {
       key: 'reason_label',
       label: 'Type',
@@ -338,30 +347,30 @@ export async function renderAttLeave(params = {}) {
     },
   ];
 
-  mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Leave'),
-        h('div.sub', 'Annual leave, sickness and everything else that keeps somebody off the rota'),
-      ),
-      requests
-        ? h('button.btn.btn-primary', { onclick: request },
-          decides ? '+ Record leave' : '+ Request leave')
-        : null,
+  const head = h('div.page-head',
+    h('div',
+      h('h1', 'Leave'),
+      h('div.sub', {
+        requests: 'What staff have asked for, and what was decided',
+        booked: 'Who is off, today and coming up',
+        balances: 'What everybody has left this leave year',
+      }[part]),
     ),
-
-    pending.length
-      ? card('Waiting for a decision', { note: `${pending.length}`, wide: true },
-        decides ? null : h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
-          'Shown so the rota can be planned around them. A supervisor or manager approves or rejects them.'),
-        table(columns('pending'), pending))
+    requests
+      ? h('button.btn.btn-primary', { onclick: request },
+        decides ? '+ Record leave' : '+ Request leave')
       : null,
+  );
 
-    card('Booked and coming up', { note: `${upcoming.length}`, wide: true },
-      table(columns('upcoming'), upcoming, { empty: 'Nobody is booked off.' })),
+  if (part === 'booked') {
+    mount(host, head,
+      card('Booked and coming up', { note: `${upcoming.length}`, wide: true },
+        table(columns('upcoming'), upcoming, { empty: 'Nobody is booked off.' })));
+    return host;
+  }
 
-    monthCard(review, month, signs, reload),
-
+  if (part === 'balances') {
+    mount(host, head,
     balanceData.rows.length
       ? card('Balances', { note: `As at ${fmtDay(balanceData.asOf)}`, wide: true },
         table([
@@ -396,17 +405,23 @@ export async function renderAttLeave(params = {}) {
         ], balanceData.rows, { empty: 'Nobody set up yet.' }),
         h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
           'The default entitlement follows the Labour Act — fifteen working days after twelve months\' '
-          + 'continuous service — and can be changed for the property or for one person in Attendance setup. '
+          + 'continuous service — and can be changed in Settings › Leave & holidays, or for one person on their record. '
           + 'Somebody part way through their first year is shown a pro-rata figure so you can see what they '
           + 'are on course for.'))
-      : null,
+      : emptyState('No balances yet', 'Once staff are set up, what each person has left shows here.'));
+    return host;
+  }
+
+  mount(host, head,
+    pending.length
+      ? card('Waiting on you', { note: `${pending.length}`, wide: true },
+        decides ? null : h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+          'Shown so the rota can be planned around them. A supervisor or manager approves or rejects them.'),
+        table(columns('pending'), pending))
+      : emptyState('Nothing waiting', 'A request for leave or for a day off shows here until it is decided.'),
 
     past.length
       ? card('Earlier', { note: `${past.length}`, wide: true }, table(columns('past'), past.slice(0, 60)))
-      : null,
-
-    !leaveData.leave.length && !balanceData.rows.length
-      ? emptyState('No leave recorded', 'Once staff are set up, record leave here and it will show on the rota and in the reports.')
       : null,
   );
 
@@ -432,7 +447,7 @@ function capitalise(value) {
  * judgement, and the form opens with the difference filled in rather than
  * applied — a default, not a verdict.
  */
-function monthCard(review, month, signs, reload) {
+export function monthCard(review, month, signs, reload) {
   if (!review) return null;
 
   // Changing what a month expected moves what the sign-off proposes against
@@ -581,8 +596,8 @@ function monthCard(review, month, signs, reload) {
       + 'not a day worked, it is a day somebody still has to look at, and the count beside the '
       + 'figure says how many are waiting. Rostered is what the rota asked for and is there for '
       + 'comparison; it does not enter the arithmetic. '
-      + 'Signing off moves days on and off the leave balance, and the balances above include '
-      + 'every month already signed.'),
+      + 'Signing off moves days on and off the leave balance, and the balances under Leave '
+      + 'include every month already signed.'),
   );
 }
 

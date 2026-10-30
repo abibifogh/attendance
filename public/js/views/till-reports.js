@@ -38,7 +38,7 @@ export async function renderTillReports(params = {}) {
   try {
     data = await api.tillReports(from, to);
   } catch (err) {
-    mount(host, h('div.page-head', h('div', h('h1', 'Till reports'))),
+    mount(host, h('div.page-head', h('div', h('h1', 'Till'))),
       emptyState('Could not load the reports', err.message));
     return host;
   }
@@ -163,7 +163,7 @@ export async function renderTillReports(params = {}) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Till reports'),
+        h('h1', 'Till'),
         h('div.sub', `${dayText(from)} to ${dayText(to)} · every closing report from the front desk`)),
       h('div.btn-row',
         h('button.btn-sm', { type: 'button', 'aria-label': 'The week before', onclick: () => reload({ to: shiftDay(to, -7) }) }, '‹'),

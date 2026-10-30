@@ -126,7 +126,7 @@ export async function renderSwaps() {
 
     if (!data.on) {
       mount(host,
-        h('div.page-head', h('div', h('h1', 'Swaps'))),
+        h('div.page-head', h('div', h('h1', 'My swaps'))),
         emptyState('Swaps are turned off',
           'An administrator can turn them on under Settings → Features. With them on, you can put '
           + 'a shift you cannot work in front of the colleagues who could cover it, instead of '
@@ -165,7 +165,7 @@ export async function renderSwaps() {
     mount(host,
       h('div.page-head',
         h('div',
-          h('h1', 'Swaps'),
+          h('h1', 'My swaps'),
           h('div.sub', summary(data))),
         h('button.btn.btn-primary', {
           type: 'button',

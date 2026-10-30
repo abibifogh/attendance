@@ -5,6 +5,7 @@ import {
 } from '../util.js';
 import { card, emptyState, exportButton, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
+import { analyticsSection } from './att-analytics.js';
 import { daysCell, lateBy, totalsLine } from './att-shared.js';
 
 /**
@@ -207,12 +208,17 @@ export async function renderAttOverview(params) {
 
   if (!data.rows.length) {
     mount(host,
-      h('div.page-head', h('h1', 'Attendance'), h('div.sub', label)),
+      h('div.page-head', h('h1', 'Reports'), h('div.sub', label)),
       nav,
       emptyState('Nothing recorded this month', 'No punches have landed for anybody in this period.'),
     );
     return host;
   }
+
+  // What the month cost, where the absence fell and how the cover was shaped.
+  // Heavier than the rest, so a failure leaves the table standing. Money in it
+  // is left out by the server for anybody who may not see pay.
+  const deeper = await api.attAnalytics({ from: data.from, to: data.to }).catch(() => null);
 
   const totals = data.rows.reduce((acc, row) => ({
     daysWorked: acc.daysWorked + row.totals.daysWorked,
@@ -224,7 +230,7 @@ export async function renderAttOverview(params) {
 
   mount(host,
     h('div.page-head',
-      h('div', h('h1', 'Attendance'), h('div.sub', label)),
+      h('div', h('h1', 'Reports'), h('div.sub', label)),
       totals.openCount
         ? h('span.pill.warn', `${totals.openCount} day${totals.openCount === 1 ? '' : 's'} still unconfirmed`)
         : h('span.pill.good', 'Every day settled'),
@@ -270,8 +276,9 @@ export async function renderAttOverview(params) {
       })),
     h('p.muted', { style: { fontSize: '.82rem' } },
       'Days worked counts a full day at or above the shift\'s full-day threshold and a half day above the '
-      + 'half-day threshold, both set per shift in Attendance setup.'
+      + 'half-day threshold, both set per shift in Settings › Rota & clocking.'
       + (data.showsLeave ? ' Leave left is against the current leave year.' : '')),
+    deeper ? analyticsSection(deeper) : null,
   );
 
   return host;
@@ -280,7 +287,7 @@ export async function renderAttOverview(params) {
 function head(title, data) {
   return h('div.page-head',
     h('div',
-      h('h1', `Attendance (${title.toLowerCase()})`),
+      h('h1', 'Reports'),
       h('div.sub', `${fmtDay(data.from, { withYear: true })} to ${fmtDay(data.to, { withYear: true })}`),
     ),
   );

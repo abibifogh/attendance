@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { h, mount } from '../util.js';
-import { navigate } from '../app.js';
+import { can, navigate } from '../app.js';
 import { emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { asBase64 } from './letters.js';
@@ -74,9 +74,12 @@ export async function renderSigning(params = {}) {
   const paint = () => {
     mount(host,
       h('div.page-head',
-        h('div', h('h1', 'Signatures'),
+        h('div', h('h1', 'Documents'),
           h('div.sub', 'Contracts and letters sent to be signed. Each one shows who has signed and whose turn it is.')),
-        data.canWrite ? h('div.btn-row', h('button.btn.btn-primary', { type: 'button', onclick: () => newDocument() }, 'New document to sign')) : null),
+        h('div.btn-row',
+          can('corr_view') ? h('button.btn-sm', { type: 'button', onclick: () => navigate('letter-signing') }, 'Signature & stamp') : null,
+          can('corr_view') ? h('button.btn-sm', { type: 'button', onclick: () => navigate('letter-parties') }, 'Address book') : null,
+          data.canWrite ? h('button.btn.btn-primary', { type: 'button', onclick: () => newDocument() }, 'New document to sign') : null)),
       h('div.sg-tabs', { role: 'tablist' }, TABS.map(([k, label]) => h('button.sg-tab', {
         type: 'button', role: 'tab', 'aria-selected': String(k === tab), class: k === tab ? 'on' : '',
         onclick: () => { tab = k; paint(); },

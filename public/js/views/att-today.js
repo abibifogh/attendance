@@ -115,7 +115,7 @@ export async function renderAttToday(params) {
 
   if (!data.rows.length) {
     mount(host,
-      h('div.page-head', h('h1', 'Attendance'), h('div.sub', fmtDay(day, { withYear: true }))),
+      h('div.page-head', h('h1', 'Today'), h('div.sub', fmtDay(day, { withYear: true }))),
       nav,
       quiet,
       clocks,
@@ -298,7 +298,7 @@ export async function renderAttToday(params) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Attendance'),
+        h('h1', 'Today'),
         h('div.sub', fmtDay(day, { withYear: true })),
       ),
       h('span.pill', totalsLine(data.totals)),

@@ -189,10 +189,10 @@ export async function renderOnboardingDesk() {
     mount(host,
       h('div.page-head',
         h('div',
-          h('h1', 'First weeks'),
+          h('h1', 'Staff'),
           h('div.sub', openOnes.length
-            ? `${openOnes.length} in progress${openOnes.filter((p) => p.late?.length).length ? ` · ${openOnes.filter((p) => p.late?.length).length} behind` : ''}`
-            : 'Nobody is being onboarded')),
+            ? `New starters: ${openOnes.length} in progress${openOnes.filter((p) => p.late?.length).length ? ` · ${openOnes.filter((p) => p.late?.length).length} behind` : ''}`
+            : 'New starters: nobody is in their first week')),
         data.mayManage
           ? h('div.btn-row',
             data.available.length
@@ -275,7 +275,11 @@ export async function renderOnboardingDesk() {
   return host;
 }
 
-/** One person's first week, and the ticking. */
+/** One person's first week, and the ticking. Opened from their record too. */
+export async function openFirstWeek(staffId, reload) {
+  return openPerson(staffId, reload);
+}
+
 async function openPerson(staffId, reload) {
   let data;
   try {
@@ -289,6 +293,10 @@ async function openPerson(staffId, reload) {
       : `Started ${readableDate(data.startedAt)}. ${data.progress.done} of `
         + `${data.progress.of} done.`),
     h('div.ob-bar', h('div.ob-bar-fill', { style: { width: `${data.progress.percent}%` } })),
+    location.hash.startsWith('#/person') ? null : h('p', h('button.btn-sm', {
+      type: 'button',
+      onclick: () => { body.closest('dialog')?.close(); navigate('person', { id: staffId }); },
+    }, 'Open their record')),
     h('div.ob-steps', data.steps.map((s) => h('label.ob-step.ob-tickable',
       { class: s.done ? 'ob-step ob-tickable ob-done' : null },
       h('input', {

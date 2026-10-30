@@ -22,11 +22,12 @@ export async function renderRequests() {
 }
 
 async function body(reload) {
-  const [week, swaps, advances, medical] = await Promise.all([
+  const [week, swaps, advances, medical, plan] = await Promise.all([
     api.myWeek().catch(() => null),
     api.swaps().catch(() => null),
     api.myAdvances().catch(() => null),
     api.myMedical().catch(() => null),
+    api.myLeavePlan().catch(() => null),
   ]);
 
   const cash = (n, cur) => money(n, cur);
@@ -86,12 +87,30 @@ async function body(reload) {
       h('div.ask-grid', asks.map((a) => h('button.ask-tile', { type: 'button', onclick: a.run },
         h(`span.ask-icon${a.tone ? `.is-${a.tone}` : ''}`, icon(a.name)),
         h('span', a.label))))),
+    planCard(plan),
     h('section.card', { 'aria-labelledby': 'asked' },
       h('div.card-head', h('h2', { id: 'asked' }, 'What I’ve asked')),
       items.length
         ? h('div.me-list', items.slice(0, 30).map((i) => i.el))
         : h('p.muted', 'Nothing asked yet. Anything you ask for shows here with its answer.')),
   ];
+}
+
+/**
+ * The year's leave plan, while there is one to send. A card here rather than a
+ * tab of its own: most of the year there is nothing to plan.
+ */
+function planCard(data) {
+  if (!data?.round || !data.eligible) return null;
+  const status = data.plan?.status;
+  const said = status === 'reviewed' ? ['good', 'Approved']
+    : status === 'sent' ? ['warn', 'With your manager']
+      : ['', 'Not sent yet'];
+  return h('section.card',
+    h('div.card-head', h('h2', `Your ${data.round.year} leave plan`), h(`span.pill${said[0] ? `.${said[0]}` : ''}`, said[1])),
+    h('p.muted', data.round.dueOn ? `Plans are due by ${fmtDayShort(data.round.dueOn)}.` : 'Choose the weeks you want off next year.'),
+    h('button.btn.btn-primary', { type: 'button', onclick: () => navigate('my-leave-plan') },
+      status === 'sent' || status === 'reviewed' ? 'Open my plan' : 'Plan my leave'));
 }
 
 function line(title, sub, [tone, label]) {

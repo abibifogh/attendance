@@ -64,6 +64,31 @@ export async function renderAttLunch(params = {}) {
 
     windowLine(data, window, thisIsTheWeek, reload),
 
+    // ABOVE EVERYTHING THAT IS ONLY READING. The rest of this screen is a
+    // count and three lists; this is the one part somebody has to decide
+    // about, and a decision under a fold is a decision that waits a week.
+    data.changes?.length
+      ? card('Waiting on you', {
+        wide: true,
+        cls: 'no-print',
+        note: `${data.changes.length} to answer`,
+      },
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Asked for after the list shut, so the count you ordered against has already gone. '
+        + 'Saying yes changes the plate as well, so there is nothing to remember afterwards.'),
+      h('div.lunch-waiting', data.changes.map((ask) => h('div.lunch-waiting-row',
+        h('div',
+          h('strong', ask.name),
+          h('div', h('small.muted',
+            `${ask.want ? 'Wants lunch on' : 'Wants to come off'} ${fmtDayShort(ask.day)}`
+            + `${ask.note ? ` \u00b7 \u201c${ask.note}\u201d` : ''}`))),
+        h('div.btn-row',
+          h('button.btn-sm', { onclick: () => decideChange(ask, 'declined', reload) }, 'No'),
+          h('button.btn.btn-primary.btn-sm', {
+            onclick: () => decideChange(ask, 'approved', reload),
+          }, 'Yes')))))) 
+      : null,
+
     // The sheet the kitchen orders against. Seven columns, the count under
     // each, and the names under that.
     card('The week', { wide: true, note: `${summary.plates} lunches` },
@@ -127,31 +152,6 @@ export async function renderAttLunch(params = {}) {
         h('button.btn-sm.no-print', {
           onclick: () => putThemDown(person, data, reload),
         }, 'Put them down')))))
-      : null,
-
-    // ABOVE EVERYTHING THAT IS ONLY READING. The rest of this screen is a
-    // count and three lists; this is the one part somebody has to decide
-    // about, and a decision under a fold is a decision that waits a week.
-    data.changes?.length
-      ? card('Waiting on you', {
-        wide: true,
-        cls: 'no-print',
-        note: `${data.changes.length} to answer`,
-      },
-      h('p.muted', { style: { fontSize: '.85rem' } },
-        'Asked for after the list shut, so the count you ordered against has already gone. '
-        + 'Saying yes changes the plate as well, so there is nothing to remember afterwards.'),
-      h('div.lunch-waiting', data.changes.map((ask) => h('div.lunch-waiting-row',
-        h('div',
-          h('strong', ask.name),
-          h('div', h('small.muted',
-            `${ask.want ? 'Wants lunch on' : 'Wants to come off'} ${fmtDayShort(ask.day)}`
-            + `${ask.note ? ` \u00b7 \u201c${ask.note}\u201d` : ''}`))),
-        h('div.btn-row',
-          h('button.btn-sm', { onclick: () => decideChange(ask, 'declined', reload) }, 'No'),
-          h('button.btn.btn-primary.btn-sm', {
-            onclick: () => decideChange(ask, 'approved', reload),
-          }, 'Yes')))))) 
       : null,
 
     // EVERY ANSWER IS SOMEWHERE ON THIS PAGE. Without this one, saying no put

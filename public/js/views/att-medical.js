@@ -40,7 +40,7 @@ export async function renderAttMedical(params) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Medical claims'),
+        h('h1', 'Medical'),
         h('div.sub', `What each person is allowed this year, and what they have claimed`),
       ),
       h('div.btn-row',
@@ -181,7 +181,7 @@ async function sendAgain(claim, reload) {
 // --------------------------------------------------------------------------
 
 function waitingCard(data, reload, cash) {
-  return card('Waiting on a decision', { wide: true, note: `${data.waiting.length}` },
+  return card('Waiting on you', { wide: true, note: `${data.waiting.length}` },
     data.waiting.map((claim) => h('div.med-claim',
       h('div.med-claim-head',
         h('div',

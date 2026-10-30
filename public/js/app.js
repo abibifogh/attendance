@@ -4,7 +4,7 @@ import { guard, justProved, unguard } from './guard.js';
 import { checkVersion, takeTheNewOne, waitingToRefresh } from './fresh.js';
 import { registerWorker, watchForInstall } from './install.js';
 import { h, holdBehindDialogs, keepScroll, mount, toast, watchScreenHeight } from './util.js';
-import { groupKeyFor, groupOf, mineTabs, openGroups, tabsOf } from './menu.js';
+import { familyOf, groupKeyFor, groupOf, mineTabs, openGroups, segmentsOf, tabsOf } from './menu.js';
 import { icon } from './icons.js';
 import { renderLogin } from './views/login.js';
 import { openAccountDialog, renderForcedPinChange } from './views/account.js';
@@ -162,52 +162,61 @@ const ROUTES = [
   // the address so a live redraw keeps it, and dropped on the way in so the
   // screen always opens on this week.
   { mine: true, group: 'my-rota', tab: 'My shifts', mgroup: 'mine', mtab: 'Shifts', path: 'att-me', label: 'My shifts', permission: 'att_me', render: renderAttMe, live: ['rota', 'attendance', 'leave', 'lunch'], freshEach: ['from'] },
-  { mine: true, group: 'my-rota', tab: 'Swaps', mgroup: 'mine', under: 'att-me', path: 'swaps', label: 'Swaps', permission: 'att_me', render: renderSwaps, live: ['rota'] },
+  { mine: true, group: 'my-rota', tab: 'My swaps', mgroup: 'mine', under: 'att-me', path: 'swaps', label: 'My swaps', permission: 'att_me', render: renderSwaps, live: ['rota'] },
   { mine: true, group: 'my-rota', tab: 'Lunch', mgroup: 'mine', under: 'att-me', path: 'att-my-lunch', label: 'My lunch', permission: 'att_me', render: renderAttMyLunch, live: ['lunch'], freshEach: ['week'] },
   { mine: true, group: 'my-rota', tab: 'Report', mgroup: 'mine', under: 'att-me', path: 'att-my-report', label: 'My report', permission: 'att_me', render: renderAttMyReport, live: ['attendance', 'leave'] },
   // Everything somebody can ask for, and what became of it, in one place.
   { mine: true, group: 'requests', tab: 'Requests', mgroup: 'mine', mtab: 'Requests', path: 'requests', label: 'Requests', permission: 'att_me', render: renderRequests, live: ['leave', 'rota', 'pay', 'lunch'] },
-  { mine: true, group: 'requests', tab: 'Leave plan', mgroup: 'mine', under: 'requests', path: 'my-leave-plan', label: 'Leave plan', permission: 'att_me', render: renderMyLeavePlan, live: ['leave'] },
+  // Opened from a card on Requests rather than a tab of its own.
+  { mine: true, group: 'requests', tab: 'Leave plan', notab: true, lights: 'requests', mgroup: 'mine', under: 'requests', path: 'my-leave-plan', label: 'Leave plan', permission: 'att_me', render: renderMyLeavePlan, live: ['leave'] },
   { mine: true, group: 'my-pay', tab: 'Payslips', mgroup: 'mine', mtab: 'Pay', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Advance', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
-  { mine: true, group: 'my-pay', tab: 'Claims', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-medical', label: 'My claims', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+  { mine: true, group: 'my-pay', tab: 'Medical', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-medical', label: 'Medical', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
   { mine: true, group: 'me', tab: 'Documents', mgroup: 'mine', mtab: 'Documents', path: 'att-my-contracts', label: 'My documents', permission: 'att_me', render: renderMyContracts, live: ['people'] },
 
   // ---- everybody who runs something --------------------------------------
   { group: 'home', tab: 'Home', path: 'home', label: 'Home', permission: 'att_view', render: renderHome, live: ['attendance', 'rota', 'leave', 'people', 'pay'] },
   { group: 'inbox', tab: 'Inbox', path: 'inbox', label: 'Inbox', permission: ['att_manage', 'att_setup', 'att_rota', 'hr_pay', 'hr_manage', 'lunch'], render: renderInbox, live: ['leave', 'rota', 'attendance', 'pay', 'people', 'lunch'] },
 
-  { group: 'rota', tab: 'Build', path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
+  { group: 'rota', tab: 'Rota', path: 'att-rota', label: 'Rota', permission: ['att_rota', 'att_rota_view'], render: renderAttRota, live: ['rota', 'leave', 'attendance'] },
   { group: 'rota', tab: 'Swaps', path: 'att-swaps', label: 'Swaps', permission: ['att_rota', 'att_manage'], render: renderSwapQueue, live: ['rota'] },
   { group: 'rota', tab: 'Workload', path: 'att-workload', label: 'Workload', permission: ['att_rota', 'att_reports'], render: renderAttWorkload, live: ['rota', 'leave'] },
   { group: 'rota', tab: 'Lunch', path: 'att-lunch', label: 'Lunch', permission: 'lunch', render: renderAttLunch, live: ['lunch', 'rota'] },
 
   { group: 'day', tab: 'Today', path: 'att-today', label: 'Today', permission: 'att_view', render: renderAttToday, live: ['attendance', 'rota', 'leave'] },
-  { group: 'day', tab: 'Week', path: 'att-week', label: 'Week', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
-  { group: 'day', tab: 'Month', path: 'att-overview', label: 'Month', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
-  { group: 'day', tab: 'Leave', path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
-  { group: 'day', tab: 'Leave plans', path: 'leave-plans', label: 'Leave plans', permission: 'att_manage', render: renderLeavePlans, live: ['leave'] },
+  // Reports: one page, a week or a month at a time.
+  { group: 'day', tab: 'Reports', seg: 'Week', path: 'att-week', label: 'Reports', permission: 'att_reports', render: renderAttWeek, live: ['attendance', 'rota', 'leave'] },
+  { group: 'day', tab: 'Reports', seg: 'Month', part: 'att-week', path: 'att-overview', label: 'Reports', permission: ['att_reports', 'att_rota'], render: renderAttOverview, live: ['attendance', 'rota', 'leave'] },
+  // Leave: what is asked for, what is booked, what is left, and next year.
+  { group: 'day', tab: 'Leave', seg: 'Requests', path: 'att-leave', label: 'Leave', permission: 'att_view', render: renderAttLeave, live: ['leave', 'rota'] },
+  { group: 'day', tab: 'Leave', seg: 'Booked', part: 'att-leave', path: 'att-leave-booked', label: 'Leave', permission: 'att_view', render: (params) => renderAttLeave({ ...params, part: 'booked' }), live: ['leave', 'rota'] },
+  { group: 'day', tab: 'Leave', seg: 'Balances', part: 'att-leave', path: 'att-leave-balances', label: 'Leave', permission: 'att_reports', render: (params) => renderAttLeave({ ...params, part: 'balances' }), live: ['leave', 'rota'] },
+  { group: 'day', tab: 'Leave', seg: 'Plans', part: 'att-leave', path: 'leave-plans', label: 'Leave', permission: 'att_manage', render: renderLeavePlans, live: ['leave'] },
   // Last, because it is what closes a period rather than what reads one, and
   // it is the only tab here that cannot be undone.
   { group: 'day', tab: 'Sign-off', path: 'signoff', label: 'Sign-off', permission: 'att_signoff', render: renderAttSignoff, live: ['attendance', 'rota', 'leave'] },
 
-  { group: 'people', tab: 'Staff', path: 'people', label: 'People', permission: 'hr_view', render: renderPeople, live: ['people'] },
+  // Staff: everybody, the new starters, and what staff have sent in.
+  { group: 'people', tab: 'Staff', seg: 'Everybody', path: 'people', label: 'Staff', permission: 'hr_view', render: renderPeople, live: ['people'] },
+  { group: 'people', tab: 'Staff', seg: 'New starters', part: 'people', path: 'onboarding-desk', label: 'Staff', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
+  { group: 'people', tab: 'Staff', seg: 'Sent in', part: 'people', path: 'people-sent', label: 'Staff', permission: 'hr_view', render: (params) => renderPeople({ ...params, part: 'sent' }), live: ['people'] },
   { group: 'people', tab: 'Recruitment', path: 'rec', label: 'Recruitment', permission: 'rec_view', render: renderRec, live: ['recruitment'] },
-  { group: 'people', tab: 'First weeks', path: 'onboarding-desk', label: 'First weeks', permission: ['hr_view', 'hr_manage'], render: renderOnboardingDesk, live: ['people'] },
-  { group: 'people', tab: 'Letters', path: 'letters', label: 'Letters', permission: 'corr_view', render: renderLetters, live: ['letters'] },
-  { group: 'people', tab: 'Signatures', path: 'signing', label: 'Signatures', permission: ['hr_view', 'corr_view'], render: renderSigning, live: ['people', 'letters'] },
-  { group: 'people', tab: 'Templates', path: 'people-templates', label: 'Templates', permission: 'hr_manage', render: renderPeopleTemplates, live: ['people'] },
-  // Reachable by everybody signed in. Under Me for staff, under People for
-  // everybody who runs something.
-  { group: 'me', tab: 'Directory', mgroup: 'people', path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
-  { group: 'me', tab: 'Handbook', mgroup: 'people', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
-  { group: 'me', tab: 'HR FAQ', mgroup: 'people', path: 'hr-faq', label: 'HR FAQ', permission: null, render: renderHrFaq, live: ['people'] },
+  // Documents: what is out to sign, the letters, and the templates they come from.
+  { group: 'people', tab: 'Documents', seg: 'To sign', path: 'signing', label: 'Documents', permission: ['hr_view', 'corr_view'], render: renderSigning, live: ['people', 'letters'] },
+  { group: 'people', tab: 'Documents', seg: 'Letters', part: 'signing', path: 'letters', label: 'Documents', permission: 'corr_view', render: renderLetters, live: ['letters'] },
+  { group: 'people', tab: 'Documents', seg: 'Templates', part: 'signing', path: 'people-templates', label: 'Documents', permission: 'hr_manage', render: renderPeopleTemplates, live: ['people'] },
+  // Reachable by everybody signed in. A tab under Me for staff. Not a tab for
+  // everybody who runs something, since Staff answers the same question with
+  // more on it; the address still opens it, under People.
+  { group: 'me', tab: 'Directory', mgroup: 'people', mnotab: true, path: 'directory', label: 'Directory', permission: null, render: renderDirectory, live: ['people'] },
+  { group: 'me', tab: 'Handbook', seg: 'Handbook', mgroup: 'people', path: 'handbook', label: 'Handbook', permission: null, render: renderHandbook, live: ['people'] },
+  { group: 'me', tab: 'Handbook', seg: 'FAQ', part: 'handbook', mgroup: 'people', path: 'hr-faq', label: 'Handbook', permission: null, render: renderHrFaq, live: ['people'] },
   { group: 'me', tab: 'Guide', mgroup: 'mine', mtab: 'Guide', path: 'guide', label: 'Guide', permission: null, render: renderGuide },
 
   { group: 'money', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
   { group: 'money', tab: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
-  { group: 'money', tab: 'Medical claims', path: 'att-medical', label: 'Medical claims', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
-  { group: 'money', tab: 'Till reports', path: 'till-reports', label: 'Till reports', permission: 'till_reports', render: renderTillReports },
+  { group: 'money', tab: 'Medical', path: 'att-medical', label: 'Medical', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
+  { group: 'money', tab: 'Till', path: 'till-reports', label: 'Till', permission: 'till_reports', render: renderTillReports },
 
   // Everything set once, as topics down the side of one screen.
   { group: 'setup', tab: 'Settings', path: 'settings', label: 'Settings', permission: ['att_setup', 'users'], render: renderSettings, live: ['admin'] },
@@ -227,7 +236,9 @@ const ROUTES = [
   { group: 'till', tab: 'To sort out', mgroup: 'till', path: 'att-my-till-issues', label: 'Till: to sort out', permission: 'till', render: renderAttMyTillIssues },
 
   // Reached by clicking a name rather than from the menu.
-  { path: 'att-staff', label: 'Person', permission: 'att_view', render: renderAttStaff, live: ['attendance', 'rota', 'leave'], hidden: true },
+  // Somebody who may read the record gets the record, open on its Attendance
+  // tab: one page per person. Whoever may not still gets the attendance alone.
+  { path: 'att-staff', label: 'Person', permission: 'att_view', render: (params) => (can('hr_view') ? renderPerson({ ...params, tab: 'attendance' }) : renderAttStaff(params)), live: ['attendance', 'rota', 'leave'], hidden: true },
   { path: 'person', label: 'Record', permission: 'hr_view', render: renderPerson, live: ['people'], hidden: true },
   { path: 'rec-candidate', label: 'Candidate', permission: 'rec_view', render: renderRecCandidate, live: ['recruitment'], hidden: true },
   { path: 'people-form', label: 'What to ask for', permission: 'hr_manage', render: renderPeopleForm, hidden: true },
@@ -408,8 +419,13 @@ function groupStrip() {
       siblings.length ? h('div.group-tabs.group-tabs-sub.seg.seg-sm.seg-wrap', siblings.map((t) => tab(t, t.path === here))) : null);
   }
 
-  if (group.screens.length < 2) return null;
-  return h('div.group-tabs.seg.seg-wrap', tabsOf(group).map((t) => tab(t, here === t.path)));
+  const tabs = tabsOf(group);
+  const views = segmentsOf(group, here);
+  if (!tabs.length && !views.length) return null;
+  const family = familyOf(group.screens.find((r) => r.path === here));
+  return h('div.group-strips',
+    tabs.length ? h('div.group-tabs.seg.seg-wrap', tabs.map((t) => tab(t, t.family === family))) : null,
+    views.length ? h('div.group-tabs.group-tabs-sub.seg.seg-sm.seg-wrap', views.map((t) => tab(t, t.path === here))) : null);
 }
 
 function sidebar() {

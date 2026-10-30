@@ -3,7 +3,6 @@ import {
   daysApart, fmtDayShort, fmtNum, h, monthOf, mount, shiftDay, shiftMonth, todayISO,
 } from '../util.js';
 import { card, emptyState } from './components.js';
-import { analyticsSection } from './att-analytics.js';
 import { navigate, replaceParams } from '../app.js';
 
 /**
@@ -73,15 +72,9 @@ export async function renderAttWorkload(params) {
   const dir = params.dir === 'asc' ? 'asc' : 'desc';
   const only = ['over', 'quiet', 'sundays', 'all'].includes(params.only) ? params.only : 'all';
 
-  const [data, deeper] = await Promise.all([
-    api.attWorkload({ from, to, ...(params.department ? { department: params.department } : {}) }),
-    // The four measured views under the table. Heavier than the rest of the
-    // screen, so a failure here leaves the table standing rather than taking
-    // the page down with it. The money inside it is left out by the route for
-    // anybody who may not see pay, rather than blanked on the screen.
-    api.attAnalytics({ from, to, ...(params.department ? { department: params.department } : {}) })
-      .catch(() => null),
-  ]);
+  // The costs, absence and cover charts that used to sit under this table are
+  // on Attendance › Reports now. This screen is about people, not money.
+  const data = await api.attWorkload({ from, to, ...(params.department ? { department: params.department } : {}) });
 
   // What came back, which is not always what was asked for: a range longer
   // than the server will read comes back cut short, and every control on the
@@ -217,10 +210,6 @@ export async function renderAttWorkload(params) {
       : emptyState('Nobody to look at',
         'No active staff in this window — or none in the department chosen.'),
 
-    // The old cost card said the same thing in a weaker way and had to be
-    // reconciled with the one below it. Its one unique reading, the split
-    // between what a rota can move and what it cannot, is in there now.
-    deeper ? analyticsSection(deeper) : null,
     limitsCard(data.limits),
   );
 

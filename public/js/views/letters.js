@@ -42,15 +42,12 @@ export async function renderLetters(params) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Letters'),
+        h('h1', 'Documents'),
         h('div.sub', 'What has gone out, who signed it, and what came back'),
       ),
       h('div.btn-row',
         h('button.btn-sm', { onclick: () => navigate('letter-parties') }, 'Address book'),
         h('button.btn-sm', { onclick: () => navigate('letter-signing') }, 'Signature & stamp'),
-        data.canWrite
-          ? h('button.btn-sm', { onclick: () => navigate('people-templates') }, 'Templates')
-          : null,
         data.canWrite
           ? h('button.btn.btn-primary', { onclick: () => compose(data, reload) }, '+ New letter')
           : null,

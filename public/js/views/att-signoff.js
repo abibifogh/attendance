@@ -1,5 +1,6 @@
 import { api } from '../api.js';
-import { daysApart, fmtDay, fmtDayShort, h, mount, shiftDay, toast, todayISO } from '../util.js';
+import { daysApart, fmtDay, fmtDayShort, h, monthOf, mount, shiftDay, toast, todayISO } from '../util.js';
+import { monthCard } from './att-leave.js';
 import { card, emptyState, table } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
 import { correctTimesDialog, field, formDialog, overUnderOf } from './att-shared.js';
@@ -27,7 +28,9 @@ const PRESETS = [
   ['lastmonth', 'Last month'],
 ];
 
-const TABS = [['open', 'To sign off'], ['queries', 'Questions'], ['times', 'Clock changes'],
+// Every way a period is closed, in one place. Months used to be signed off
+// from the Leave screen as well.
+const TABS = [['open', 'To sign off'], ['months', 'Months'], ['queries', 'Questions'], ['times', 'Clock changes'],
   ['leave', 'Leave days']];
 
 /**
@@ -79,13 +82,25 @@ export async function renderAttSignoff(params) {
       ),
     ),
     h('div.toolbar', tabs),
-    tab === 'queries' ? await queriesTab(reload)
+    tab === 'months' ? await monthsTab(params, reload)
+      : tab === 'queries' ? await queriesTab(reload)
       : tab === 'times' ? await timesTab(range, reload)
         : tab === 'leave' ? await leaveTab(reload)
           : await openTab(params, range, reload),
   );
 
   return host;
+}
+
+/**
+ * A month at a time: days owed against days worked, signed off person by
+ * person, and what it does to their leave.
+ */
+async function monthsTab(params, reload) {
+  const month = params.month || monthOf(todayISO());
+  const review = await api.attReview({ month }).catch(() => null);
+  return monthCard(review, month, true, (next) => reload(next ? { month: next } : {}))
+    ?? emptyState('Nothing to sign off', 'Nobody was rostered or worked in this month.');
 }
 
 /** The window, from a preset or a pair of dates picked by hand. */
@@ -1188,7 +1203,7 @@ async function timesTab(range, reload) {
   )));
 
   const queue = pending.length
-    ? card('Waiting for you', {
+    ? card('Waiting on you', {
       note: `${pending.length}`,
       wide: true,
     }, h('div',

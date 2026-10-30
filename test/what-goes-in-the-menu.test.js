@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { groupKeyFor, groupOf, mineTabs, openGroups, tabsOf } from '../public/js/menu.js';
+import { groupKeyFor, groupOf, mineTabs, openGroups, segmentsOf, tabsOf } from '../public/js/menu.js';
 import { ROLES, allows, effectivePermissions } from '../src/lib/permissions.js';
 
 /**
@@ -40,6 +40,11 @@ function routes() {
       path: one(line, 'path'),
       label: one(line, 'label'),
       tab: one(line, 'tab'),
+      seg: one(line, 'seg'),
+      part: one(line, 'part'),
+      lights: one(line, 'lights'),
+      notab: /\bnotab: true/.test(line),
+      mnotab: /\bmnotab: true/.test(line),
       hidden: /\bhidden: true/.test(line),
       mine: /\bmine: true/.test(line),
       only: /\bonly: /.test(line),
@@ -130,10 +135,14 @@ test('a member of staff gets their five places, and Home first', () => {
   const menu = menuFor(['att_me']);
   assert.deepEqual(menu.map((g) => g.label), ['Home', 'Rota', 'Requests', 'Pay', 'Me']);
   assert.equal(menu[0].screens[0].path, 'my-day');
-  assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['My shifts', 'Swaps', 'Lunch', 'Report']);
-  assert.deepEqual(tabsOf(menu[2]).map((t) => t.label), ['Requests', 'Leave plan']);
-  assert.deepEqual(tabsOf(menu[3]).map((t) => t.label), ['Payslips', 'Advance', 'Claims']);
-  assert.deepEqual(tabsOf(menu[4]).map((t) => t.label), ['Documents', 'Directory', 'Handbook', 'HR FAQ', 'Guide']);
+  assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['My shifts', 'My swaps', 'Lunch', 'Report']);
+  // The leave plan opens from a card on Requests, not from a tab.
+  assert.deepEqual(tabsOf(menu[2]), []);
+  assert.deepEqual(tabsOf(menu[3]).map((t) => t.label), ['Payslips', 'Advance', 'Medical']);
+  assert.deepEqual(tabsOf(menu[4]).map((t) => t.label), ['Documents', 'Directory', 'Handbook', 'Guide']);
+  // The FAQ is a view of the handbook.
+  const me = menu[4];
+  assert.deepEqual(segmentsOf(me, 'hr-faq').map((t) => t.label), ['Handbook', 'FAQ']);
 });
 
 test('the front desk has Close till in the menu, beside Home', () => {
@@ -169,9 +178,9 @@ test('an administrator who works shifts reads the six, then Me and Settings', ()
   // On a screen under one of those, the parent lights and its own tabs come up.
   const under = mineTabs(me, 'att-my-medical');
   assert.equal(under.parent, 'att-my-payslips');
-  assert.deepEqual(under.siblings.map((t) => t.label), ['Payslips', 'Advance', 'Claims']);
-  // Requests has the year's leave plan under it.
-  assert.deepEqual(mineTabs(me, 'requests').siblings.map((t) => t.label), ['Requests', 'Leave plan']);
+  assert.deepEqual(under.siblings.map((t) => t.label), ['Payslips', 'Advance', 'Medical']);
+  // The year's leave plan opens from Requests, not from a second row.
+  assert.deepEqual(mineTabs(me, 'requests').siblings, []);
 });
 
 test('a login with no staff record behind it has none of the "my" screens', () => {
@@ -183,14 +192,20 @@ test('a supervisor reads Home, Inbox, Rota and Attendance', () => {
   const menu = menuFor(roleHolds('supervisor'), { staffId: null });
   assert.deepEqual(menu.map((g) => g.label).slice(0, 4), ['Home', 'Inbox', 'Rota', 'Attendance']);
   const day = menu.find((g) => g.key === 'day');
-  assert.deepEqual(tabsOf(day).map((t) => t.label), ['Today', 'Month', 'Leave', 'Leave plans', 'Sign-off']);
+  assert.deepEqual(tabsOf(day).map((t) => t.label), ['Today', 'Reports', 'Leave', 'Sign-off']);
+  // Holding Month but not Week, Reports opens on Month.
+  assert.equal(tabsOf(day).find((t) => t.label === 'Reports').path, 'att-overview');
+  assert.deepEqual(segmentsOf(day, 'leave-plans').map((t) => t.label), ['Requests', 'Booked', 'Plans']);
 });
 
-test('a manager reads People with its five, and the directory and handbook beside them', () => {
+test('a manager reads People as Staff, Recruitment, Documents and Handbook', () => {
   const menu = menuFor(roleHolds('manager'), { staffId: null });
   const people = menu.find((g) => g.key === 'people');
   assert.deepEqual(tabsOf(people).map((t) => t.label),
-    ['Staff', 'Recruitment', 'First weeks', 'Letters', 'Signatures', 'Templates', 'Directory', 'Handbook', 'HR FAQ']);
+    ['Staff', 'Recruitment', 'Documents', 'Handbook']);
+  assert.deepEqual(segmentsOf(people, 'people').map((t) => t.label), ['Everybody', 'New starters', 'Sent in']);
+  assert.deepEqual(segmentsOf(people, 'letters').map((t) => t.label), ['To sign', 'Letters', 'Templates']);
+  assert.equal(tabsOf(people).some((t) => t.path === 'directory'), false, 'the directory is a tab for staff only');
   assert.equal(menu.some((g) => g.key === 'money'), false, 'no payroll for a manager by default');
 });
 
