@@ -178,11 +178,7 @@ export function renderLogin(root, me = {}, onSignedIn) {
         convergence(),
         h('div.small.muted.converge-key',
           h('span', h('i.solid'), 'read live'),
-          h('span', h('i.dotted'), 'uploaded after each shift')),
-        h('p.small.muted',
-          'Is the wage bill rising because the hotel is busier, or just rising? '
-          + 'Do the kitchen and the restaurant pay the same supplier the same price? '
-          + 'Nothing could ask, until now.')))));
+          h('span', h('i.dotted'), 'uploaded after each shift'))))));
 }
 
 /**
