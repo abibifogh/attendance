@@ -1186,7 +1186,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
               s.sessions ? h('span.sh-chip.none', { title: 'ASSD hand-overs inside this shift, in order. Their counts, sales and movements add up as one shift.' },
                 `${s.sessions.length} ASSD sessions: ${s.sessions.map((x) => nameOf(x.user)).join(' → ')}`) : null))),
         h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
-        may('money') ? h('button.btn.sh-reconbtn', { type: 'button', onclick: () => openRecon(s) }, '⤓ Reconciliation report') : null,
+        shiftMenu(s),
         h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1 && !later, 'aria-label': i < shifts.length - 1 ? 'Next shift' : 'First shift of the next day', title: i < shifts.length - 1 ? 'Next shift' : 'First shift of the next day', onclick: () => (i < shifts.length - 1 ? go('shift', shifts[i + 1].id) : across(1)) }, '›')));
     // Without the amounts, the drawer's story is nothing but blanks: the
     // closing report and what does not agree are what there is to see.
@@ -1195,8 +1195,10 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       ? banner('info', `🔒 This day is locked: days up to ${shortDay(data.lock.through)} were locked by ${data.lock.by || 'an admin'}. Nothing on this shift can be changed until an admin moves the lock back (Settings › Locked dates).`)
       : null;
     if (!may('money')) {
-      mount(v, back, head, lockNote, moveBox(s), todoCard(s), whose, checked, report,
-        exceptionsBlock(s));
+      const tabs = detailTabs(s, { report, history: true });
+      mount(v, back, head, lockNote, moveBox(s), whose, shiftStrip(s, null),
+        h('div.sh-cols', todoPane(s, checked), tabs.el));
+      tabs.show();
       return;
     }
     const status = h('span');
@@ -1232,46 +1234,39 @@ export async function renderShifts(root, { range, section: only = null, onSectio
 
     // Here the status moves as a recount is typed.
     head.querySelector('.sh-status').replaceWith(status);
-    mount(v,
-      back,
-      head,
-      lockNote,
-      moveBox(s),
-      todoCard(s),
-      whose,
-      checked,
-      report,
-      h('div.sh-two',
-        h('section.card',
-          h('div.sh-cardhead', h('div', h('h2', 'The drawer'),
-            h('p.sh-sub', 'Notes and coins, from ASSD’s count at hand-over to its count at the end. Receipts in the counts are expenses, not cash. Type a recount of the notes and coins and the picture moves; Save keeps it.'))),
-          fall, vbox,
-          h('div.sh-inputs',
-            h('label.field', { for: 'sh-recount' }, 'Recount the notes and coins (optional)', recount),
-            opening ? h('label.field', { for: 'sh-opening' }, 'Opening count', opening) : null),
-          h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open || Boolean(lockNote) }, 'Save'), unsaved, said)),
-        h('section.card',
-          h('div.sh-cardhead', h('div', h('h2', 'How it was paid'),
-            h('p.sh-sub', 'Every payment in the shift, by the method ASSD recorded. Only cash goes in the drawer.'))),
-          modesBlock(s),
-          checksList)),
-      h('section.card',
-        h('div.sh-cardhead',
-          h('div', h('h2', 'Card and MoMo, on the clock'),
-            h('p.sh-sub', 'Each dot is a payment that arrived, at the time the terminal or MoMo took it. The shaded band is the shift’s hours; ninety minutes either side still counts. Tap a dot for the details.')),
-          h('div.sh-legend',
-            h('span', h('i', { style: 'background:var(--sh-card);border-radius:50%' }), 'Card'),
-            h('span', h('i', { style: 'background:var(--sh-safe);border-radius:50%' }), 'MoMo'),
-            h('span', h('i', { style: 'background:var(--surface);border:2px dashed var(--sh-bad);border-radius:50%' }), 'Declined'),
-            h('span', h('i', { style: 'background:var(--surface);box-shadow:0 0 0 2px var(--sh-bad);border-radius:50%' }), 'Needs an answer'))),
+    // Each check under the tab it is about; what waits for an answer is in To sort out already.
+    const drawerChecks = h('ul.sh-checks');
+    const cashChecks = h('ul.sh-checks');
+    const strip = h('div');
+    const tabs = detailTabs(s, {
+      drawer: h('div',
+        h('p.sh-sub', 'Notes and coins, from ASSD’s count at hand-over to its count at the end. Receipts in the counts are expenses, not cash. Type a recount and the picture moves; Save keeps it.'),
+        fall, vbox, drawerChecks,
+        h('div.sh-inputs',
+          h('label.field', { for: 'sh-recount' }, 'Recount the notes and coins (optional)', recount),
+          opening ? h('label.field', { for: 'sh-opening' }, 'Opening count', opening) : null),
+        h('div.sh-save', h('button.btn.primary', { type: 'button', onclick: save, disabled: s.open || Boolean(lockNote) }, 'Save'), unsaved, said)),
+      payments: h('div',
+        h('p.sh-sub', 'Every payment in the shift, by the method ASSD recorded. Only cash goes in the drawer.'),
+        modesBlock(s), checksList,
+        h('h3.sh-tabh', 'Card and MoMo, on the clock'),
+        h('p.sh-sub', 'Each dot is a payment that arrived, at the time the terminal or MoMo took it. The shaded band is the shift’s hours; ninety minutes either side still counts. Tap a dot for the details.'),
+        h('div.sh-legend',
+          h('span', h('i', { style: 'background:var(--sh-card);border-radius:50%' }), 'Card'),
+          h('span', h('i', { style: 'background:var(--sh-safe);border-radius:50%' }), 'MoMo'),
+          h('span', h('i', { style: 'background:var(--surface);border:2px dashed var(--sh-bad);border-radius:50%' }), 'Declined'),
+          h('span', h('i', { style: 'background:var(--surface);box-shadow:0 0 0 2px var(--sh-bad);border-radius:50%' }), 'Needs an answer')),
         timeline(s)),
-      goodsCard(s),
-      h('section.card',
-        h('div.sh-cardhead', h('div', h('h2', 'Where the cash went'),
-          h('p.sh-sub', 'Each Cash Movement out of the front drawer, labelled by the Money Count done just before it.'))),
-        movesBlock(s),
-        odooBlock(s)),
-      exceptionsBlock(s));
+      cash: h('div',
+        h('p.sh-sub', 'Each Cash Movement out of the front drawer, labelled by the Money Count done just before it, and the expenses against their POs in Odoo.'),
+        cashChecks, movesBlock(s), odooBlock(s)),
+      stock: goodsCard(s),
+      report,
+      history: true,
+    });
+    mount(v, back, head, lockNote, moveBox(s), whose, strip,
+      h('div.sh-cols', todoPane(s, checked), tabs.el));
+    tabs.show();
     redraw();
 
     function redraw() {
@@ -1346,11 +1341,20 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null),
         receiptsPanel(r, s));
 
-      mount(checksList, checks(s, n).map(([cls_, mark, text, detail]) => (detail
+      const line = ([cls_, mark, text, detail]) => (detail
         ? h('li.sh-hasdetail', h('details',
           h('summary', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text), h('span.sh-more', 'Details')),
           detail))
-        : h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text)))));
+        : h('li', h(`span.sh-ic.${cls_}`, String(mark)), h('span', text)));
+      // The drawer's lines, the cash's and the expenses', and the payments'; what waits for an answer is in To sort out.
+      const all_ = checks(s, n).filter(([, , text]) => !/waiting for an answer/.test(String(text)));
+      const isDrawer = (text) => /^(The drawer|Drawer|No closing count)/.test(String(text));
+      const isCash = (text) => /^(Expenses|The closing report says|The expense sheet|ASSD \d+ (matched|labelled)|.*receipts)/i.test(String(text));
+      mount(drawerChecks, all_.filter(([, , text]) => isDrawer(text)).map(line));
+      mount(cashChecks, all_.filter(([, , text]) => !isDrawer(text) && isCash(text)).map(line));
+      mount(checksList, all_.filter(([, , text]) => !isDrawer(text) && !isCash(text)).map(line));
+      mount(strip, shiftStrip(s, n));
+      tabs.dots(n);
     }
   }
 
@@ -2656,6 +2660,167 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** Answered, or explained by the rules: nothing left to do. */
   const settled = (x) => Boolean(x.answer) || x.severity === 'info';
 
+  // ------------------------------------------------------ the shift page --
+  // At the top, four numbers; on the left, what is still to sort out, each
+  // difference answered in the list; on the right, the details in tabs.
+
+  /** What was open on the left, and the tab on the right, kept while moving from shift to shift. */
+  const opened = new Set();
+  let shTab = null;
+
+  /** ⋯ beside the status: the reconciliation report, moving the shift, its history. */
+  function shiftMenu(s) {
+    const pop = h('div.sh-pop', { hidden: true },
+      may('money') ? h('button', { type: 'button', onclick: () => { pop.hidden = true; openRecon(s); } }, '⤓ Reconciliation report') : null,
+      admin && !s.open ? h('button', { type: 'button', onclick: () => {
+        pop.hidden = true;
+        const link = document.querySelector('.sh-movebox > .sh-link');
+        if (link) { link.click(); link.scrollIntoView?.({ block: 'center' }); }
+      } }, '↪ Wrong day or slot? Move this shift') : null,
+      h('button', { type: 'button', onclick: () => { pop.hidden = true; document.querySelector('[data-shtab="history"]')?.click(); } }, '📝 Notes and history'));
+    const wrap = h('div.sh-menu', h('button.btn', { type: 'button', 'aria-label': 'More', onclick: (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; } }, '⋯'), pop);
+    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) pop.hidden = true; });
+    return wrap;
+  }
+
+  /** The shift at a glance: what was taken, the drawer, card and MoMo, what is left to sort out. Each opens its detail. */
+  function shiftStrip(s, n) {
+    const hide = Boolean(data.redacted) || !may('money');
+    const m = modesOf(s);
+    const total = MODES.reduce((sum, [k]) => sum + Math.max(0, m[k] || 0), 0);
+    const items = todoOf(s);
+    const open = items.filter((i) => !i.done && !i.waiting).length;
+    const waiting = items.filter((i) => i.waiting).length;
+    const v = n ? n.variance : (s.register?.variance ?? s.register?.varianceSign);
+    const settledDrawer = Boolean(drawerSettled(s)) && !(n?.recounted);
+    const tile = (tab, label, value, sub, cls = '') => h('button.sh-tile2', { type: 'button', onclick: () => (tab === 'todo' ? document.querySelector('.sh-todopane')?.scrollIntoView({ behavior: 'smooth' }) : document.querySelector(`[data-shtab="${tab}"]`)?.click()) },
+      h('small', label), h(`b${cls ? `.${cls}` : ''}`, value), sub ? h('span', sub) : null);
+    const allCard = s.cardFound + (s.cardAnswered || 0) === s.cardLines;
+    return h('div.sh-glance',
+      hide ? null : tile('payments', 'Taken', money(total),
+        h('span.sh-glancemix', mixBar(s), MODES.filter(([k]) => m[k] > 0).map(([k, label]) => `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`).join(' · '))),
+      tile('drawer', 'The drawer',
+        s.open ? 'Ends here' : v == null ? 'No count' : v === 0 ? '✓ Agrees' : settledDrawer ? `✓ ${v > 0 ? 'Over' : 'Short'}, settled` : `${v > 0 ? 'Over' : 'Short'}${hide ? '' : ` ${money(Math.abs(v))}`}`,
+        s.open ? 'the journal ends inside it' : v === 0 ? (hide ? 'what was counted is what it should hold' : `${money(n?.closing ?? s.register?.closing)} counted, as it should hold`) : settledDrawer ? settledWords(drawerSettled(s)) : v == null ? '' : 'see To sort out',
+        s.open || v == null ? '' : v === 0 || settledDrawer ? 'ok' : v < 0 ? 'bad' : 'warn'),
+      tile('payments', 'Card and MoMo', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)} of ${s.cardLines} found` : 'None',
+        s.cardLines ? (allCard ? 'every one arrived' : `${s.cardLines - s.cardFound - (s.cardAnswered || 0)} not found`) : 'no card or MoMo this shift', !s.cardLines || allCard ? 'ok' : 'bad'),
+      tile('todo', 'To sort out', open ? `${open} open` : waiting ? `${waiting} waiting` : '✓ All answered',
+        `${items.filter((i) => i.done).length} answered${waiting && open ? ` · ${waiting} waiting for an admin` : ''}`, open ? 'bad' : waiting ? 'warn' : 'ok'));
+  }
+
+  /**
+   * On the left: the shift's differences as one list. An open one opens on
+   * its card, answered right there; an answered one says how, and opens on
+   * its card (with Undo). Those explained by the rules fold into one line.
+   * The check is the last step.
+   */
+  function todoPane(s, checked) {
+    const all = exceptionsOf(s).filter((x) => seesEx(x));
+    const shown = all.filter((x) => x.severity !== 'info');
+    const rules = all.filter((x) => x.severity === 'info');
+    const items = todoOf(s);
+    const byKey = new Map(items.map((i) => [i.key, i]));
+    const done = items.filter((i) => i.done).length;
+    // The first open one starts open, so its answers are there at once.
+    const first = items.find((i) => !i.done && !i.waiting);
+    if (first && ![...opened].some((k) => byKey.has(k))) opened.add(first.key);
+    const card = (x) => { const c = exceptionCard(x); c.id = `ex-${x.key}`; c.append(taskBox(x), notesBox(x)); fillNoteCounts(c); return c; };
+    const row = (x, i) => {
+      const box = h('div');
+      const isOpen = opened.has(x.key);
+      const wrap = h(`div.sh-item${i.done ? '.done' : i.waiting ? '.wait' : '.open'}${isOpen ? '.expanded' : ''}`);
+      const head = h('button.sh-itemrow', { type: 'button', 'aria-expanded': String(isOpen), onclick: () => {
+        if (opened.has(x.key)) opened.delete(x.key); else opened.add(x.key);
+        wrap.classList.toggle('expanded');
+        head.setAttribute('aria-expanded', String(opened.has(x.key)));
+        mount(box, opened.has(x.key) ? card(x) : null);
+        mount(more, opened.has(x.key) ? 'Close ▴' : i.done ? 'Open ▾' : 'Answer ▾');
+      } },
+      h('span.box', i.done ? '✓' : i.waiting ? '…' : ''),
+      h('span.t', h('b', (KIND[x.kind] || [x.kind])[0]), h('small', i.sub || describeShort(x))),
+      h('span.amt.num', x.amount == null ? '' : flowText(flowOf(x)) || money(Math.abs(x.amount))));
+      const more = h('small.sh-more2', isOpen ? 'Close ▴' : i.done ? 'Open ▾' : 'Answer ▾');
+      head.querySelector('.amt').append(more);
+      if (isOpen) mount(box, card(x));
+      wrap.append(head, box);
+      return wrap;
+    };
+    const order = (i) => (i.done ? 2 : i.waiting ? 1 : 0);
+    const list = shown.map((x) => [x, byKey.get(x.key)]).filter(([, i]) => i).sort((a, b) => order(a[1]) - order(b[1]));
+    const total = items.length + 1;
+    const rulesBox = h('div.sh-rulesbox');
+    let rulesOpen = false;
+    const drawRules = () => mount(rulesBox,
+      h('button.sh-link.sh-rulesbtn', { type: 'button', onclick: () => { rulesOpen = !rulesOpen; drawRules(); } }, `✓ ${rules.length} matched or explained by the rules ${rulesOpen ? '▾' : '▸'}`),
+      rulesOpen ? h('div.sh-ruleslist', rules.map((x) => row(x, { done: true, sub: describeShort(x) }))) : null);
+    if (rules.length) drawRules();
+    return h('section.card.sh-todopane',
+      h('div.sh-cardhead', h('h2', 'To sort out'), h(`span.sh-chip.${done === items.length ? 'ok' : 'none'}`, `${done} of ${items.length} answered`)),
+      h('div.sh-outbar', h('i', { style: `width:${total > 1 ? (done / items.length) * 100 : 100}%` })),
+      seenTwice(s).map(seenTwiceCard),
+      list.length ? h('div.sh-items', list.map(([x, i]) => row(x, i))) : h('p.small.muted', 'Nothing on this shift needs an answer.'),
+      rules.length ? rulesBox : null,
+      h('div.sh-checkstep', checked),
+      pickedBar());
+  }
+  /** One line for a difference the rules explained. */
+  const describeShort = (x) => { const d = String(describe(x) || ''); return d.length > 110 ? `${d.slice(0, 108)}…` : d; };
+
+  /**
+   * On the right: the details, one tab at a time. A dot marks a tab with
+   * something open. History gathers the notes and events of every
+   * difference on the shift.
+   */
+  function detailTabs(s, panels) {
+    const NAMES = [['drawer', 'Drawer'], ['payments', 'Payments'], ['cash', 'Cash out & expenses'], ['stock', 'Stock'], ['report', 'Closing report'], ['history', 'History']];
+    const have = NAMES.filter(([k]) => panels[k]);
+    if (!shTab || !have.some(([k]) => k === shTab)) shTab = have[0][0];
+    const bar = h('div.sh-dtabs', { role: 'tablist' });
+    const body = h('div.sh-tabbody');
+    const built = {};
+    const dot = {};
+    const open = exceptionsOf(s).filter((x) => seesEx(x) && !x.answer && !x.link && x.severity !== 'info');
+    const CARD = new Set(['not-found', 'failed', 'zero', 'double-charge', 'not-recorded', 'bank-only', 'paid-more', 'paid-less', 'never-settled', 'reversal', 'duplicate', 'laundry-card']);
+    dot.payments = open.some((x) => CARD.has(x.kind) || x.group === 'laundry');
+    dot.cash = open.some((x) => ['nopo', 'unlabelled'].includes(x.group) || String(x.kind).startsWith('movement'));
+    const paint = () => {
+      mount(bar, have.map(([k, label]) => h(`button${shTab === k ? '.on' : ''}`, { type: 'button', role: 'tab', 'aria-selected': String(shTab === k), dataset: { shtab: k }, onclick: () => { shTab = k; paint(); } },
+        label, dot[k] ? h('span.sh-tdot', { 'aria-label': 'something open' }) : null)));
+      if (!built[shTab]) built[shTab] = shTab === 'history' ? historyBox(s) : panels[shTab];
+      mount(body, built[shTab]);
+    };
+    // A closing report that is not there is something to see to.
+    if (panels.report) {
+      new MutationObserver(() => { const missing = /No closing report/.test(panels.report.textContent); if (missing !== Boolean(dot.report)) { dot.report = missing; paint(); } })
+        .observe(panels.report, { childList: true, subtree: true });
+    }
+    return {
+      el: h('section.card.sh-detailpane', bar, body),
+      show: paint,
+      // The drawer's dot moves with a recount being typed.
+      dots: (n) => { const d = n.variance != null && n.variance !== 0 && !(drawerSettled(s) && !n.recounted); if (d !== Boolean(dot.drawer)) { dot.drawer = d; paint(); } },
+    };
+  }
+
+  /** Every note and event on the shift's differences, and on the shift itself, newest first. */
+  function historyBox(s) {
+    const box = h('div.sh-history', h('p.small.muted', 'Reading…'));
+    const xs = exceptionsOf(s).filter((x) => seesEx(x)).slice(0, 40);
+    const keys = [...xs.map((x) => [x.key, (KIND[x.kind] || [x.kind])[0]]), [`shift:${s.day}:${s.slot}`, 'The shift']];
+    Promise.all(keys.map(([key, about]) => api(`/shifts/notes?key=${encodeURIComponent(key)}`).then((d) => d.items.map((it) => ({ ...it, about }))).catch(() => [])))
+      .then((lists) => {
+        const items = lists.flat().sort((a, b) => (String(a.at) < String(b.at) ? 1 : -1));
+        mount(box, items.length ? h('ul.sh-hist', items.map((it) => h(`li${it.type === 'note' ? '.note' : ''}`,
+          h('span.small.muted', `${it.about} · `),
+          it.type === 'note' ? [h('b', it.by), ' (note) ', h('div.txt', it.text)] : [it.text, it.by ? h('span.small.muted', ` · ${it.by}`) : null],
+          h('small', String(it.at).slice(0, 16).replace('T', ' ')))))
+          : h('p.small.muted', 'Nothing yet. Answers, approvals, moves and notes on this shift are kept here.'),
+        h('p.small.muted', 'To add a note, open a difference on the left: Notes and history.'));
+      });
+    return box;
+  }
+
   // ------------------------------------------------------ moving a shift --
 
   /**
@@ -2768,29 +2933,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   const checkLine = (st) => ({ done: st === 'ok', waiting: false, text: 'Marked checked by an admin',
     sub: st === 'ok' ? null : st === 'changed' ? 'Changed since it was checked: check it again' : 'Not checked yet' });
 
-  /** On the shift: everything to sort out, ticked as it is done. Each line takes you to its card. */
-  function todoCard(s) {
-    const items = todoOf(s);
-    const list = h('ul.sh-todos');
-    const count = h('span.sh-todocount');
-    const card = h('section.card.sh-todocard',
-      h('div.sh-cardhead', h('div', h('h2', 'To sort out on this shift'),
-        h('p.sh-sub', 'Every difference on it, ticked when it is answered, reconciled or explained, and the check itself. Tap one to go to it.')), count),
-      list);
-    const draw = (st) => {
-      const all = [...items, ...(st !== undefined ? [checkLine(st)] : [])];
-      const done = all.filter((i) => i.done).length;
-      mount(count, h(`span.sh-chip.${done === all.length ? 'ok' : 'none'}`, `${done} of ${all.length} done`));
-      mount(list, all.map((i) => todoLine(i, i.key ? () => {
-        const el = document.getElementById(`ex-${i.key}`);
-        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('sh-flash'); setTimeout(() => el.classList.remove('sh-flash'), 1600); }
-      } : null)));
-    };
-    draw();
-    till.checks().then((map) => draw(map.get(`${s.day}|${s.slot}`) || 'wait')).catch(() => {});
-    return card;
-  }
-
   /** Over the days: every shift with something still to sort out, each as its checklist. */
   function outstandingCard() {
     const rows = shifts.map((s) => ({ s, items: todoOf(s) })).filter((r) => r.items.some((i) => !i.done));
@@ -2817,35 +2959,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       h('div.sh-cardhead', h('div', h('h2', `Still to sort out · ${rows.length} shift${rows.length === 1 ? '' : 's'}`),
         h('p.sh-sub', `${open} difference${open === 1 ? '' : 's'} to answer in these days. Each shift’s list ticks itself as they are answered; tap a shift to open it.`))),
       shown, more);
-  }
-
-  /**
-   * A shift's differences: what still needs somebody first, then what was
-   * matched or explained, in green, so a settled one does not read as a
-   * problem.
-   */
-  function exceptionsBlock(s) {
-    const all = exceptionsOf(s);
-    const open = all.filter((x) => !settled(x));
-    const done = all.filter(settled);
-    const seen = seenTwice(s);
-    // Each with its notes and history underneath.
-    const withNotes = (x) => { const c = exceptionCard(x); c.id = `ex-${x.key}`; c.append(taskBox(x), notesBox(x)); return c; };
-    const blocks = [
-      open.length ? h('section.card',
-        h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
-        h('div.sh-exgrid', seen.map(seenTwiceCard), open.map(withNotes))) : null,
-      done.length ? h('section.card.sh-settled',
-        h('div.sh-cardhead', h('div', h('h2', `✓ Matched and explained · ${done.length}`),
-          h('p.sh-sub', 'Differences already answered, matched or explained by the rules. Nothing to do; Undo is still there.'))),
-        h('div.sh-exgrid', done.map(withNotes))) : null,
-    ];
-    for (const b of blocks) if (b) fillNoteCounts(b);
-    return [
-      ...blocks,
-      // Ticked here, or on another shift or day: reconcile them from here too.
-      pickedBar(),
-    ];
   }
 
   /**
@@ -4064,7 +4177,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
             h('span', 'Cash', h('b.num', whole(p.cash))),
             h('span', 'Card + MoMo', h('b.num', whole(p.card))),
             h('span', 'To answer', h('b', { style: `color:${open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'}` }, String(open)))),
-          h('div.sh-strip', p.mine.map((s) => h('button', {
+          h('div.sh-glance', p.mine.map((s) => h('button', {
             type: 'button', title: `${dayText(s.day)} · ${SLOT[s.slot].label}`, style: `background:${TONE[tone(s)]}`, onclick: () => go('shift', s.id),
           }, dayText(s.day, { day: 'numeric' })))));
       }))), extras, odooCard);
