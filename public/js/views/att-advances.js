@@ -138,6 +138,7 @@ export async function renderAttAdvances(params) {
 
   const reload = async (next = {}) => {
     const merged = { ...params, month, ...next };
+    if (merged.show === 'paying') delete merged.show;
     // Called with no arguments after a save: the reader has not moved, so
     // neither should the page. Called with arguments because a control was
     // pressed, and then the top of a fresh month is where to be.
@@ -150,47 +151,95 @@ export async function renderAttAdvances(params) {
 
   const cash = (n) => money(n, data.currency);
 
+  const show = ['paying', 'waiting', 'later', 'paidoff'].includes(params.show)
+    ? params.show
+    : (data.requests.length && !data.people.some((p) => p.totals.owed > 0) ? 'waiting' : 'paying');
+  let query = '';
+  const paying = data.people.filter((p) => p.totals.owed > 0);
+  const paidOff = data.people.filter((p) => p.totals.owed <= 0);
+  const counts = { paying: paying.length, waiting: data.requests.length, later: (data.later ?? []).length, paidoff: paidOff.length };
+  const ctx = { data, reload, cash };
+
+  const listHost = h('div');
+  const drawList = () => {
+    const match = (name) => !query || String(name ?? '').toLowerCase().includes(query);
+    if (show === 'waiting') {
+      const reqs = data.requests.filter((r) => match(r.staffName));
+      mount(listHost, reqs.length ? requestsCard({ ...data, requests: reqs }, reload, cash)
+        : emptyState('Nothing waiting', 'When somebody asks for an advance from their phone, it waits here for you.'));
+      return;
+    }
+    if (show === 'later') {
+      const rows = (data.later ?? []).filter((r) => match(r.staff));
+      mount(listHost, rows.length
+        ? h('section.card.adv-list', rows.map((r) => {
+          const person = data.people.find((p) => p.staff.id === r.staffId);
+          return h('button.adv-item', { type: 'button', onclick: () => person && openPanel(person, ctx) },
+            h('span.adv-who', h('b', r.staff)),
+            h('span.muted', `${cash(r.monthly)} a month`),
+            h('span', `from ${niceMonth(r.from)}`),
+            h('span.adv-chev', { 'aria-hidden': 'true' }, '›'));
+        }))
+        : emptyState('Nothing starting later', 'Money handed over in the last week of a month comes off from the month after; it shows here until then.'));
+      return;
+    }
+    const people = (show === 'paidoff' ? paidOff : paying).filter((p) => match(`${p.staff.name} ${p.staff.department ?? ''}`));
+    mount(listHost, people.length
+      ? h('section.card.adv-list',
+        h('div.adv-item.adv-item-head', { 'aria-hidden': 'true' },
+          h('span', 'Name'), h('span', 'For'), h('span', 'Paid back'), h('span.num', 'Left'), h('span.num', 'A month'), h('span', 'Finishes'), h('span')),
+        people.map((person) => listRow(person, ctx)))
+      : show === 'paidoff'
+        ? emptyState('Nobody has finished paying back yet', 'Advances paid off in full move here, with their history.')
+        : emptyState('Nobody is paying anything back', 'When somebody is given an advance, they show here until it is paid off.'));
+  };
+
+  const chips = h('div.adv-chips', { role: 'group', 'aria-label': 'Show' },
+    [['paying', 'Paying back'], ['waiting', 'Waiting on you'], ['later', 'Starting later'], ['paidoff', 'Paid off']]
+      .filter(([k]) => k === 'paying' || k === 'waiting' || counts[k])
+      .map(([k, label]) => h('button.adv-chip', {
+        type: 'button',
+        class: k === show ? 'adv-chip on' : 'adv-chip',
+        'aria-pressed': String(k === show),
+        onclick: () => reload({ show: k }),
+      }, label, ' ', h('b', { class: k === 'waiting' && counts.waiting ? 'is-warn' : '' }, String(counts[k])))),
+    h('button.adv-chip', { type: 'button', onclick: () => navigate('till-shortages') }, 'Till shortages ›'));
+
+  const search = h('input.adv-search', {
+    type: 'search', placeholder: 'Find a name', 'aria-label': 'Find a name',
+    oninput: () => { query = search.value.trim().toLowerCase(); drawList(); },
+  });
+  drawList();
+
   mount(host,
     h('div.page-head',
       h('div',
         h('h1', 'Advances'),
-        h('div.sub', 'What was lent, what has come back, and what is left'),
+        h('div.sub', data.totals.owed > 0
+          ? [h('b', cash(data.totals.owed)), ` owed by ${data.totals.people} ${data.totals.people === 1 ? 'person' : 'people'} · `,
+            h('b', cash(data.totals.monthly)), ` coming off ${niceMonth(monthOf(todayISO()))} pay`]
+          : 'Nobody owes anything just now'),
       ),
       h('div.btn-row',
+        h('button.btn-sm', { type: 'button', onclick: () => shiftShown(month, reload) }, 'Another month'),
         advanceImportButton(reload),
         h('button.btn-sm.btn-primary', { onclick: () => addOne(data, reload) }, 'Give an advance')),
     ),
 
-    data.requests.length ? requestsCard(data, reload, cash) : null,
+    // The end-of-month question, as a bar while it is due; the list itself
+    // opens in a window.
+    monthBar(data, month, reload, cash),
 
-    // The end-of-month question, whenever it is due. Above everything else on
-    // the days it matters, and gone the rest of the time.
-    dueCard(data, month, reload, cash),
-
-    h('div.grid.grid-3.adv-tiles',
-      tile('Owed to the property', cash(data.totals.owed),
-        `${data.totals.people} ${data.totals.people === 1 ? 'person' : 'people'} paying back`),
-      tile('Coming off this month', cash(data.totals.monthly), 'if every deduction is taken'),
-      tile('Waiting on you', String(data.requests.length),
-        data.requests.length ? 'asked for and not decided' : 'nothing to decide'),
-    ),
-
-    data.people.length
-      ? card('Everybody with an advance', { wide: true, note: `${data.people.length} in all` },
-        h('div.table-wrap', h('table.adv-table',
-          h('thead', h('tr',
-            h('th', 'Name'),
-            h('th.num', 'Taken'),
-            h('th.num', 'Paid back'),
-            h('th.num', 'Left'),
-            h('th.num', 'A month'),
-            h('th', 'Finishes'),
-            h('th', ''),
-          )),
-          h('tbody', data.people.map((person) => personRows(person, { data, reload, cash })).flat()))))
-      : emptyState('Nobody has taken an advance',
-        'When somebody does, record it here and the repayments look after themselves.'),
+    h('div.adv-tools', chips, search),
+    listHost,
   );
+
+  // A person's panel that was open before this redraw opens again on the new
+  // figures, so a change made in it is seen in it.
+  if (panelFor != null) {
+    const person = data.people.find((p) => p.staff.id === panelFor);
+    if (person) openPanel(person, ctx); else closePanel();
+  }
 
   return host;
 }
@@ -207,6 +256,45 @@ export async function renderAttAdvances(params) {
  * boxes to say "yes, as usual" is a form they stop filling in. What it wants
  * is the exceptions.
  */
+/**
+ * The month's question, as one line while it is due: how many deductions are
+ * waiting to be confirmed, and a button that opens the list in a window. A
+ * closed month says so in a line and can be opened back up. Nothing at all the
+ * rest of the time.
+ */
+function monthBar(data, month, reload, cash) {
+  const outstanding = data.due.filter((row) => !row.recorded);
+  const total = outstanding.reduce((n, row) => n + (row.expected || 0), 0);
+  if (data.closed && !outstanding.length) {
+    return h('p.muted.adv-month-line',
+      `${niceMonth(month)} closed off${data.closed.by ? ` by ${data.closed.by}` : ''}. `,
+      h('button.btn-link', { type: 'button', onclick: () => openItBackUp(month, reload) }, 'Open it back up'));
+  }
+  if (!outstanding.length && !data.monthEnd) return null;
+  return h('div.adv-month-bar', { role: 'status' },
+    h('span.adv-month-dot', { 'aria-hidden': 'true' }),
+    h('span', outstanding.length
+      ? [h('b', `${niceMonth(month)} is due to close. `), `${outstanding.length} deduction${outstanding.length === 1 ? '' : 's'} to confirm, ${cash(total)}.`]
+      : [h('b', `${niceMonth(month)}: `), 'nothing was due to come off anybody\'s pay.']),
+    h('button.btn-sm.btn-primary', { type: 'button', onclick: () => monthDialog(data, month, reload, cash) },
+      outstanding.length ? `Confirm ${niceMonth(month)}` : 'Close it'));
+}
+
+/** The month's list in a window: the same ticks and amounts as ever. */
+function monthDialog(data, month, reload, cash) {
+  const dialog = h('dialog.app-dialog.app-dialog-wide');
+  const done = async (next) => { dialog.close(); await reload(next); };
+  const body = dueCard(data, month, done, cash);
+  body?.classList?.add('adv-in-dialog');
+  mount(dialog,
+    h('div.dialog-head', h('h2', `Confirm ${niceMonth(month)}`),
+      h('div.dialog-head-tools', h('button.dialog-close', { type: 'button', 'aria-label': 'Close', onclick: () => dialog.close() }, '✕'))),
+    body);
+  dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 function dueCard(data, month, reload, cash) {
   const outstanding = data.due.filter((row) => !row.recorded);
   const closed = Boolean(data.closed);
@@ -560,135 +648,147 @@ async function addOne(data, reload) {
  * redraws this screen, and closing the person somebody was working on every
  * time they save is how a screen makes a person do their work twice.
  */
-const openedOut = new Set();
-const showingDone = new Set();
+/** Which person's panel is open, kept across a redraw. */
+let panelFor = null;
+let panelEl = null;
 
-function personRows(person, { data, reload, cash }) {
-  const open = person.advances.filter((a) => a.status === 'approved');
+function closePanel() {
+  panelFor = null;
+  if (panelEl) { panelEl.quiet = true; panelEl.close(); panelEl = null; }
+}
 
-  // What is finished is folded away. A property that has been lending for two
-  // years has a dozen paid-off advances against somebody, and opening their
-  // row to answer "what do they owe" should not mean scrolling past every one
-  // of them to reach the one still running. They are kept, because the
-  // history is the whole point of the ledger, and they are one press away.
+/** One person on the list: what they had, how far through it, and when it ends. */
+function listRow(person, ctx) {
+  const { cash } = ctx;
+  const running = person.advances.filter((a) => a.status === 'approved');
+  const labels = [...new Set(running.map((a) => a.purposeLabel).filter(Boolean))];
+  const held = running.some((a) => a.till && !a.till.checkedAt);
+  const taken = person.totals.taken;
+  const repaid = Math.max(0, taken - person.totals.owed);
+  const pct = taken > 0 ? Math.min(100, Math.round((repaid / taken) * 100)) : 0;
+  return h('button.adv-item', {
+    type: 'button',
+    'aria-label': `${person.staff.name}: ${cash(person.totals.owed)} left`,
+    onclick: () => openPanel(person, ctx),
+  },
+  h('span.adv-who', h('b', person.staff.name), h('small.muted', person.staff.department || `No. ${person.staff.employeeNo ?? ''}`)),
+  h('span', running.length > 1
+    ? h('span.pill', `${running.length} running`)
+    : labels.length ? h(`span.pill${labels[0] === 'Till shortage' ? '.warn' : ''}`, labels[0]) : h('span.muted', '—')),
+  h('span.adv-prog',
+    h('span.adv-bar', { role: 'img', 'aria-label': `${cash(repaid)} of ${cash(taken)} paid back` }, h('i', { style: { width: `${pct}%` } })),
+    h('small.muted', `${cash(repaid)} of ${cash(taken)}`)),
+  h('span.num', person.totals.owed > 0 ? h('b', cash(person.totals.owed)) : h('span.pill.good', 'clear')),
+  h('span.num', person.totals.monthly ? cash(person.totals.monthly) : h('span.muted', '—')),
+  h('span', held ? h('span.pill.bad', 'Held') : person.totals.finishes ? niceMonth(person.totals.finishes) : h('span.muted', '—')),
+  h('span.adv-chev', { 'aria-hidden': 'true' }, '›'));
+}
+
+/**
+ * One person's advances, in a panel at the side: each running advance as a
+ * card, what is paid off folded away, their statement a press away. The list
+ * stays where it was underneath, one screen long.
+ */
+function openPanel(person, ctx) {
+  const { data, reload, cash } = ctx;
+  if (panelEl) { panelEl.quiet = true; panelEl.close(); }
+  panelFor = person.staff.id;
   const done = person.advances.filter((a) => a.status === 'settled');
   const live = person.advances.filter((a) => a.status !== 'settled');
   const paidOff = done.reduce((n, a) => n + a.amount, 0);
-
-  const detail = h('tr.adv-detail', { style: { display: 'none' } },
-    h('td', { colspan: 7 },
-      // Their own screen, opened from here. Somebody being asked "why has this
-      // not finished" should be answered off the page they are looking at,
-      // not off a differently arranged one.
-      h('div.btn-row', { style: { marginBottom: '.6rem' } },
-        h('button.btn-sm', {
-          onclick: () => showStatement(person, { data, reload, cash }),
-        }, `See ${person.staff.name.split(' ')[0]}\u2019s account`)),
-
+  const el = h('dialog.app-dialog.adv-panel', { 'aria-label': `${person.staff.name}'s advances` },
+    h('div.adv-panel-head',
+      h('div',
+        h('h2', person.staff.name),
+        h('div.muted', [
+          person.staff.department,
+          person.totals.owed > 0 ? `owes ${cash(person.totals.owed)}` : 'owes nothing',
+          person.totals.monthly ? `${cash(person.totals.monthly)} a month` : null,
+          person.totals.finishes ? `done by ${niceMonth(person.totals.finishes)}` : null,
+        ].filter(Boolean).join(' · '))),
+      h('div.btn-row',
+        h('button.btn-sm', { type: 'button', onclick: () => showStatement(person, { data, reload, cash }) }, 'Statement'),
+        h('button.btn-sm', { type: 'button', onclick: () => { closePanel(); navigate('att-staff', { id: person.staff.id }); } }, 'Record'),
+        h('button.dialog-close', { type: 'button', 'aria-label': 'Close', onclick: () => closePanel() }, '✕'))),
+    h('div.adv-panel-body',
       live.length
         ? live.map((advance) => advanceBlock(advance, { person, data, reload, cash }))
-        : (done.length
-          ? h('p.muted', { style: { fontSize: '.85rem' } },
-            'Nothing running. Everything they have had is paid off.')
-          : null),
-
+        : h('p.muted', 'Nothing running. Everything they have had is paid off.'),
       done.length
-        ? h('details.adv-done', {
-          open: showingDone.has(person.staff.id),
-          ontoggle: (e) => {
-            if (e.target.open) showingDone.add(person.staff.id);
-            else showingDone.delete(person.staff.id);
-          },
-        },
-        h('summary.adv-done-head',
-            h('span', `${done.length} paid off`),
-            h('small.muted', `${cash(paidOff)} in all`)),
-        done.map((advance) => advanceBlock(advance, { person, data, reload, cash })))
+        ? h('details.adv-done',
+          h('summary.adv-done-head', h('span', `${done.length} paid off`), h('small.muted', `${cash(paidOff)} in all`)),
+          done.map((advance) => advanceBlock(advance, { person, data, reload, cash })))
         : null));
-
-  // Opened already, because they were opened before the redraw.
-  const wasOpen = openedOut.has(person.staff.id);
-  if (wasOpen) detail.style.display = '';
-
-  const toggle = () => {
-    const showing = detail.style.display !== 'none';
-    detail.style.display = showing ? 'none' : '';
-    main.setAttribute('aria-expanded', String(!showing));
-    if (showing) openedOut.delete(person.staff.id);
-    else openedOut.add(person.staff.id);
-  };
-
-  const main = h('tr.adv-row', {
-    tabindex: 0,
-    role: 'button',
-    'aria-expanded': String(wasOpen),
-    onclick: toggle,
-    onkeydown: (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-    },
-  },
-  h('td',
-    h('div.adv-who', person.staff.name),
-    h('small.muted', person.staff.department || `No. ${person.staff.employeeNo ?? ''}`)),
-  h('td.num', cash(person.totals.taken)),
-  h('td.num', cash(person.totals.taken - person.totals.owed)),
-  h('td.num', person.totals.owed > 0
-    ? h('strong', cash(person.totals.owed))
-    : h('span.pill.good', 'clear')),
-  h('td.num', person.totals.monthly ? cash(person.totals.monthly) : h('span.muted', '—')),
-  h('td', person.totals.finishes
-    ? niceMonth(person.totals.finishes)
-    : h('span.muted', '—')),
-  h('td.num', open.length > 1 ? h('span.pill.warn', `${open.length} running`) : ''));
-
-  return [main, detail];
+  el.addEventListener('close', () => {
+    el.remove();
+    if (!el.quiet) panelFor = null;
+    if (panelEl === el) panelEl = null;
+  });
+  document.body.append(el);
+  el.showModal();
+  panelEl = el;
 }
 
 /** One agreement: its terms, its movements, and the ways to correct it. */
 function advanceBlock(advance, { person, data, reload, cash }) {
   const badge = {
-    approved: ['', 'running'],
-    settled: ['good', 'paid off'],
+    approved: ['good', 'running'],
+    settled: ['', 'paid off'],
     requested: ['warn', 'waiting'],
     declined: ['', 'turned down'],
     withdrawn: ['', 'taken back'],
   }[advance.status] ?? ['', advance.status];
+  const pct = advance.amount > 0 ? Math.min(100, Math.round((advance.repaid / advance.amount) * 100)) : 0;
 
-  return h('div.adv-block',
-    h('div.adv-block-head',
-      h('div',
-        h('strong', cash(advance.amount)),
-        advance.purposeLabel ? h('span.muted', ` for ${advance.purposeLabel.toLowerCase()}`) : null,
-        h('span.muted', advance.purpose === 'till'
-          ? ` recorded ${advance.takenOn ? fmtDay(advance.takenOn) : ''}`
-          : ` handed over ${advance.takenOn ? fmtDay(advance.takenOn) : 'at some point'}`),
-        h('span.pill' + (badge[0] ? `.${badge[0]}` : ''), { style: { marginLeft: '.4rem' } }, badge[1])),
-      h('div.btn-row',
-        advance.status === 'approved'
-          ? h('button.btn-sm', { onclick: () => adjust(advance, reload, cash) }, 'Change the terms')
-          : null,
-        advance.status === 'approved'
-          ? h('button.btn-sm', {
-            onclick: () => addMovement(advance, { person, reload, cash }),
-          }, 'Add a movement')
-          : null,
-        // Offered on a finished one as well. A figure keyed wrong is usually
-        // noticed when somebody asks why the deductions stopped early.
-        data?.canEdit && ['approved', 'settled'].includes(advance.status)
+  // The rare ones, under ⋯: a record that is wrong, or should never have existed.
+  const more = data?.canEdit
+    ? h('details.adv-more',
+      h('summary', { 'aria-label': 'More for this advance', title: 'Correct the record, or delete it' }, '⋯'),
+      h('div.adv-more-menu',
+        ['approved', 'settled'].includes(advance.status)
           ? h('button.btn-ghost.btn-sm', {
+            type: 'button',
             title: 'The record is wrong: the amount, the date, what it was for',
             onclick: () => editRecord(advance, { person, data, reload, cash }),
           }, 'Correct the record')
           : null,
-        // The one for a record that should never have existed. Correcting is
-        // for a wrong figure; this is for a duplicate, or a top-up the ledger
-        // turned out to already have.
-        data?.canEdit
-          ? h('button.btn-ghost.btn-sm.danger', {
-            title: 'Take the whole record off the books',
-            onclick: () => removeRecord(advance, { person, reload, cash }),
-          }, 'Delete')
-          : null)),
+        h('button.btn-ghost.btn-sm.danger', {
+          type: 'button',
+          title: 'Take the whole record off the books',
+          onclick: () => removeRecord(advance, { person, reload, cash }),
+        }, 'Delete')))
+    : null;
+
+  // The last three movements, the rest one press away.
+  const moves = advance.entries ?? [];
+  const recent = moves.slice(-3);
+  const older = moves.slice(0, -3);
+  const moveRow = (entry) => h('div.adv-move',
+    h('span', niceMonth(entry.month)),
+    h('span.muted', [MOVEMENT[entry.kind] ?? entry.kind, entry.note].filter(Boolean).join(' · ')),
+    h('span.num', entry.kind === 'skipped' ? h('span.muted', 'nothing') : cash(entry.amount)),
+    h('span.adv-move-tools',
+      h('button.btn-ghost.btn-sm', {
+        type: 'button', title: 'Put this figure right', 'aria-label': 'Put this figure right',
+        onclick: () => editMovement(advance, entry, { person, reload, cash }),
+      }, '✎'),
+      h('button.btn-ghost.btn-sm', {
+        type: 'button', title: 'Take this off the record', 'aria-label': 'Take this off the record',
+        onclick: async () => {
+          if (!confirmAction('Take this movement off the record? What is owed goes back up.')) return;
+          await api.advanceRemoveEntry(advance.id, entry.id);
+          toast('Taken off.', 'good');
+          await reload();
+        },
+      }, '✕')));
+
+  return h('section.adv-card',
+    h('div.adv-card-head',
+      h('div.adv-card-title',
+        h('strong', cash(advance.amount)),
+        advance.purposeLabel ? h(`span.pill${advance.purpose === 'till' ? '.warn' : ''}`, advance.purposeLabel) : null,
+        h(`span.pill${badge[0] ? `.${badge[0]}` : ''}`, badge[1])),
+      more),
 
     advance.reason ? h('div.adv-reason', advance.reason) : null,
     // A till shortage comes off pay only while its shift is checked in Insight.
@@ -698,59 +798,39 @@ function advanceBlock(advance, { person, data, reload, cash }) {
         : h('span', { style: { color: 'var(--bad)' } }, 'Held: its shift is not checked in Insight, so nothing comes off until it is.'))
       : null,
 
+    h('div.adv-bar.adv-bar-lg', { role: 'img', 'aria-label': `${cash(advance.repaid)} of ${cash(advance.amount)} paid back` }, h('i', { style: { width: `${pct}%` } })),
+
+    h('div.adv-terms',
+      term('Paid back', cash(advance.repaid)),
+      term('Left', cash(advance.balance)),
+      term('A month', cash(advance.monthly)),
+      term(advance.purpose === 'till' ? 'Recorded' : 'Handed over', advance.takenOn ? fmtDay(advance.takenOn) : '—'),
+      advance.finishes ? term('Finishes', niceMonth(advance.finishes)) : null),
+
     // The gap between what the schedule assumes and what the books have seen.
     // Left alone it hides: the balance is right, because nothing was written,
     // while the finish date goes on counting months that were never taken.
     advance.unanswered?.length
-      ? h('div.alert.warn',
-        h('span.alert-icon', '\u26a0\ufe0f'),
-        h('div',
-          h('div.alert-title', `${advance.unanswered.length} month`
-            + `${advance.unanswered.length === 1 ? '' : 's'} with nothing recorded`),
-          h('div.alert-detail', `${advance.unanswered.map(niceMonth).join(', ')}. Nothing was `
-            + 'written for them either way, so if money did come off in one it is still showing '
-            + 'as owed.'),
-          h('button.btn-sm', {
-            style: { marginTop: '.45rem' },
-            onclick: () => catchUp(advance, { person, reload, cash }),
-          }, 'Say which were skipped')))
+      ? h('div.adv-gap', { role: 'alert' },
+        h('span', h('b', advance.unanswered.map(niceMonth).join(', ')),
+          advance.unanswered.length === 1 ? ' has nothing recorded, either way.' : ' have nothing recorded, either way.'),
+        h('button.btn-sm', { type: 'button', onclick: () => catchUp(advance, { person, reload, cash }) }, 'Catch up'))
       : null,
 
-    h('div.adv-terms',
-      term('A month', cash(advance.monthly)),
-      term('Over', `${advance.months} month${advance.months === 1 ? '' : 's'}`),
-      term('Paid back', cash(advance.repaid)),
-      term('Left', cash(advance.balance)),
-      advance.finishes ? term('Finishes', niceMonth(advance.finishes)) : null),
+    h('div.adv-moves-list',
+      h('div.adv-moves-head', h('b', 'Payments'), older.length ? h('small.muted', `${moves.length} in all`) : null),
+      moves.length
+        ? [
+          older.length ? h('details.adv-older', h('summary', `${older.length} earlier`), older.map(moveRow)) : null,
+          recent.map(moveRow),
+        ]
+        : h('p.muted', { style: { fontSize: '.85rem', margin: '.2rem 0 0' } }, 'Nothing has come off yet.')),
 
-    advance.entries.length
-      ? h('table.adv-moves',
-        h('tbody', advance.entries.map((entry) => h('tr',
-          h('td', niceMonth(entry.month)),
-          h('td', MOVEMENT[entry.kind] ?? entry.kind),
-          h('td.num', entry.kind === 'skipped' ? h('span.muted', 'nothing') : cash(entry.amount)),
-          h('td.muted', entry.note || ''),
-          // Putting a figure right, rather than taking it off and adding it
-          // again. A five hundred typed where seven hundred came off, or a
-          // column of already-repaid out by a decimal place, is one act.
-          h('td.num', h('button.btn-ghost.btn-sm', {
-            title: 'Put this figure right',
-            onclick: () => editMovement(advance, entry, { person, reload, cash }),
-          }, '✎')),
-          h('td.num', h('button.btn-ghost.btn-sm', {
-            title: 'Take this off the record',
-            onclick: async () => {
-              if (!confirmAction('Take this movement off the record? What is owed goes back up.')) return;
-              await api.advanceRemoveEntry(advance.id, entry.id);
-              toast('Taken off.', 'good');
-              await reload();
-            },
-          }, '✕')))))) 
-      : h('p.muted', { style: { fontSize: '.85rem' } }, 'Nothing has come off yet.'),
-
-    h('button.btn-ghost.btn-sm', {
-      onclick: () => navigate('att-staff', { id: person.staff.id }),
-    }, `Open ${person.staff.name.split(' ')[0]}’s record`),
+    advance.status === 'approved'
+      ? h('div.btn-row',
+        h('button.btn-sm', { type: 'button', onclick: () => adjust(advance, reload, cash) }, 'Change the terms'),
+        h('button.btn-sm', { type: 'button', onclick: () => addMovement(advance, { person, reload, cash }) }, 'Add a payment'))
+      : null,
   );
 }
 
