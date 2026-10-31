@@ -54,6 +54,8 @@ async function paint() {
   const chip = (s) => (s.status === 'accepted' ? '<span class="chip ok">✓ Accepted</span>'
     : s.status === 'refused' ? '<span class="chip no">✕ Refused</span>'
       : s.unread ? '<span class="chip">Could not be read</span>' : '<span class="chip">Being checked</span>');
+  const today = new Date().toISOString().slice(0, 10);
+  const moves = d.moves || [];
   page.innerHTML = `
     <div class="card"><p class="note">Still with you</p><div class="big">${esc(ghs(d.held))}</div>
       <div class="bar"><i style="width:${pct}%"></i></div>
@@ -68,7 +70,25 @@ async function paint() {
         <small>${esc(dayText(s.day))}${s.description ? ` · ${esc(s.description)}` : ''} · ${esc(s.ref)}</small>
         ${s.status === 'refused' && s.reason ? `<small>Why: ${esc(s.reason)}</small>` : ''}
         ${s.unread && s.status === 'checking' ? '<small>The office will fill it in.</small>' : ''}</span>${chip(s)}</div>`).join('') : '<p class="note">Nothing sent yet.</p>'}
+    </div>
+    <div class="card"><h2>Money given to you</h2>
+      ${moves.length ? moves.map((m) => `<div class="row"><span class="t"><b>${m.kind === 'given' ? 'Given' : 'You gave back'} · ${esc(ghs(m.amount))}</b>
+        <small>${esc(dayText(m.day))}${m.source ? ` · from ${esc(m.source.charAt(0).toLowerCase() + m.source.slice(1))}` : ''}${m.by ? ` · by ${esc(m.by)}` : ''}</small>
+        ${m.note ? `<span class="memo">${esc(m.note)}</span>` : ''}</span></div>`).join('') : '<p class="note">Nothing given yet.</p>'}
+    </div>
+    <div class="card"><h2>Your statement</h2>
+      <p class="note">Everything given, spent and given back, with what was still with you after each.</p>
+      <div class="dates"><label>From<input id="from" type="date" value="${today.slice(0, 8)}01" max="${today}"></label><label>To<input id="to" type="date" value="${today}" max="${today}"></label></div>
+      <div class="links"><a class="btn" id="see" target="_blank" rel="noopener">View statement</a><a class="btn" id="csv">Spreadsheet</a></div>
     </div>`;
+  const dates = () => `${key}&from=${document.getElementById('from').value}&to=${document.getElementById('to').value}`;
+  const links = () => {
+    document.getElementById('see').href = `/api/float/statement?${dates()}`;
+    document.getElementById('csv').href = `/api/float/statement?${dates()}&format=csv`;
+  };
+  document.getElementById('from').onchange = links;
+  document.getElementById('to').onchange = links;
+  links();
   const pick = document.getElementById('pick');
   document.getElementById('add').onclick = () => pick.click();
   pick.onchange = async () => {

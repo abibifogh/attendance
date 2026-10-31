@@ -352,6 +352,7 @@ const ROUTES = [
   // Their own link: no sign-in, the token in it is the only key, and it opens one person's float.
   ['GET', '/api/float/me', 'public', (env, ctx) => floats.linkView(env, ctx.query)],
   ['POST', '/api/float/send', 'public', (env, ctx) => floats.linkSend(env, ctx.body)],
+  ['GET', '/api/float/statement', 'public', (env, ctx) => floats.linkStatement(env, ctx.query)],
   // Receipts made into draft POs: several chosen at once, or emailed in (the email handler below).
   ['GET', '/api/receipts', 'insight', adminOnly((env) => receipts.list(env))],
   ['GET', '/api/receipts/choices', 'insight', adminOnly((env) => receipts.settingsChoices(env))],

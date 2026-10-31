@@ -335,6 +335,10 @@ export async function linkView(env, query, { fetchImpl } = {}) {
   await settleFromOdoo(env, receipts, { fetchImpl });
   return {
     name: p.name, ref: `FLT/${p.code}`, ...totals(moves, receipts),
+    // The money given them (and given back), newest first, each with its note.
+    moves: moves.slice().sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : b.id - a.id)).slice(0, 40).map((m) => ({
+      kind: m.kind, amount: m.amount, day: m.day, source: SOURCES[m.source] || null, note: m.note || null, by: m.by_name || null,
+    })),
     sent: receipts.slice(0, 40).map((r) => ({
       ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: r.amount ?? null, vendor: r.vendor_name || r.vendor_text || null,
       description: r.description || r.hint || null, status: r.status, reason: r.reason || null,
@@ -363,7 +367,15 @@ export async function linkSend(env, body, { fetchImpl } = {}) {
  * As a spreadsheet (CSV) or a page to print or save as PDF.
  */
 export async function statement(env, id, query) {
-  const p = await person(env, id);
+  return statementOf(env, await person(env, id), query);
+}
+
+/** Their own statement, from their link. */
+export async function linkStatement(env, query) {
+  return statementOf(env, await byToken(env, query?.t, query?.s), query);
+}
+
+async function statementOf(env, p, query) {
   const to = DAY.test(String(query?.to || '')) ? query.to : todayIn('UTC');
   const from = DAY.test(String(query?.from || '')) ? query.from : `${to.slice(0, 7)}-01`;
   if (from > to) throw badRequest('The start is after the end.');
