@@ -34,6 +34,7 @@ test('only an admin is shown it', async () => {
 
 test('every source in one list: what is going wrong, with what to do, the worst first', async () => {
   const env = await world();
+  await assistant.setBills(env, { on: true }, OWNER);
   const d = await assistant.gather(env, OWNER, { now: NOW });
   const titles = d.items.map((x) => x.title);
   assert.equal(d.items[0].title, 'Kofi Test\'s drawer was short three afternoons', 'urgent first');
@@ -49,6 +50,24 @@ test('every source in one list: what is going wrong, with what to do, the worst 
   assert.equal(d.tiles.atStake, 41200 + 150000 + 128000);
   assert.ok(d.read.every((r) => typeof r.ok === 'boolean'), 'each source says whether it was read');
   assert.equal(d.counts.fix, d.items.filter((x) => x.tab === 'fix').length);
+});
+
+test('bills owed are not flagged until an admin turns them on, and can be turned off again', async () => {
+  const env = await world();
+  let d = await assistant.gather(env, OWNER, { now: NOW });
+  assert.equal(d.billsOn, false, 'off at first');
+  assert.equal(d.items.some((x) => x.key.startsWith('bill:')), false, 'no bill on the list');
+  assert.equal(d.tiles.atStake, 41200 + 150000, 'nor in the money at stake');
+  assert.deepEqual(d.read.find((r) => r.id === 'bills'), { id: 'bills', label: 'Odoo bills', ok: true, off: true, count: 0 });
+  await assert.rejects(assistant.setBills(env, { on: true }, SUP), /admin/i, 'only an admin turns it on');
+  await assert.rejects(assistant.setBills(env, { on: 'yes' }, OWNER), /on or off/);
+  await assistant.setBills(env, { on: true }, OWNER);
+  d = await assistant.gather(env, OWNER, { now: NOW });
+  assert.equal(d.billsOn, true);
+  assert.equal(d.items.find((x) => x.key.startsWith('bill:')).title, 'A Hardware Shop is owed GH₵ 1,280');
+  await assistant.setBills(env, { on: false }, OWNER);
+  d = await assistant.gather(env, OWNER, { now: NOW });
+  assert.equal(d.items.some((x) => x.key.startsWith('bill:')), false, 'off again');
 });
 
 test('a source that fails is said, and the rest still come', async () => {
@@ -80,5 +99,7 @@ test('a question is answered from the facts, and needs a question', async () => 
   assert.equal(none.by, 'plain');
   env.AI = { run: async (model, input) => ({ response: input.messages[1].content.includes('A Hardware Shop') ? 'A Hardware Shop, GH₵ 1,280.' : 'I do not know.' }) };
   const out = await assistant.ask(env, { question: 'Who are we owing most?' }, OWNER, { now: NOW });
-  assert.equal(out.answer, 'A Hardware Shop, GH₵ 1,280.');
+  assert.equal(out.answer, 'A Hardware Shop, GH₵ 1,280.', 'bills off are not flagged, but a question about them is answered');
+  await assistant.setBills(env, { on: true }, OWNER);
+  assert.equal((await assistant.ask(env, { question: 'Who are we owing most?' }, OWNER, { now: NOW })).answer, 'A Hardware Shop, GH₵ 1,280.');
 });

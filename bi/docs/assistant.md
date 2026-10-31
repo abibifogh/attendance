@@ -8,7 +8,7 @@ Insight reads, in one list, each with what Insight would do about it.
 | Tab | What is in it | Where it comes from |
 |---|---|---|
 | **Decide** | Approvals waiting in every system; receipts with no PO, drafts to check; float receipts to look at; answers on the to-do list; Nice Place counters nobody could read | Approvals, Receipts, Floats, the to-do list, Nice Place |
-| **Fix** | Insight's own checks (drawers, food cost and the rest), money held in floats with nothing sent for 14 days, Odoo bills owed more than 30 days, to-dos nobody has, the ASSD journal not loaded for two days | Findings, Floats, Odoo bills, the to-do list, Shift files |
+| **Fix** | Insight's own checks (drawers, food cost and the rest), money held in floats with nothing sent for 14 days, Odoo bills owed more than 30 days (only when turned on, see below), to-dos nobody has, the ASSD journal not loaded for two days | Findings, Floats, Odoo bills, the to-do list, Shift files |
 | **Review** | Last week's management report when it has not gone; supplier names not linked to Odoo; a system that could not be read for approvals | Management report, Suppliers, Approvals |
 | **Done for you** | What Insight did by itself in the last day: reading the systems, draft POs made from receipts | Insight |
 
@@ -19,6 +19,17 @@ else opens the page where it is done.
 
 Each place is read on its own. One that fails says so under **What I read**,
 and the rest of the list still comes.
+
+### Bills owed in Odoo: off unless turned on
+
+Bills owed to suppliers are paid on their own rhythm, and a big balance would
+otherwise sit at the top of the list, in **Money at stake** and in the
+summary. So they are left out: **What I read** shows Odoo bills as *off*.
+Under it, an admin ticks **Flag bills owed in Odoo** to bring them back
+(suppliers owed for more than 30 days, two months and over as *Soon*), and
+unticks it to leave them out again. It is one setting for every admin.
+Buying › Suppliers shows every bill either way, and **Ask Insight** still
+answers a question about what is owed when they are off.
 
 ## The summary and Ask
 

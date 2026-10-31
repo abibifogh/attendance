@@ -41,7 +41,7 @@ export async function renderAssistant(root) {
           h('div.as-acts', h('button.btn.primary', { type: 'button', onclick: startUrgent }, 'Start with the urgent ones'))),
         h('div.as-kpis',
           kpi('Need you', String(data.tiles.needYou), data.tiles.urgent ? `${data.tiles.urgent} urgent` : 'nothing urgent'),
-          kpi('Money at stake', data.tiles.atStake ? money(data.tiles.atStake, { places: 0 }) : '—', 'differences, floats, bills'),
+          kpi('Money at stake', data.tiles.atStake ? money(data.tiles.atStake, { places: 0 }) : '—', data.billsOn ? 'differences, floats, bills' : 'differences and floats'),
           kpi('Oldest waiting', data.tiles.oldest ? `${data.tiles.oldest} day${data.tiles.oldest === 1 ? '' : 's'}` : '—', ''),
           kpi('Done for you', String(data.tiles.done), 'in the last day')),
         tabs,
@@ -147,8 +147,31 @@ export async function renderAssistant(root) {
       h('h2', 'What I read'),
       h('div.as-feed', data.read.map((r) => h('div',
         h('span', r.label),
-        r.ok ? h('small.ok', r.count ? `✓ ${r.count}` : '✓') : h('small.bad', { title: r.error }, '× not read')))),
-      data.read.some((r) => !r.ok) ? h('p.small.muted', 'Hover a “not read” to see why. The rest of the list still came.') : null);
+        r.off ? h('small.muted', 'off') : r.ok ? h('small.ok', r.count ? `✓ ${r.count}` : '✓') : h('small.bad', { title: r.error }, '× not read')))),
+      data.read.some((r) => !r.ok) ? h('p.small.muted', 'Hover a “not read” to see why. The rest of the list still came.') : null,
+      billsSwitch());
+  }
+
+  /** Bills owed in Odoo are left out of what is flagged, unless turned on here. */
+  function billsSwitch() {
+    const said = h('span.small');
+    const box = h('input', {
+      type: 'checkbox', checked: Boolean(data.billsOn),
+      onchange: async (e) => {
+        e.target.disabled = true;
+        said.textContent = 'Saving…';
+        try {
+          await api('/assistant/bills', { method: 'POST', body: { on: e.target.checked } });
+          await renderAssistant(root);
+        } catch (err) { said.textContent = err.message; e.target.checked = !e.target.checked; e.target.disabled = false; }
+      },
+    });
+    return h('div.as-bills',
+      h('label', box, h('span', 'Flag bills owed in Odoo')),
+      h('p.small.muted', data.billsOn
+        ? 'Suppliers owed for over 30 days are on the list, and in the summary.'
+        : 'Off: bills owed are not flagged or counted in the summary. Buying › Suppliers still shows them.'),
+      said);
   }
 }
 
@@ -159,7 +182,8 @@ function kpi(label, big, small) {
 function readLine(data) {
   const bad = data.read.filter((r) => !r.ok).length;
   const at = new Date(data.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  return `Read ${data.read.length - bad} of ${data.read.length} places at ${at}${bad ? ` · ${bad} could not be read` : ''}`;
+  const places = data.read.filter((r) => !r.off).length;
+  return `Read ${places - bad} of ${places} places at ${at}${bad ? ` · ${bad} could not be read` : ''}`;
 }
 
 function ageWords(n) {
