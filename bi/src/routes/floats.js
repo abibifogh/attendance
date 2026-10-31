@@ -117,9 +117,9 @@ async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
       const changed = total != null && r.amount != null && total !== Number(r.amount) ? total : null;
       if (total != null && changed !== (r.po_total ?? null)) {
         const seen = changed == null ? null : now();
-        Object.assign(r, { po_total: changed, po_changed_at: seen, holder_answer: null, holder_at: null, admin_answer: null, admin_by: null, admin_at: null });
+        Object.assign(r, { po_total: changed, po_changed_at: seen, holder_answer: null, holder_at: null, holder_note: null, admin_answer: null, admin_by: null, admin_at: null });
         // eslint-disable-next-line no-await-in-loop
-        await run(env.DB, 'UPDATE float_receipt SET po_total = ?2, po_changed_at = ?3, holder_answer = NULL, holder_at = NULL, admin_answer = NULL, admin_by = NULL, admin_at = NULL WHERE id = ?1', r.id, changed, seen);
+        await run(env.DB, 'UPDATE float_receipt SET po_total = ?2, po_changed_at = ?3, holder_answer = NULL, holder_at = NULL, holder_note = NULL, admin_answer = NULL, admin_by = NULL, admin_at = NULL WHERE id = ?1', r.id, changed, seen);
       }
       if (r.status !== 'checking') continue;
       const st = state.get(String(r.po_name).toUpperCase());
@@ -149,7 +149,7 @@ const spentBy = (r) => (r.status === 'refused' ? 0 : Number(amountOf(r)) || 0);
 /** A PO changed in Odoo to another total, and what was said to it. */
 const changeOf = (r) => (r.po_total != null && r.status !== 'refused' ? {
   was: r.amount, now: r.po_total, counts: amountOf(r), asksHolder: asksHolder(r),
-  holder: r.holder_answer || null, admin: r.admin_answer || null, adminBy: r.admin_by || null,
+  holder: r.holder_answer || null, holderNote: r.holder_note || null, admin: r.admin_answer || null, adminBy: r.admin_by || null,
 } : null);
 
 function totals(moves, receipts) {
@@ -399,7 +399,10 @@ export async function linkAmount(env, body) {
   if (!asksHolder(r)) throw badRequest('It was changed more than 30 days after you sent it: the office decides this one.');
   const answer = { accept: 'accept', dispute: 'dispute' }[body?.answer];
   if (!answer) throw badRequest('Accept the new amount, or say it is not right.');
-  await run(env.DB, 'UPDATE float_receipt SET holder_answer = ?2, holder_at = ?3 WHERE id = ?1', r.id, answer, now());
+  // Accepting it, they say why it changed.
+  const note = str(body?.note, 'Why it changed', { max: 300 }) || null;
+  if (answer === 'accept' && (!note || note.length < 3)) throw badRequest('Say why the amount changed.');
+  await run(env.DB, 'UPDATE float_receipt SET holder_answer = ?2, holder_at = ?3, holder_note = ?4 WHERE id = ?1', r.id, answer, now(), note);
   return { ok: true, answer };
 }
 

@@ -239,9 +239,10 @@ test('a PO changed to another total in Odoo: they and an admin are asked, and th
   assert.equal((await floats.list(env)).people[0].toLookAt, 1, 'an admin is asked');
 
   await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'maybe' }), /Accept the new amount/);
-  await floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept' });
+  await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept' }), /Say why the amount changed/);
+  await floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept', note: 'The shop added a filter after the receipt' });
   view = await floats.linkView(env, { t: out.token });
-  assert.deepEqual([view.sent[0].amount, view.held], [35000, 65000], 'accepted by them: the new amount counts');
+  assert.deepEqual([view.sent[0].amount, view.held, view.sent[0].change.holderNote], [35000, 65000, 'The shop added a filter after the receipt'], 'accepted by them, with why: the new amount counts');
 
   // An admin's answer stands over theirs.
   await floats.decideAmount(env, { id: r.id, answer: 'keep' }, OWNER);

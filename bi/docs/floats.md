@@ -75,7 +75,7 @@ When a receipt's PO is changed in Odoo to another total (GH₵2,200 on the
 receipt, GH₵2,250 on the PO), the receipt's own amount still counts, and both
 are asked. On their page the person sees **The PO was changed in Odoo to …**,
 in a box at the top and on the receipt, with **Yes** or **No, it is not
-right**. In Buying › Floats the receipt says what changed and what they said,
+right**; saying Yes, they say why the amount changed, which an admin sees. In Buying › Floats the receipt says what changed and what they said,
 with **Accept** or **Keep** for an admin; until then it counts among the
 receipts to look at. The new total counts once they accept it, unless an
 admin keeps the receipt's amount: an admin's answer stands over theirs, and
