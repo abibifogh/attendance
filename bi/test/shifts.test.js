@@ -420,6 +420,23 @@ async function loaded() {
   return env;
 }
 
+test('a drawer difference reconciled with others is not counted as over or short for its person', async () => {
+  const env = await loaded();
+  const range = { from: '2026-08-01', to: '2026-08-02' };
+  let out = await routes.shifts(env, range, OWNER);
+  const bravo = out.people.find((p) => p.user === 'BRAVO');
+  assert.equal(bravo.over, 2000, 'over before');
+  // The same 20.00 moved out twice: the drawer over is that movement, reconciled.
+  await routes.saveLink(env, { keys: ['drawer:2026-08-01:afternoon', 'movement-twice:300528'], note: 'Expense moved twice in ASSD' }, OWNER);
+  out = await routes.shifts(env, range, OWNER);
+  const after = out.people.find((p) => p.user === 'BRAVO');
+  assert.deepEqual([after.over, after.variance, after.counted], [0, bravo.variance - 2000, bravo.counted]);
+  // A drawer difference answered on its own is still over.
+  await routes.saveAnswer(env, { key: 'drawer:2026-08-01:morning', answer: 'Explained', note: 'Counted again' }, OWNER);
+  out = await routes.shifts(env, range, OWNER);
+  assert.equal(out.people.find((p) => p.user === 'ALPHA').short, -200);
+});
+
 test('the whole screen, from the three files', async () => {
   const env = await loaded();
   const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
