@@ -459,7 +459,10 @@ Everything typed is signed with the name of whoever typed it.
   movement: they show as taken out with no cash movement (with whose they
   were), and the drawer over by as much is reconciled as receipts swapped for
   cash. A PO equal to a movement with no receipts in it is that movement's.
-  A movement labelled by hand as the safe or a split keeps its label.
+  A movement labelled by hand as the safe or a split keeps its label. Not
+  when the counts either side of the movement show the notes did not go
+  down: the receipts went down by what it moved and no cash left, so it
+  carried the receipts, whatever the POs add up to.
 - **Receipts still in the count after a movement.** A movement keyed
   after a count with receipts in it looks like it took them out. If the
   counts after it still show them (often the same count done twice), it
@@ -474,7 +477,11 @@ Everything typed is signed with the name of whoever typed it.
   movement, the notes going up by as much, were swapped for cash put into the
   drawer: that shift reads over by as much. The Drawer over card says so and
   **Reconcile** adds the cash back; it then sits under Matched and explained,
-  with Undo. Where the counts cannot show it, the amount can be typed.
+  with Undo. Where the counts cannot show it, the amount can be typed. It
+  never adds back more than the receipts that left with no movement as the
+  counts read them now: if a movement is later read as having carried them,
+  the card says the reconciliation no longer counts (or only part of it), to
+  undo.
 - **Receipts swapped for cash, in detail.** Once reconciled, the green line's
   Details show whose receipts they were (each earlier shift a link), the
   count they first appeared in, the hand-over, the count where they left with

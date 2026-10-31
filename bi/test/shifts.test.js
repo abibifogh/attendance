@@ -735,10 +735,11 @@ test('receipts swapped for cash are reconciled on the shift, and undone', async 
   const before = (await alpha()).s.register;
   await routes.saveReceiptsSwap(env, { day: '2026-08-01', slot: 'morning', amount: '2', note: 'swapped at hand-over' }, OWNER);
   let { s, out } = await alpha();
-  assert.equal(s.register.expected, before.expected + 200);
-  assert.equal(s.register.variance, before.variance - 200);
-  assert.equal(s.register.receipts.reconciled.by, 'Test Owner');
-  assert.ok(out.exceptions.some((x) => x.kind === 'receipts-swapped' && x.amount === 200 && x.severity === 'info'));
+  // No receipts left this shift with no movement: nothing counts as cash put in, but it is shown, to undo.
+  assert.equal(before.receipts.swapped, 0);
+  assert.equal(s.register.expected, before.expected);
+  assert.deepEqual([s.register.receipts.reconciled.amount, s.register.receipts.reconciled.saved, s.register.receipts.reconciled.by], [0, 200, 'Test Owner']);
+  assert.ok(out.exceptions.some((x) => x.kind === 'receipts-swapped' && x.amount === 0 && x.saved === 200 && x.severity === 'info'));
   await routes.saveReceiptsSwap(env, { day: '2026-08-01', slot: 'morning', amount: '' }, OWNER);
   ({ s } = await alpha());
   assert.equal(s.register.expected, before.expected);
@@ -1034,6 +1035,24 @@ test('a movement that is exactly some of the shift’s POs was cash for them; th
   const t = summarise({ user: 'F', startSeq: 600, entries: (seq = 600, [count(579, 175), sale(30), count(609, 175), move(427), count(182, 125), move(50), count(203, 125)]) }, labels);
   assert.deepEqual(routes.cashForPos(t, [{ name: 'P9', paid: 40000 }]), []);
   assert.equal(t.expenses, 42700);
+});
+
+test('a movement the counts say took no cash carried the receipts, even when POs add up to it', () => {
+  let seq = 700;
+  const base = { register: '001', user: 'J', payments: [], laundry: [], items: [] };
+  const count = (notes, receipts = 0) => ({ ...base, seq: seq += 1, kind: 'Money Count', counted: notes * 100, expensesCounted: receipts * 100 });
+  const move = (amount) => ({ ...base, seq: seq += 1, kind: 'Cash Movement', movement: -amount * 100 });
+  // GH₵107 of receipts appear; GH₵9 and GH₵85 of them go out with movements,
+  // the notes staying at GH₵13 each time; GH₵13 of receipts are left.
+  const entries = [count(114, 0), count(7, 107), count(13, 107), move(9), count(13, 98), move(85), count(13, 13)];
+  const labels = new Map([[704, { kind: 'expenses', by: 'Test' }], [706, { kind: 'expenses', by: 'Test' }]]);
+  const s = summarise({ user: 'J', startSeq: 700, entries }, labels);
+  assert.deepEqual(s.moves.filter((m) => m.kind === 'expenses').map((m) => m.receipts), [900, 8500], 'each carried receipts');
+  const before = [s.expenses, s.countVariance];
+  // Two POs make the GH₵9, one the GH₵85: still receipts carried, not cash.
+  const changed = routes.cashForPos(s, [{ name: 'P1', paid: 500 }, { name: 'P2', paid: 400 }, { name: 'P3', paid: 8500 }]);
+  assert.deepEqual(changed, []);
+  assert.deepEqual([s.expenses, s.countVariance, s.receiptsSwapped], [...before, 0]);
 });
 
 test('the drawer’s own exceptions are told apart from the bank’s by their keys', async () => {
