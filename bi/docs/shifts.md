@@ -177,6 +177,25 @@ again on its shift); **Undo** under Cleared opens a match, all of it, or a
 move to the safe the count has not taken in yet. A locked or checked shift
 refuses Put in suspense like any other change.
 
+### What is left after reconciling, on a staff account
+
+Ticked differences that do not net to nothing say what is left in the bar:
+a keying slip counts as what ASSD has over what the terminal took (ASSD
+GH₵40 against GH₵20 taken is −GH₵20), so with a payment ASSD does not show
+of +GH₵10 the bar says net −GH₵10. An admin has three ways on:
+
+- **Reconcile, −GH₵10 on a staff account** opens the staff-account panel for
+  what is left: who carries it, how much each, and why. A minus is a deficit
+  (they owe it), a plus a surplus. Both differences are reconciled together
+  and the leftover goes on each person's list, on the shift of the first,
+  and they are told in HIVE.
+- **Reconcile, −GH₵10 to suspense** parks it (above).
+- **Reconcile, the difference explained** reconciles them with a note, and
+  nothing is left anywhere.
+
+Undoing the reconciliation (an admin's Undo) takes the leftover off the staff
+accounts too; taking it off the accounts undoes the reconciliation.
+
 ### Exceptions that are one story
 
 Two or more exceptions are often the same money seen twice: GH₵ 203 by MoMo
