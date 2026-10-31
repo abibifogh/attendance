@@ -807,6 +807,57 @@ test('any difference with an amount goes on an account as a deficit or a surplus
   await assert.rejects(till.approve(env, { answer: x.key, ok: true }, OWNER), /already decided: put on Kofi Test's account by Test Owner/);
 });
 
+test('what two reconciled differences do not net to goes on a staff account, and undoing it undoes the reconciliation', async () => {
+  const { env } = await setUp();
+  const fetchImpl = async () => Response.json({ ok: true });
+  // Two card payments on the morning that ASSD never shows.
+  const head = '"SN","Date","PAN","MTI","Terminal","Type","TransactionType","Amount","STAN","MCC","TransactionFee","RRN","MID","Merchant","Currency","Responsecode","Status","AgentId","PhoneNumber","ApprovalCode","IsCNP"';
+  const tap = (n, at, amount) => `"${n}","${at}","=""411111******000${n}""","0200","=""TERM0001""","000000","Purchase","${amount}","=""10000${n}""","7011","D00000000","=""90000000000${n}""","=""MID""","TEST HOTEL","936","=""00""","Approved or completed successfully","=""""","=""""","=""A1B2C${n}""","NO"`;
+  await routes.uploadTerminal(env, { text: [head, tap(1, '2026-08-01 09:00:00', '40.00'), tap(2, '2026-08-01 09:30:00', '25.00')].join('\n'), name: 'tams.csv' }, OWNER);
+  const view = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const open =view.exceptions.filter((e) => e.slot && e.severity !== 'info' && till.flowOf(e) != null && !e.answer && !e.link);
+  // Two whose money does not net to nothing.
+  let pair = null;
+  for (const a of open) for (const b of open) if (!pair && a !== b && till.flowOf(a) + till.flowOf(b) !== 0) pair = [a, b];
+  assert.ok(pair, `two differences with amounts: ${open.map((e) => e.kind).join(', ')}`);
+  const net = till.flowOf(pair[0]) + till.flowOf(pair[1]);
+  const keys = pair.map((x) => x.key);
+  const days = [...new Set(pair.map((x) => x.day))];
+  const left = (body) => till.moveLeftToStaff(env, { keys, days, reason: 'Kept the change', shares: [{ userId: 8, amount: Math.abs(net) }], ...body }, OWNER, { fetchImpl });
+  await assert.rejects(left({ amount: net + 100 }), /What is left has changed/);
+  await assert.rejects(left({ shares: [{ userId: 8, amount: Math.abs(net) + 1 }] }), /Place all of it/);
+  await assert.rejects(till.moveLeftToStaff(env, { keys, days, reason: 'x', shares: [] }, SUPERVISOR), /admin/i);
+  const out = await left({ amount: net });
+  assert.equal(out.ok, true);
+
+  // Both reconciled together; the leftover is on Kofi's list, as a deficit or a surplus.
+  const after = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions.filter((e) => keys.includes(e.key));
+  assert.ok(after.every((e) => e.link), 'both reconciled');
+  assert.match(after[0].link.note, /left, put on Kofi Test: Kept the change/);
+  const kofi = (await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.find((i) => i.userId === 8 && i.kind === 'moved');
+  assert.equal(kofi.amount, net);
+  assert.match(kofi.text, new RegExp(`^A ${net < 0 ? 'deficit' : 'surplus'} of GH₵`));
+
+  // The reconciliation cannot be undone on its own while the leftover is on an account.
+  await assert.rejects(routes.removeLink(env, { id: after[0].link.id }, OWNER), /on a staff account/);
+  // Taking it off the account undoes both.
+  await till.undoMove(env, { id: out.id }, OWNER, { fetchImpl });
+  const again = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions.filter((e) => keys.includes(e.key));
+  assert.ok(again.every((e) => !e.link), 'open again');
+
+  // Undoing the reconciliation, as an admin, takes the leftover off the account too.
+  await left({});
+  const link = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions.find((e) => e.key === keys[0]).link;
+  assert.equal(await till.undoLeftOf(env, link.id, OWNER, { fetchImpl }), true);
+  await routes.removeLink(env, { id: link.id }, OWNER);
+  assert.equal((await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.some((i) => i.userId === 8 && i.kind === 'moved'), false, 'off Kofi’s list');
+});
+
+test('a keying slip nets as what ASSD has over what the terminal took', () => {
+  assert.equal(till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -2000);
+  assert.equal(till.flowOf({ kind: 'not-recorded', amount: 1000 }) + till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -1000);
+});
+
 test('admins are told an answer waits once a quarter of an hour, with what it is and how many wait in all', async () => {
   const { env } = await setUp();
   await env.DB.prepare("INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval) VALUES (3, 'Test Owner', 1, 1, 1, 1, 1, 1)").run();
@@ -858,6 +909,10 @@ test('a shift is “not checked yet” on its person’s list until somebody che
     // The overview says so, with what was noted.
     let row = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'afternoon');
     assert.deepEqual([row.check.by, row.check.changed, row.notes[0].text], ['Test Owner', false, 'A guest was given change twice']);
+    // The quick list of checks says it too, without working the shifts out.
+    assert.deepEqual((await till.checkList(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).checks.map((c) => [c.day, c.slot, c.by]),
+      [['2026-08-01', 'afternoon', 'Test Owner']]);
+    assert.deepEqual((await till.checkList(env, { from: '2026-08-02', to: '2026-08-02' }, OWNER)).checks, [], 'only the days asked for');
 
     // Changed since it was checked (here: the amount it was checked at differs): not checked again.
     await env.DB.prepare(`UPDATE shift_check SET snapshot = ?1`).bind(JSON.stringify({ [kofi.key]: '-1500|' })).run();

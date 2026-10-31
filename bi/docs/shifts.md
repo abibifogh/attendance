@@ -158,6 +158,60 @@ those checked, so locked: on the week's tiles and the day's cards (🔒
 Checked), beside the letter on the month's bars, and in the Table (beside the
 name, and a Checked column with how many of the month's shifts are).
 
+### The suspense account
+
+A difference an admin cannot settle yet can be parked: **Put in suspense** on
+its card (admins only, beside Put on a staff account) puts its amount in the
+suspense account as S12, and the difference counts as answered "In suspense"
+(S12 and the note). When differences reconciled together do not net to
+nothing, **Reconcile, +GH₵64 to suspense** in the bar reconciles them and
+parks what is left. Plus is money in that ASSD does not show; minus is money
+ASSD shows that is not there.
+
+**Front desk › Safe › Suspense** lists what is open, with the total. Tick two
+or more and **Match them** (a note is needed when they do not net to
+nothing), or **Move to the safe** on a day: a plus goes into the safe book as
+a line in, a minus as a line out, until the safe is next counted, when the
+count takes it in. **Take out** returns an open one (its difference is open
+again on its shift); **Undo** under Cleared opens a match, all of it, or a
+move to the safe the count has not taken in yet. A locked or checked shift
+refuses Put in suspense like any other change.
+
+### A drawer difference reconciled with others
+
+A drawer over or short reconciled with other differences (an expense ASSD
+moved twice, say) is the same money as those, so it is no longer over or
+short: the shift's drawer says **✓ Reconciled**, the day and calendar say
+✓ reconciled, and it is left out of its person's over and short on People.
+ASSD's own count is still shown, with how far it was out. One answered on
+its own (Explained, say) stays over or short, answered.
+
+Undo the reconciliation and the difference is back at once, at its full size:
+the drawer says Over or Short again, and People counts it again. Whatever was
+left over goes with it: taken off the staff accounts (they are told), or out
+of the suspense account. Once that leftover has been matched in suspense or
+moved to the safe, undo that in Safe › Suspense first. Taking a leftover out
+of suspense undoes its reconciliation the same way.
+
+### What is left after reconciling, on a staff account
+
+Ticked differences that do not net to nothing say what is left in the bar:
+a keying slip counts as what ASSD has over what the terminal took (ASSD
+GH₵40 against GH₵20 taken is −GH₵20), so with a payment ASSD does not show
+of +GH₵10 the bar says net −GH₵10. An admin has three ways on:
+
+- **Reconcile, −GH₵10 on a staff account** opens the staff-account panel for
+  what is left: who carries it, how much each, and why. A minus is a deficit
+  (they owe it), a plus a surplus. Both differences are reconciled together
+  and the leftover goes on each person's list, on the shift of the first,
+  and they are told in HIVE.
+- **Reconcile, −GH₵10 to suspense** parks it (above).
+- **Reconcile, the difference explained** reconciles them with a note, and
+  nothing is left anywhere.
+
+Undoing the reconciliation (an admin's Undo) takes the leftover off the staff
+accounts too; taking it off the accounts undoes the reconciliation.
+
 ### Exceptions that are one story
 
 Two or more exceptions are often the same money seen twice: GH₵ 203 by MoMo
@@ -598,8 +652,10 @@ read as all agreeing:
 - **Expenses with no PO**: the drawer paid out expenses and there is no PO at
   all (none on its closing report, none linked in Insight).
 - **PO total does not match the expenses**: the POs, as Odoo has them, add up
-  to more or less than what left the drawer as expenses. POs typed but not
-  read from Odoo yet are not judged.
+  to more or less than what left the drawer as expenses. A PO linked here
+  that Odoo has not given back (it could not be reached, or does not know the
+  number as typed) is not counted: the card says so, names it, and an admin
+  has **Read Odoo again**. Its total counts once Odoo gives it back.
 
 Each card has the PO box: linking the right PO (or unlinking a wrong one)
 takes it off, or answer why. An answer holds while the amounts stay the

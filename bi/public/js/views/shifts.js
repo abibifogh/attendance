@@ -365,7 +365,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    */
   async function load(notice = null, { cached = false, inboxRead = false } = {}) {
     period = periodNow();
-    if (!cached) cache.clear();
+    if (!cached) { cache.clear(); till.forget(); }
+    // Which shifts are checked, asked at once beside the shifts: the padlocks and the check card wait for nothing else.
+    till.checks().catch(() => {});
     const waitingFor = canShifts && !cache.has(keyOf(period));
     if (waitingFor && view.firstChild) view.classList.add('sh-loading');
     try {
@@ -526,7 +528,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           evidence(x)) : null,
         s ? h('div.sh-brief-figs',
           fig('Cash in ASSD', whole(s.cash)),
-          h('span.sh-brief-fig', h('small', 'Drawer'), chip(r.variance ?? r.varianceSign, s.open, Boolean(drawerSettled(s)))),
+          h('span.sh-brief-fig', h('small', 'Drawer'), chip(r.variance ?? r.varianceSign, s.open, drawerSettled(s))),
           s.cardLines ? fig('Card and MoMo', `${s.cardFound + (s.cardAnswered || 0)} of ${s.cardLines} found`) : fig('Card and MoMo', 'none'),
           r.expenses != null ? fig('Expenses', whole(r.expenses)) : null,
           fig('Still to answer', String(exceptionsOf2(d, s).length))) : null);
@@ -615,10 +617,10 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    * checks are read: a checked shift is locked, so it says 🔒.
    */
   function fillChecks(root) {
-    till.checks().then((map) => {
+    // At once from the checks alone; again once the full reading says which changed since.
+    const fill = (map) => {
       for (const el of root.querySelectorAll('.sh-ck[data-k]')) {
-        const st = map.get(el.dataset.k);
-        if (!st) continue;
+        const st = map.get(el.dataset.k) || 'wait';
         el.className = `sh-ck ${st}`;
         el.textContent = { ok: '🔒 Checked', changed: '🔒 Changed since checked', wait: 'Not checked' }[st];
         el.title = st === 'wait' ? '' : 'Checked, so locked: undo the check on the shift to change anything on it.';
@@ -627,6 +629,11 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         const st = map.get(el.dataset.k);
         if ((st === 'ok' || st === 'changed') && !el.classList.contains('locked')) { el.classList.add('locked'); el.textContent += ' 🔒'; el.title += ' · checked and locked'; }
       }
+    };
+    till.checks().then((map) => {
+      fill(map);
+      // Only a checked shift can have changed since: no need to wait for the rest otherwise.
+      if (map.size) till.changes().then((full) => { if ([...full.values()].includes('changed')) fill(new Map([...map].map(([k, v]) => [k, full.get(k) === 'changed' ? 'changed' : v]))); }).catch(() => {});
     }).catch(() => {});
   }
 
@@ -634,7 +641,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   const chip = (v, open, settled = false) => (open ? h('span.sh-chip.none', 'ends here')
     : v == null ? h('span.sh-chip.none', 'no count')
       : v === 0 ? h('span.sh-chip.ok', '✓ agrees')
-        : settled ? h('span.sh-chip.ok', { title: 'Answered or reconciled' }, data.redacted ? '✓ settled' : `✓ ${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`)
+        // Reconciled with others: the same money as another difference, so no longer over or short.
+        : settled?.link ? h('span.sh-chip.ok', { title: data.redacted ? 'Reconciled with others' : `ASSD's count was ${v > 0 ? 'over' : 'short'} by ${money(Math.abs(v))}; reconciled with others` }, '✓ reconciled')
+        : settled ? h('span.sh-chip.ok', { title: 'Answered' }, data.redacted ? '✓ settled' : `✓ ${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`)
         : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, data.redacted ? (v > 0 ? 'over' : 'short') : `${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`));
   const modesOf = (s) => {
     const out = {};
@@ -857,7 +866,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           type: 'button', title: `${nameOf(s.user)} · ${SLOT[sl].label} · ${dayText(s.day)}`, onclick: () => go('shift', s.id),
         },
         h('span.sh-who', avatar(s.user), h('b', { dataset: { k: `${s.day}|${s.slot}` } }, nameOf(s.user))),
-        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open, Boolean(drawerSettled(s)))),
+        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open, drawerSettled(s))),
         mixBar(s),
         h('span.sh-fig',
           h('span', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)}/${s.cardLines} card` : 'no card'),
@@ -979,7 +988,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         h('dt', 'Closing notes'), h('dd.num', money(r.closing))),
       h('div.sh-dayvar', v == null ? h('span.sh-chip.none', s.open ? 'journal ends here' : 'no closing count')
         : v === 0 ? h('span.sh-chip.ok', '✓ The drawer agrees')
-          : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}`)),
+          : drawerSettled(s)?.link ? h('span.sh-chip.ok', '✓ The drawer is reconciled with others')
+            : drawerSettled(s) ? h('span.sh-chip.ok', `✓ ${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}, answered`)
+              : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}`)),
       mixBar(s),
       h('div.sh-mixkey', MODES.filter(([k]) => m[k] > 0).map(([k, label, c]) => h('span', h('i', { style: `background:${c}` }), `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`))),
       h('div.sh-fig',
@@ -1363,11 +1374,13 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       const settled = n.variance && !n.recounted ? drawerSettled(s) : null;
       const cls = n.variance == null ? 'none' : n.variance === 0 || settled ? 'ok' : n.variance > 0 ? 'over' : 'short';
       mount(vbox, h(`div.sh-vbox.${cls}`,
-        h('div.big.num', n.variance == null ? 'No closing count' : n.variance === 0 ? '✓ The drawer agrees' : `${n.variance > 0 ? 'Over' : 'Short'} ${money(Math.abs(n.variance))}`),
+        h('div.big.num', n.variance == null ? 'No closing count' : n.variance === 0 ? '✓ The drawer agrees'
+          // Reconciled with others: the same money as another difference, so not over or short.
+          : settled?.link ? '✓ Reconciled with others' : `${n.variance > 0 ? 'Over' : 'Short'} ${money(Math.abs(n.variance))}`),
         h('p', n.variance == null
           ? (s.open ? 'The journal stops inside this shift. Load a journal that runs a day past it.' : 'ASSD has no closing count for this shift. Type a recount to check it.')
           : n.variance === 0 ? 'What should be in the drawer is exactly what was counted.'
-            : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
+            : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}${settled?.link ? `, ${money(Math.abs(n.variance))} ${n.variance > 0 ? 'more' : 'less'}. That is the same money as the differences it is reconciled with, so it is not counted as ${n.variance > 0 ? 'over' : 'short'}` : ''}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
         settled ? h('p', h('b', `✓ ${settledWords(settled).charAt(0).toUpperCase()}${settledWords(settled).slice(1)}`), settled.note ? `: ${settled.note}` : '', settled.by ? ` (${settled.by})` : '') : null,
         r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null),
@@ -2096,6 +2109,35 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    * once and paired with the movements by amount. Each linked one can be
    * unlinked.
    */
+  /**
+   * POs linked here that Odoo has not given back: not counted until it does.
+   * Odoo may not have been reachable, or may not know the number as typed.
+   */
+  function unreadBox(s, exp, linked) {
+    const read = new Set((exp.odoo?.orders || []).map((o) => String(o.name).toUpperCase()));
+    const missing = linked.filter((n) => !read.has(n.toUpperCase()));
+    if (!missing.length) return null;
+    const unknown = new Set((exp.odoo?.unknown || []).map((n) => String(n).toUpperCase()));
+    const notKnown = missing.filter((n) => unknown.has(n.toUpperCase()));
+    const said = h('span.small');
+    return h('div.sh-pounread',
+      h('p.small', h('b', `Not counted yet: ${missing.join(', ')}. `),
+        notKnown.length ? `Odoo does not know ${notKnown.join(', ')} as typed: check the number in Odoo, unlink it and link the right one. ` : '',
+        notKnown.length < missing.length ? `${notKnown.length ? `${missing.filter((n) => !notKnown.includes(n)).join(', ')}: ` : ''}Odoo has not given ${missing.length - notKnown.length === 1 ? 'its total' : 'their totals'} back${exp.pulledAt ? ` (last read ${exp.pulledAt.slice(0, 16)})` : ''}, perhaps because it could not be reached. ` : '',
+        `${missing.length === 1 ? 'Its total counts' : 'Their totals count'} against the expenses once Odoo gives ${missing.length === 1 ? 'it' : 'them'} back.`),
+      admin ? h('div.sh-fixrow', h('button.btn', {
+        type: 'button',
+        onclick: async (e) => {
+          e.target.disabled = true;
+          said.textContent = 'Reading Odoo…';
+          try {
+            const out = await api('/shifts/expense/pull', { method: 'POST', body: { day: s.day, slot: s.slot } });
+            await load(banner(out.unknown?.length ? 'warning' : 'good', out.unknown?.length ? `Read from Odoo. It does not know ${out.unknown.join(', ')}.` : 'Read from Odoo again.'));
+          } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+        },
+      }, 'Read Odoo again'), said) : null);
+  }
+
   function poLinker(s) {
     if (!canFix) return null;
     const exp = s.expense || {};
@@ -2116,6 +2158,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       h('b', 'Link POs to these expenses'),
       linked.length ? h('div.sh-polinked', linked.map((po) => h('span.sh-chip.none', po,
         h('button.sh-link', { type: 'button', 'aria-label': `Unlink ${po}`, title: 'Unlink', onclick: (e) => send({ remove: po }, e.target) }, '×')))) : null,
+      unreadBox(s, exp, linked),
       h('div.sh-fixrow', typed, h('button.btn', { type: 'button', onclick: (e) => send({ add: typed.value }, e.target) }, 'Link'), said),
       h('small.muted', 'For expenses no closing report gave a PO for. Each is matched to the expense payments by amount.'));
   }
@@ -2467,7 +2510,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       }
       case 'receipts-swapped': return `${money(x.amount)} of receipts went out of the drawer with no cash movement, and cash was put in for them: the notes went up by as much. Here they are not cash; they stay expenses of the shift they were spent on, below.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
-      case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
+      case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but ${(x.pos || []).length ? `the POs (${x.pos.join(', ')}) come to ${money(x.poTotal)} in Odoo` : 'no PO has been read from Odoo'}: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say.`
+        + `${x.unread?.length ? ` ${x.unread.join(', ')} ${x.unread.length === 1 ? 'is' : 'are'} linked, but not read from Odoo, so not counted: read Odoo again below.` : ' Link the missing PO, unlink a wrong one, or answer why.'}`;
       case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
         + `${x.pending ? ` ${x.pending.by} has proposed: ${x.pending.kind}. Waiting for an admin.` : ' Say which.'}`;
       case 'laundry-mismatch': return `ASSD has ${money(x.assd)} of laundry on this shift; the laundry system took ${money(x.system)} in the same hours`
@@ -2564,6 +2608,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
     // ASSD less the other side: a laundry that took money ASSD does not show is below nothing.
     if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
+    // A slip of the finger: ASSD has more (or less) than the terminal took.
+    if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
     if (x.kind === 'movement-twice') return a;
     return null;
   }
@@ -2699,16 +2745,23 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** What was open on the left, and the tab on the right, kept while moving from shift to shift. */
   const opened = new Set();
   let shTab = null;
+  // The ticked differences' leftover, being put on staff accounts.
+  let leftOpen = false;
 
   /** Beside the status: 🔒 when the shift is checked, so locked. */
   function lockChip(s) {
     const el = h('span');
-    till.checks().then((map) => {
-      const st = map.get(`${s.day}|${s.slot}`);
+    const k = `${s.day}|${s.slot}`;
+    const show = (st) => {
       if (st === 'ok' || st === 'changed') {
         mount(el, h(`span.sh-chip.${st === 'ok' ? 'ok' : 'over'}.sh-lockchip`, { title: 'Checked, so locked: nothing on it can be changed until the check is undone (below, in To sort out).' },
           st === 'ok' ? '🔒 Checked · locked' : '🔒 Locked · changed since checked'));
       }
+    };
+    // At once from the checks alone; then the full reading says whether it changed since.
+    till.checks().then((map) => {
+      show(map.get(k));
+      if (map.get(k) === 'ok') till.changes().then((full) => { if (full.get(k) === 'changed') show('changed'); }).catch(() => {});
     }).catch(() => {});
     return el;
   }
@@ -2745,8 +2798,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       hide ? null : tile('payments', 'Taken', money(total),
         h('span.sh-glancemix', mixBar(s), MODES.filter(([k]) => m[k] > 0).map(([k, label]) => `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`).join(' · '))),
       tile('drawer', 'The drawer',
-        s.open ? 'Ends here' : v == null ? 'No count' : v === 0 ? '✓ Agrees' : settledDrawer ? `✓ ${v > 0 ? 'Over' : 'Short'}, settled` : `${v > 0 ? 'Over' : 'Short'}${hide ? '' : ` ${money(Math.abs(v))}`}`,
-        s.open ? 'the journal ends inside it' : v === 0 ? (hide ? 'what was counted is what it should hold' : `${money(n?.closing ?? s.register?.closing)} counted, as it should hold`) : settledDrawer ? settledWords(drawerSettled(s)) : v == null ? '' : 'see To sort out',
+        s.open ? 'Ends here' : v == null ? 'No count' : v === 0 ? '✓ Agrees' : settledDrawer && drawerSettled(s).link ? '✓ Reconciled' : settledDrawer ? `✓ ${v > 0 ? 'Over' : 'Short'}, settled` : `${v > 0 ? 'Over' : 'Short'}${hide ? '' : ` ${money(Math.abs(v))}`}`,
+        s.open ? 'the journal ends inside it' : v === 0 ? (hide ? 'what was counted is what it should hold' : `${money(n?.closing ?? s.register?.closing)} counted, as it should hold`) : settledDrawer && drawerSettled(s).link ? 'the same money as another difference' : settledDrawer ? settledWords(drawerSettled(s)) : v == null ? '' : 'see To sort out',
         s.open || v == null ? '' : v === 0 || settledDrawer ? 'ok' : v < 0 ? 'bad' : 'warn'),
       tile('payments', 'Card and MoMo', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)} of ${s.cardLines} found` : 'None',
         s.cardLines ? (allCard ? 'every one arrived' : `${s.cardLines - s.cardFound - (s.cardAnswered || 0)} not found`) : 'no card or MoMo this shift', !s.cardLines || allCard ? 'ok' : 'bad'),
@@ -3345,6 +3398,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           h('button.btn', { type: 'button', onclick: () => decide(false) }, 'Reject'),
           // Or, instead of the answer, put it on somebody's account.
           movable(x) ? h('button.btn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
+          suspenseBtn(x),
           // Proof asked of whoever gave the answer, and what they sent.
           proofBox(x.proposed.link ? `link:${x.proposed.link}` : `answer:${x.key}`, { who: x.proposed.by }),
           movable(x) && moving === x.key ? movePanel(x) : null,
@@ -3374,7 +3428,11 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         may('bank', 2) || may('moves', 2) ? h('button.sh-link', {
           type: 'button',
           onclick: async () => {
-            try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
+            try {
+              const out = await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } });
+              till.forget();
+              await load(banner('good', `Undone. Those exceptions are open again, each at its full size${out?.suspense?.length ? `; what was left, ${out.suspense.join(', ')}, is out of the suspense account` : ''}${out?.staff ? '; what was left is off the staff accounts, and they have been told' : ''}.`));
+            } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
       : x.moved ? h('div.sh-done',
@@ -3409,6 +3467,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
             : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : x.kind === 'paid-less' ? PAID_LESS_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
               movable(x) ? h('button.sh-movebtn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
+              suspenseBtn(x, note),
               said,
               x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null),
             movable(x) && moving === x.key ? movePanel(x) : null]);
@@ -3424,10 +3483,12 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** Who carries a difference, how much each, and why: all of it placed, the reason required. */
   function movePanel(x) {
     const whole = Math.abs(x.amount);
-    // The drawer says which way its difference goes; anything else, the admin says.
-    const own = MOVABLE.has(x.kind);
+    // The drawer says which way its difference goes, and so does what was left
+    // after reconciling; anything else, the admin says.
+    const leftover = Boolean(x.leftOf);
+    const own = MOVABLE.has(x.kind) || leftover;
     let direction = null;
-    const word = () => (own ? (x.amount < 0 ? 'short' : 'over') : direction || 'difference');
+    const word = () => (leftover ? (x.amount < 0 ? 'deficit' : 'surplus') : own ? (x.amount < 0 ? 'short' : 'over') : direction || 'difference');
     const sideBtns = [['deficit', 'Deficit: they owe it'], ['surplus', 'Surplus: owed to them']].map(([key, text]) => h('button.sh-mvchip', {
       type: 'button', 'aria-pressed': 'false',
       onclick: (e) => {
@@ -3489,15 +3550,19 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       e.target.disabled = true;
       said.textContent = 'Moving…';
       try {
-        const out = await api('/till/charge', { method: 'POST', body: { key: x.key, day: x.day, shares, reason, ...(own ? {} : { direction }) } });
+        const out = leftover
+          ? await api('/till/charge-left', { method: 'POST', body: { keys: x.leftOf.map((o) => o.key), days: [...new Set(x.leftOf.map((o) => o.day).filter(Boolean))], amount: x.amount, shares, reason } })
+          : await api('/till/charge', { method: 'POST', body: { key: x.key, day: x.day, shares, reason, ...(own ? {} : { direction }) } });
         moving = null;
+        if (leftover) { picked.clear(); pickedAs.clear(); leftOpen = false; }
         till.forget();
         await load(banner('good', `Put on ${shares.length === 1 ? 'a staff account' : `${shares.length} staff accounts`}. ${out.told ? `${out.told} told in HIVE.` : 'HIVE could not be reached to tell them; it is on their list all the same.'}`));
       } catch (err) { said.textContent = err.message; e.target.disabled = false; }
     };
     recount();
     return h('div.sh-mvpanel',
-      h('h4', 'Put on a staff account'),
+      h('h4', leftover ? `Reconcile, and put the ${flowText(x.amount)} left on a staff account` : 'Put on a staff account'),
+      leftover ? h('p.small', `${x.leftOf.map((o) => `${(KIND[o.kind] || [o.kind])[0]} ${flowText(flowOf(o))}`).join(' and ')} are reconciled together; they leave ${flowText(x.amount)}, a ${word()}.`) : null,
       own ? null : [h('div.sh-mvlab', 'On their account as (required)'), h('div.sh-mvchips', sideBtns)],
       intro,
       x.proposed ? h('p.small', `This decides it instead of ${x.proposed.by}’s answer waiting for approval, which is set aside.`) : null,
@@ -3510,7 +3575,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       h('p.sh-mvtell', 'Each of them gets a message in HIVE with the amount, the shift and this reason, and it goes on their To sort out list. If it leaves the shift’s own person altogether, they are told too.'),
       h('div.sh-labels',
         h('button.btn.primary', { type: 'button', onclick: go_ }, `Move ${money(whole)}`),
-        h('button.btn', { type: 'button', onclick: () => { moving = null; paint(); } }, 'Cancel'),
+        h('button.btn', { type: 'button', onclick: () => { moving = null; leftOpen = false; paint(); } }, 'Cancel'),
         said));
   }
 
@@ -4115,6 +4180,27 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   }
 
   /** The bar that appears once exceptions are ticked: what they net to, and Reconcile together. */
+  /**
+   * An admin's: the difference parked in the suspense account (Front desk ›
+   * Safe › Suspense), answered "In suspense", to match or move to the safe later.
+   */
+  function suspenseBtn(x, noteInput = null) {
+    if (!admin || x.amount == null || !x.amount) return null;
+    const amount = flowOf(x) ?? x.amount;
+    return h('button.sh-movebtn.sh-suspbtn', {
+      type: 'button',
+      title: 'Park it in the suspense account, to match with another or move to the safe later',
+      onclick: async (e) => {
+        const note = noteInput?.value?.trim() || prompt(`Put ${flowText(amount)} in suspense. A note for later (optional):`, '') || '';
+        e.target.disabled = true;
+        try {
+          const out = await api('/suspense/add', { method: 'POST', body: { key: x.key, amount, what: (KIND[x.kind] || [x.kind])[0], day: x.day, slot: x.slot, note } });
+          await load(banner('good', `In suspense as ${out.entry.ref}: ${flowText(amount)}. Match it or move it to the safe under Front desk › Safe › Suspense.`));
+        } catch (err) { alert(err.message); e.target.disabled = false; }
+      },
+    }, 'Put in suspense');
+  }
+
   function pickedBar() {
     const chosen = [...picked].map((k) => data.exceptions.find((x) => x.key === k) || pickedAs.get(k)).filter(Boolean);
     if (!chosen.length) return null;
@@ -4136,9 +4222,34 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           e.target.disabled = true;
           try { await reconcile(chosen.map((x) => x.key), note.value.trim()); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
         },
-      }, chosen.length < 2 ? 'Tick at least two' : 'Reconcile together'),
-      h('button.btn', { type: 'button', onclick: () => { picked.clear(); pickedAs.clear(); paint(); } }, 'Clear'),
-      said);
+      }, chosen.length < 2 ? 'Tick at least two' : known && net !== 0 ? 'Reconcile, the difference explained' : 'Reconcile together'),
+      // An admin's: reconciled together, and what they do not net to parked in suspense.
+      // An admin's: reconciled together, and what they do not net to on staff accounts.
+      admin && known && net !== 0 && chosen.length >= 2 ? h('button.btn', {
+        type: 'button',
+        'aria-expanded': String(leftOpen),
+        title: 'Reconcile them, and put the difference left on staff accounts',
+        onclick: () => { leftOpen = !leftOpen; paint(); },
+      }, `Reconcile, ${flowText(net)} on a staff account`) : null,
+      admin && known && net !== 0 && chosen.length >= 2 ? h('button.btn', {
+        type: 'button',
+        title: 'Reconcile them, and put the difference left in the suspense account',
+        onclick: async (e) => {
+          e.target.disabled = true;
+          const first_ = chosen[0];
+          try {
+            await api('/shifts/link', { method: 'POST', body: { keys: chosen.map((x) => x.key), note: note.value.trim() || `${flowText(net)} left, to suspense` } });
+            const out = await api('/suspense/add', { method: 'POST', body: { keys: chosen.map((x) => x.key), amount: net, reconciled: true, what: `Left after reconciling ${chosen.length} together`, day: first_.day, slot: first_.slot, note: note.value.trim() } });
+            picked.clear(); pickedAs.clear();
+            await load(banner('good', `Reconciled together; the ${flowText(net)} left is in suspense as ${out.entry.ref}.`));
+          } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+        },
+      }, `Reconcile, ${flowText(net)} to suspense`) : null,
+      h('button.btn', { type: 'button', onclick: () => { picked.clear(); pickedAs.clear(); leftOpen = false; paint(); } }, 'Clear'),
+      said,
+      leftOpen && admin && known && net !== 0 && chosen.length >= 2
+        ? movePanel({ key: `left:${chosen.map((x) => x.key).join('|')}`, kind: 'left', amount: net, day: chosen.find((x) => x.day)?.day, leftOf: chosen })
+        : null);
   }
 
   // ------------------------------------------------------------ people --

@@ -6,7 +6,7 @@ import { lockOf, isLocked } from './lock.js';
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { compare, issuesFor, readReport, withStatus, FINAL, KINDS } from '../shifts/till.js';
-import { shifts as shiftsFor, setAside, dayOfKey } from './shifts.js';
+import { shifts as shiftsFor, setAside, dayOfKey, saveLink } from './shifts.js';
 import { formLive, poExtras } from './advances.js';
 import { openForHive } from './proof.js';
 import { madeHere } from './newpo.js';
@@ -281,6 +281,22 @@ export async function linkChecks(env, body) {
       return c ? { day: s.day, slot: s.slot, by: c.by || null, at: c.at || null } : null;
     }).filter(Boolean),
   };
+}
+
+/**
+ * Which shifts between `from` and `to` are checked, by whom and when, read
+ * straight from the checks. A checked shift is locked, so this is all the
+ * padlocks and the check card need to show at once; whether anything changed
+ * since comes later, with the full overview.
+ */
+export async function checkList(env, query, account) {
+  const access = await accessOf(env, account);
+  if (!access.reports && !access.answers && !access.check && roleOf(account) !== 'admin') throw forbidden('Closing reports have not been shared with you.');
+  const to = /^\d{4}-\d\d-\d\d$/.test(query?.to || '') ? query.to : today();
+  const from = /^\d{4}-\d\d-\d\d$/.test(query?.from || '') ? query.from : addDays(to, -6);
+  if (daysBetween(from, to).length > 62) throw badRequest('Two months at a time at most.');
+  const rows = await all(env.DB, 'SELECT day, slot, by_name, at FROM shift_check WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  return { checks: rows.map((r) => ({ day: r.day, slot: r.slot, by: r.by_name, at: r.at })) };
 }
 
 /** Where one shift stands: checked by whom, and whether anything changed since. */
@@ -895,10 +911,73 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
     sign = body.direction === 'deficit' ? -1 : 1;
   }
   const amount = sign * Math.abs(x.amount);
+  return placeOnAccounts(env, { key, kind: x.kind, day, slot, user: x.user, amount, given: body?.shares, reason, account, fetchImpl });
+}
 
+/**
+ * Which way an exception's money goes, in minor units: plus is money in that
+ * ASSD does not show, minus is money ASSD shows that is not there. Null when
+ * its kind has no amount that nets against others. As the Shifts screen has it.
+ */
+export function flowOf(x) {
+  if (x?.amount == null) return null;
+  const a = Math.abs(x.amount);
+  if (['not-recorded', 'bank-only', 'double-charge', 'paid-more', 'refund'].includes(x.kind)) return a;
+  if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
+  if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
+  // A slip of the finger: ASSD has more (or less) than the terminal took.
+  if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
+  if (x.kind === 'movement-twice') return a;
+  return null;
+}
+
+/**
+ * Reconcile differences that are one story together, and put what they do
+ * not net to on staff accounts: an admin's. The leftover is worked out here,
+ * from the differences as they stand, and goes on the shift of the first.
+ */
+export async function moveLeftToStaff(env, body, account, { fetchImpl } = {}) {
+  await requireAdmin(account);
+  const keys = [...new Set((Array.isArray(body?.keys) ? body.keys : []).map((k) => String(k ?? '').trim()).filter(Boolean))];
+  if (keys.length < 2) throw badRequest('Choose at least two differences to reconcile together.');
+  const reason = str(body?.reason, 'The reason', { required: true, max: 600 });
+  const days = (Array.isArray(body?.days) ? body.days : []).map(String).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  if (!days.length) throw badRequest('Which days are they on?');
+  const from = days[0];
+  const to = days[days.length - 1];
+  if (daysBetween(from, to).length > 62) throw badRequest('Two months apart at most.');
+  const data = await shiftsFor(env, { from, to }, { isOwner: true });
+  const chosen = keys.map((k) => (data.exceptions || []).find((e) => e.key === k));
+  if (chosen.some((x) => !x)) throw badRequest('One of those is not there any more: the shift may agree now. Reload and try again.');
+  if (chosen.some((x) => x.answer || x.link || x.moved)) throw badRequest('One of those has an answer already. Take it back first.');
+  const flows = chosen.map(flowOf);
+  if (flows.some((f) => f == null)) throw badRequest('What one of those comes to cannot be netted against the others.');
+  const net = flows.reduce((t, f) => t + f, 0);
+  if (!net) throw badRequest('They net to nothing: reconcile them together, nothing is left to put on anybody.');
+  if (body?.amount != null && Number(body.amount) !== net) throw badRequest(`What is left has changed: it is ${net < 0 ? '−' : '+'}${ghs(net)} now. Reload and try again.`);
+  const home = chosen.find((x) => x.day && x.slot);
+  if (!home) throw badRequest('None of those is on one shift, so what is left cannot go on a staff account.');
+  return placeOnAccounts(env, {
+    key: null, kind: 'left', day: home.day, slot: home.slot, user: home.user, amount: net, given: body?.shares, reason, account, fetchImpl,
+    // Reconciled once the shares are good, and the leftover is keyed by the reconciliation.
+    before: async (shares) => {
+      await saveLink(env, { keys, note: `${net < 0 ? '−' : '+'}${ghs(net)} left, put on ${shares.map((y) => y.name).join(' and ')}: ${reason}`.slice(0, 600) }, account);
+      const link = await first(env.DB, "SELECT id FROM shift_link WHERE keys = ?1 AND COALESCE(status, 'applied') = 'applied' ORDER BY id DESC LIMIT 1", JSON.stringify(keys));
+      return `left:${link?.id ?? keys[0]}`;
+    },
+  });
+}
+
+/**
+ * Shares the difference among the people chosen, all of it, on each of their
+ * lists, and tells them in HIVE. `before` runs once the shares are good and
+ * before anything is written: a reconciliation the leftover comes from.
+ */
+async function placeOnAccounts(env, { key, kind, day, slot, user, amount, given: asked, reason, account, fetchImpl, before = null }) {
+  const sign = Math.sign(amount);
   const users = await hiveUsers(env);
   const nameOf = new Map(users.map((u) => [Number(u.id), u.name]));
-  const given = Array.isArray(body?.shares) ? body.shares : [];
+  const given = Array.isArray(asked) ? asked : [];
   if (!given.length) throw badRequest('Choose who carries it.');
   if (given.length > 10) throw badRequest('Ten people at most.');
   const shares = [];
@@ -919,18 +998,19 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
   // The shift's own person: whoever signed its closing report, else the HIVE
   // login its ASSD user is mapped to.
   const report = (await hiveReports(env, day, day)).find((r) => r.slot === slot) || null;
-  const ownerId = report ? Number(report.userId) : ((await people(env)).get(x.user) ?? null);
-  const ownerName = report?.name || nameOf.get(Number(ownerId)) || nameCase(x.user);
+  const ownerId = report ? Number(report.userId) : ((await people(env)).get(user) ?? null);
+  const ownerName = report?.name || nameOf.get(Number(ownerId)) || nameCase(user);
+  if (before) key = await before(shares);
 
   await run(env.DB, `INSERT INTO till_move (key, kind, day, slot, assd_user, owner_id, owner_name, amount, shares, reason, by_name, at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
-  key, x.kind, day, slot, x.user || null, ownerId, ownerName, amount, JSON.stringify(shares), reason, who(account), now());
+  key, kind, day, slot, user || null, ownerId, ownerName, amount, JSON.stringify(shares), reason, who(account), now());
   const id = (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL ORDER BY id DESC LIMIT 1', key))?.id ?? null;
   // A supervisor's answer or reconciliation waiting for approval: this decides it instead.
   await setAside(env, [key], 'put on a staff account instead', account).catch(() => 0);
   await logEvent(env, key, `Put on staff accounts: ${shares.map((y) => `${y.name} ${ghs(y.amount)}`).join(', ')}: “${reason}”`, who(account));
 
-  const what = moveWord(x.kind, amount);
+  const what = moveWord(kind, amount);
   const whose = ownerName ? ` (${ownerName}'s shift)` : '';
   const told = [];
   for (const y of shares) {
@@ -958,7 +1038,10 @@ export async function undoMove(env, body, account, { fetchImpl } = {}) {
     if (settled) throw badRequest(`${y.name}'s share was ${SETTLED_WORDS[settled.outcome]} already, so it cannot be undone.`);
   }
   await run(env.DB, 'UPDATE till_move SET undone_by = ?1, undone_at = ?2 WHERE id = ?3', who(account), now(), id);
-  await logEvent(env, m.key, 'Taken off staff accounts: back on its shift', who(account));
+  // What was left after reconciling: the reconciliation it came from is undone too, so each is open again.
+  const linkId = /^left:(\d+)$/.exec(m.key)?.[1];
+  if (linkId) await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', Number(linkId));
+  await logEvent(env, m.key, linkId ? 'Taken off staff accounts, and no longer reconciled together' : 'Taken off staff accounts: back on its shift', who(account));
   const what = moveWord(m.kind, m.amount);
   for (const y of m.shares) {
     // eslint-disable-next-line no-await-in-loop
@@ -968,6 +1051,15 @@ export async function undoMove(env, body, account, { fetchImpl } = {}) {
     await tell(env, [m.owner_id], `Back on your list: ${ghs(m.amount)} ${what}`, `${shiftWords(m.day, m.slot)}. ${who(account)} undid moving it to somebody else.`, fetchImpl);
   }
   return { ok: true };
+}
+
+/** What was left over after a reconciliation, on staff accounts: taken off, so the reconciliation can be undone. */
+export async function undoLeftOf(env, linkId, account, { fetchImpl } = {}) {
+  if (!Number.isInteger(Number(linkId))) return false;
+  const row = await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL', `left:${Number(linkId)}`).catch(() => null);
+  if (!row) return false;
+  await undoMove(env, { id: row.id }, account, { fetchImpl });
+  return true;
 }
 
 /** A message in HIVE. Never fails what was done: true when it went. */
