@@ -236,7 +236,7 @@ export function withStatus(issues, { answers = [], resolutions = [] } = {}) {
       status,
       answer: answer ? { how: answer.how, text: answer.text, po: answer.po || null, at: answer.at } : null,
       note: note ? { text: note.text, at: note.at } : null,
-      decision: decision ? { outcome: decision.outcome, note: decision.note, by: decision.by_name, at: decision.at, amount: decision.amount } : null,
+      decision: decision ? { outcome: decision.outcome, note: decision.note, by: decision.by_name, at: decision.at, amount: decision.amount, advanceId: decision.advance_id ?? null } : null,
     };
   });
 }

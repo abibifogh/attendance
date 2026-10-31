@@ -5,7 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { dueThisMonth, whyNotDue, NOT_DUE } from '../src/lib/advances.js';
 import { shiftOf, syncTillChecks } from '../src/lib/till-checks.js';
-import { advances, closeMonth, tillShortages } from '../src/routes/advances.js';
+import { advances, closeMonth, tillDecide, tillShortages, tillToDecide } from '../src/routes/advances.js';
+import { myIssues } from '../src/routes/till.js';
 
 /**
  * Till shortages: their own line on the payslip, and off pay only while their
@@ -157,4 +158,53 @@ test('closing off the month on Advances leaves a held till shortage alone, as th
   await closeMonth({ db, url: new URL('https://x/api/advances/close'), session, request: new Request('https://x/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
   const entries = raw.prepare('SELECT advance_id, amount FROM hr_advance_entry ORDER BY advance_id').all();
   assert.deepEqual(entries.map((e) => [e.advance_id, e.amount]), [[1, 50]]);
+});
+
+test('shortages on checked shifts wait in HIVE to be recovered or not, with who each person is', async () => {
+  const { raw, db } = setup();
+  raw.prepare("INSERT INTO users (id, name, role, active, staff_id) VALUES (7, 'desk.one', 'staff', 1, 1)").run();
+  const asked = [];
+  const fetchImpl = async (request) => {
+    const url = new URL(request.url);
+    const body = JSON.parse(await request.text());
+    asked.push([url.pathname, body]);
+    if (url.pathname.endsWith('/to-decide')) {
+      return Response.json({ issues: [{ key: 'k1', userId: 7, label: 'The drawer did not agree', day: '2026-10-06', slot: 'afternoon', amount: 2500, checkedBy: 'Check Er', answer: null }] });
+    }
+    return Response.json({ ok: true, advanceId: body.outcome === 'recover' ? 9 : null });
+  };
+  const session = { user: { id: 1, name: 'Pay Roll', role: 'admin' }, permissions: ['hr_pay'] };
+  const env = { INSIGHT_SSO_SECRET: 'secret' };
+  const list = await (await tillToDecide({ db, env, session, fetchImpl, url: new URL('https://x/') })).json();
+  assert.deepEqual(list.issues.map((i) => [i.name, i.department, i.amount]), [['Desk One', 'Front office', 25]]);
+
+  const send = (body) => tillDecide({ db, env, session, fetchImpl, request: new Request('https://x/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+  await assert.rejects(send({ key: 'k1', userId: 7, outcome: 'maybe' }), /Recover it, or not/);
+  const out = await (await send({ key: 'k1', userId: 7, outcome: 'recover' })).json();
+  assert.equal(out.advanceId, 9);
+  assert.deepEqual(asked.at(-1), ['/api/link/till/decide', { key: 'k1', userId: 7, outcome: 'recover', by: 'Pay Roll', note: null }]);
+  await send({ key: 'k1', userId: 7, outcome: 'writeoff' });
+  assert.equal(asked.at(-1)[1].outcome, 'writeoff');
+
+  // Insight out of reach: said, not a broken page.
+  const down = await (await tillToDecide({ db, env, session, fetchImpl: async () => { throw new Error('down'); }, url: new URL('https://x/') })).json();
+  assert.deepEqual(down.issues, []);
+  assert.ok(down.error);
+});
+
+test('a staff member sees a recovered shortage with the pay it comes off', async () => {
+  const { raw, db } = setup();
+  raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, status, purpose, start_month, taken_on, till_checked_at, currency)
+    VALUES (9, 1, 25, 1, 25, 'approved', 'till', '2026-11', '2026-11-02', '2026-11-01 09:00:00', 'GHS')`).run();
+  const binding = { fetch: async () => Response.json({ issues: [
+    { key: 'k1', day: '2026-10-06', slot: 'afternoon', amount: -2500, recovered: { amount: 2500, at: '2026-11-02 10:00:00', by: 'Pay Roll', advanceId: 9 } },
+    { key: 'k2', day: '2026-10-07', slot: 'night', amount: -500, recovered: null },
+  ], cleared: 0 }) };
+  const ctx = { db, env: { INSIGHT: binding, INSIGHT_SSO_SECRET: 'secret' }, session: { user: { id: 7, name: 'Desk One', role: 'staff', staff_id: 1 }, permissions: ['att_me'] } };
+  let out = await (await myIssues(ctx)).json();
+  assert.deepEqual(out.issues[0].recovered, { amount: 2500, at: '2026-11-02 10:00:00', by: 'Pay Roll', advanceId: 9, month: '2026-11', taken: false, held: false });
+  assert.equal(out.issues[1].recovered, null);
+  raw.prepare("INSERT INTO hr_advance_entry (advance_id, month, kind, amount, actor) VALUES (9, '2026-11', 'repayment', 25, 'x')").run();
+  out = await (await myIssues(ctx)).json();
+  assert.equal(out.issues[0].recovered.taken, true);
 });

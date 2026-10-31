@@ -374,6 +374,9 @@ export const ROUTES = [
   ['GET', '/api/advances/till', 'hr_pay', advance.tillShortages],
   // Typing the old notebook in. Administrator only, checked in the handler.
   ['POST', '/api/advances/staff/:id/history', 'hr_pay', advance.bringHistoryAcross],
+  // Shortages on checked shifts: recover from pay, or not. Above :id patterns.
+  ['GET', '/api/advances/till-decisions', 'hr_pay', advance.tillToDecide],
+  ['POST', '/api/advances/till-decisions', 'hr_pay', advance.tillDecide],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   // Correcting the record rather than the arrangement. Admin only, checked

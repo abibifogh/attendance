@@ -781,6 +781,24 @@ async function tell(ctx, event, { title, withAmounts, withoutAmounts, mailWith, 
 /** Their own list, as Insight works it out. */
 export async function myIssues(ctx) {
   const answer = await insight(ctx.env, '/api/link/till/issues', { userId: Number(ctx.session.user.id) });
+  // Recovered from pay: which month's pay, and whether it has come off yet.
+  const ids = (answer.issues ?? []).map((i) => Number(i.recovered?.advanceId)).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length) {
+    const marks = ids.map(() => '?').join(',');
+    const advances = (await ctx.db.prepare(`SELECT id, start_month, amount, till_checked_at FROM hr_advance WHERE id IN (${marks})`).bind(...ids).all()
+      .catch(() => ({ results: [] }))).results ?? [];
+    const taken = (await ctx.db.prepare(`SELECT advance_id, month, amount FROM hr_advance_entry WHERE kind = 'repayment' AND advance_id IN (${marks}) ORDER BY month`)
+      .bind(...ids).all().catch(() => ({ results: [] }))).results ?? [];
+    const byId = new Map(advances.map((a) => [Number(a.id), a]));
+    for (const issue of answer.issues) {
+      const advance = byId.get(Number(issue.recovered?.advanceId));
+      if (!advance) continue;
+      const off = taken.filter((t) => Number(t.advance_id) === Number(advance.id));
+      issue.recovered.month = off.length ? off[off.length - 1].month : advance.start_month;
+      issue.recovered.taken = off.length > 0;
+      issue.recovered.held = !off.length && !advance.till_checked_at;
+    }
+  }
   return json(answer);
 }
 

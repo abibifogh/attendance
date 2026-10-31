@@ -302,6 +302,9 @@ const ROUTES = [
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
   ['POST', '/api/link/till/checks', 'link', (env, ctx) => till.linkChecks(env, ctx.body)],
+  // Shortages on checked shifts, decided in HIVE: recovered from pay, or not.
+  ['POST', '/api/link/till/to-decide', 'link', (env) => till.linkToDecide(env)],
+  ['POST', '/api/link/till/decide', 'link', (env, ctx) => till.linkDecide(env, ctx.body)],
   ['POST', '/api/link/till/lock', 'link', (env) => lock.linkLock(env)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
   // A staff member sending the proof an admin asked for, from HIVE's To sort out.

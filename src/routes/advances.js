@@ -11,6 +11,7 @@ import {
 } from '../lib/advances.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import { shiftOf } from '../lib/till-checks.js';
+import { callLink } from '../lib/till-link.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
 import { firstName, sayDate, sayMonth } from '../lib/email-design.js';
 
@@ -305,6 +306,66 @@ export async function tillShortages(ctx) {
       deducted: sum(items, (i) => i.deducted.reduce((n, d) => n + d.amount, 0)),
     },
   });
+}
+
+/** Ask Insight something on the till link, its refusal as this app's own. */
+async function askInsight(ctx, path, body = {}) {
+  try {
+    return await callLink({ binding: ctx.env?.INSIGHT, secret: ctx.env?.INSIGHT_SSO_SECRET, path, body, fetchImpl: ctx.fetchImpl ?? null });
+  } catch (err) {
+    const error = new Error(err.message || 'Insight could not be reached.');
+    error.status = err.status && err.status < 600 ? err.status : 502;
+    throw error;
+  }
+}
+
+/**
+ * Shortages on checked shifts, waiting for a decision: recover it from pay, or
+ * not. Insight works them out; HIVE adds who each person is.
+ */
+export async function tillToDecide(ctx) {
+  let answer;
+  try {
+    answer = await askInsight(ctx, '/api/link/till/to-decide');
+  } catch (err) {
+    return json({ issues: [], error: err.message });
+  }
+  const ids = [...new Set((answer.issues ?? []).map((i) => Number(i.userId)).filter(Number.isInteger))];
+  const people = ids.length
+    ? ((await ctx.db.prepare(
+      `SELECT u.id, u.name AS login, s.name, s.department FROM users u LEFT JOIN att_staff s ON s.id = u.staff_id
+        WHERE u.id IN (${ids.map(() => '?').join(',')})`,
+    ).bind(...ids).all()).results ?? [])
+    : [];
+  const byId = new Map(people.map((p) => [Number(p.id), p]));
+  const { currency } = await settingsOf(ctx.db);
+  return json({
+    currency,
+    issues: (answer.issues ?? []).map((i) => {
+      const p = byId.get(Number(i.userId));
+      return {
+        ...i,
+        // Insight counts in pesewas; the pay is in cedis.
+        amount: round2(Number(i.amount) / 100),
+        name: p?.name || p?.login || 'Somebody',
+        department: p?.department ?? null,
+      };
+    }),
+  });
+}
+
+/** Decide one: recover it from pay, or not. Not recovering takes it off their list. */
+export async function tillDecide(ctx) {
+  const body = await readJson(ctx.request);
+  const key = str(body.key, 'Which shortage', { required: true, max: 200 });
+  const userId = int(body.userId, 'Whose', { required: true, min: 1 });
+  const outcome = body.outcome === 'recover' ? 'recover' : body.outcome === 'writeoff' ? 'writeoff' : null;
+  if (!outcome) throw badRequest('Recover it, or not?');
+  const out = await askInsight(ctx, '/api/link/till/decide', {
+    key, userId, outcome, by: ctx.session.user.name, note: str(body.note, 'Note', { max: 600 }),
+  });
+  await audit(ctx, outcome === 'recover' ? 'till.recovered_in_hive' : 'till.not_recovered_in_hive', key, { userId, advanceId: out?.advanceId ?? null });
+  return json({ ok: true, outcome, advanceId: out?.advanceId ?? null });
 }
 
 export async function staffAdvances(ctx, idParam) {

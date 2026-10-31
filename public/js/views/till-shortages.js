@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { replaceParams } from '../app.js';
-import { fmtDay, h, money, mount } from '../util.js';
+import { fmtDay, h, money, mount, toast } from '../util.js';
 import { emptyState, table } from './components.js';
 import { niceMonth } from './att-shared.js';
 
@@ -34,8 +34,13 @@ const SHOW = [
 
 export async function renderTillShortages(params = {}) {
   const host = h('div');
-  const data = await api.tillShortages();
+  const [data, toDecide] = await Promise.all([
+    api.tillShortages(),
+    api.tillToDecide().catch((err) => ({ issues: [], error: err.message })),
+  ]);
   const cash = (n) => money(n, data.currency);
+  const reload = async () => mount(host, ...(await renderTillShortages(params)).childNodes);
+  const decideCard = decisions(toDecide, cash, reload);
   let show = SHOW.some(([k]) => k === params.show) ? params.show : 'all';
   let query = '';
 
@@ -44,8 +49,8 @@ export async function renderTillShortages(params = {}) {
       h('div.sub', 'Till shortages taken from pay. Each comes off only while its shift is checked in Insight.')));
 
   if (!data.items.length) {
-    mount(host, head, emptyState('No till shortages',
-      'When a shortage on a checked shift is recovered from pay in Insight, it is listed here with its shift and who decided it.'));
+    mount(host, head, decideCard, toDecide.issues.length ? null : emptyState('No till shortages',
+      'Once a shift with a shortage is checked in Insight, the shortage waits here for you to recover it from pay or not.'));
     return host;
   }
 
@@ -107,6 +112,7 @@ export async function renderTillShortages(params = {}) {
 
   mount(host,
     head,
+    decideCard,
     h('div.home-tiles',
       tile(cash(data.totals.coming), `Coming off ${niceMonth(data.month)} pay`, data.totals.coming ? 'warn' : ''),
       tile(cash(data.totals.held), 'Held: shift not checked', data.totals.held ? 'bad' : ''),
@@ -119,6 +125,55 @@ export async function renderTillShortages(params = {}) {
         + 'Why it was theirs, and their answer, are on their till list in Insight.')),
   );
   return host;
+}
+
+/**
+ * Shortages on checked shifts, waiting for somebody to decide. Recover from
+ * pay puts it on their next payslip as a till shortage and leaves it on their
+ * list, marked recovered through payroll; not recovering takes it off their
+ * list. Their answer, if they gave one, is beside it; none is needed.
+ */
+function decisions(toDecide, cash, reload) {
+  if (toDecide.error) {
+    return h('div.alert.warn', h('span.alert-icon', '⚠️'),
+      h('div', h('div.alert-title', 'The shortages waiting for a decision cannot be read just now'),
+        h('div.alert-detail', toDecide.error)));
+  }
+  const issues = toDecide.issues ?? [];
+  if (!issues.length) return null;
+  const decide = async (issue, outcome, button) => {
+    if (outcome === 'writeoff' && !window.confirm(`Not recover ${cash(issue.amount)} from ${issue.name}? It leaves their list and nothing comes off their pay.`)) return;
+    button.disabled = true;
+    try {
+      await api.tillDecide({ key: issue.key, userId: issue.userId, outcome });
+      toast(outcome === 'recover' ? `${cash(issue.amount)} comes off ${issue.name}'s next pay.` : `Not recovered. It has left ${issue.name}'s list.`, 'good');
+      await reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      button.disabled = false;
+    }
+  };
+  const total = issues.reduce((n, i) => n + (i.amount || 0), 0);
+  return h('section.card.wait.ts-decide',
+    h('div.card-head', h('h2', 'Waiting on you'), h('span.card-note', `${issues.length} · ${cash(total)}`)),
+    h('p.muted', { style: { margin: 0, fontSize: '.88rem' } },
+      'Shortages on shifts checked in Insight. Recover from pay, or not: not recovering takes it off their list.'),
+    h('div.ts-decide-list', issues.map((issue) => {
+      const recover = h('button.btn-sm.btn-primary', { type: 'button' }, 'Recover from pay');
+      const leave = h('button.btn-sm', { type: 'button' }, 'Don’t recover');
+      recover.addEventListener('click', () => decide(issue, 'recover', recover));
+      leave.addEventListener('click', () => decide(issue, 'writeoff', leave));
+      return h('div.ts-decide-row',
+        h('div', h('strong', issue.name), issue.department ? h('small.muted', ` · ${issue.department}`) : null,
+          h('div.muted', { style: { fontSize: '.85rem' } },
+            `${fmtDay(issue.day)}, ${SLOT[issue.slot] ?? issue.slot} · ${issue.label}`
+            + (issue.checkedBy ? ` · checked by ${issue.checkedBy}` : '')),
+          issue.answer
+            ? h('div.ts-said', h('strong', issue.answer.how === 'repay' ? 'Will pay it back: ' : 'Said: '), issue.answer.text)
+            : h('div.muted', { style: { fontSize: '.82rem' } }, 'No answer from them yet.')),
+        h('strong.ts-amount', cash(issue.amount)),
+        h('div.btn-row', leave, recover));
+    })));
 }
 
 function tile(value, label, tone = '') {

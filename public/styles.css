@@ -8198,3 +8198,11 @@ button.lp-row:disabled { cursor: default; }
 .ts-note { font-size: .82rem; margin: .7rem 0 0; }
 .ts-pay { display: grid; gap: .2rem; justify-items: start; }
 .pay-below-zero ul { margin: .35rem 0; padding-left: 1.1rem; display: grid; gap: .2rem; font-size: .9rem; }
+.ts-decide { display: grid; gap: .6rem; }
+.ts-decide-list { display: grid; }
+.ts-decide-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .9rem; align-items: center; padding: .7rem 0; border-top: 1px solid var(--border); }
+.ts-decide-row:first-child { border-top: 0; }
+.ts-amount { font-variant-numeric: tabular-nums; }
+.ts-said { font-size: .85rem; margin-top: .25rem; }
+@media (max-width: 720px) { .ts-decide-row { grid-template-columns: 1fr auto; } .ts-decide-row .btn-row { grid-column: 1 / -1; } }
+.till-recovered { opacity: .92; }

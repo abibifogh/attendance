@@ -422,9 +422,12 @@ export async function linkIssues(env, body) {
   // Proof an admin asked for, on something they answered.
   const asked = await openForHive(env, userId).catch(() => new Map());
   const lock = await lockOf(env);
+  // Settled leaves the list, except what was recovered from pay: that stays,
+  // marked as recovered through payroll, so the person can see where it went.
+  const recovered = (i) => i.status === 'settled' && i.decision?.outcome === 'recover';
   return {
     lockedThrough: lock.through,
-    issues: mine.filter((i) => i.status !== 'settled').map((i) => ({
+    issues: mine.filter((i) => i.status !== 'settled' || recovered(i)).map((i) => ({
       key: i.key, kind: i.kind, label: i.kind === 'moved' ? 'Moved to you' : KINDS[i.kind], day: i.day, slot: i.slot, amount: i.amount, qty: i.qty ?? null,
       rental: i.rental ?? null, text: i.text, status: i.status, answer: i.answer,
       moved: i.moved ? { reason: i.moved.reason, by: i.moved.by, at: i.moved.at, from: i.moved.ownerName } : null,
@@ -434,9 +437,48 @@ export async function linkIssues(env, body) {
       checked: i.checked, checkedBy: i.checkedBy, checkedAt: i.checkedAt, note: i.note || null,
       // A locked day: nothing more can be sent on it.
       locked: isLocked(lock, i.day),
+      recovered: recovered(i)
+        ? { amount: i.decision.amount ?? null, at: i.decision.at, by: i.decision.by, advanceId: i.decision.advanceId ?? null }
+        : null,
     })),
-    cleared: mine.filter((i) => i.status === 'settled' && String(i.decision?.at || '').startsWith(month)).length,
+    cleared: mine.filter((i) => i.status === 'settled' && !recovered(i) && String(i.decision?.at || '').startsWith(month)).length,
   };
+}
+
+/**
+ * Every shortage on a checked shift still waiting for a decision, for HIVE's
+ * Till shortages view, where whoever runs the pay chooses: recover it from pay,
+ * or not. Somebody's answer, if they gave one, goes with it.
+ */
+export async function linkToDecide(env) {
+  const to = today();
+  const { issues } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
+  return {
+    issues: issues
+      .filter((i) => i.checked && i.status !== 'settled' && i.userId != null && Number(i.amount) < 0)
+      .map((i) => ({
+        key: i.key, userId: Number(i.userId), kind: i.kind, label: i.kind === 'moved' ? 'Put on their account' : KINDS[i.kind],
+        day: i.day, slot: i.slot, amount: -Number(i.amount), text: i.text,
+        answer: i.answer ? { how: i.answer.how, text: i.answer.text, at: i.answer.at } : null,
+        checkedBy: i.checkedBy || null, checkedAt: i.checkedAt || null,
+        moved: i.moved ? { reason: i.moved.reason, by: i.moved.by } : null,
+      }))
+      .sort((a, b) => String(a.day).localeCompare(String(b.day)) || String(a.slot).localeCompare(String(b.slot))),
+  };
+}
+
+/**
+ * HIVE's decision on one of them: recover it from pay, or not. Settled the
+ * same way as from Insight's own screen, in the name of whoever decided in
+ * HIVE; HIVE has already checked they may.
+ */
+export async function linkDecide(env, body, { fetchImpl } = {}) {
+  const outcome = body?.outcome === 'recover' ? 'recover' : body?.outcome === 'writeoff' ? 'writeoff' : null;
+  if (!outcome) throw badRequest('Recover it, or not?');
+  const by = str(body?.by, 'Who', { max: 120 }) || 'HIVE';
+  const note = str(body?.note, 'Note', { max: 600 })
+    || (outcome === 'writeoff' ? 'Not recovered from pay, decided in HIVE.' : 'Recovered from pay, decided in HIVE.');
+  return resolve(env, { key: body?.key, userId: body?.userId, outcome, note }, { name: by, isOwner: true }, { fetchImpl });
 }
 
 /** Who HIVE should tell about something, and how. */

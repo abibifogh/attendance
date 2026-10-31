@@ -195,9 +195,40 @@ test('a person’s list over the link, and settling it', async () => {
     assert.ok(sent.checkedAt, 'when it was checked goes with it');
     assert.equal(asked[1][0], '/api/link/till/tell');
 
+    // Recovered from pay stays on their list, marked so; nothing else settled does.
     list = await till.linkIssues(env, { userId: 8 });
-    assert.deepEqual(list.issues, [], 'settled leaves the list');
-    assert.equal(list.cleared, 1);
+    assert.equal(list.issues.length, 1);
+    assert.deepEqual({ ...list.issues[0].recovered, at: undefined }, { amount: 2000, at: undefined, by: 'Test Owner', advanceId: 55 });
+    assert.equal(list.cleared, 0);
+    // And it is decided, so it is no longer waiting in HIVE.
+    assert.deepEqual((await till.linkToDecide(env)).issues, []);
+  } finally {
+    global.Date = RealDate;
+    Date.now = realNow;
+  }
+});
+
+test('HIVE lists shortages on checked shifts and decides them: not recovered leaves the person’s list', async () => {
+  const { env } = await setUp();
+  const realNow = Date.now;
+  const RealDate = Date;
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [RealDate.parse('2026-08-03T09:00:00Z')])); } static now() { return RealDate.parse('2026-08-03T09:00:00Z'); } };
+  try {
+    const fetchImpl = async () => Response.json({ ok: true });
+    // Not checked yet: nothing to decide.
+    assert.deepEqual((await till.linkToDecide(env)).issues, []);
+    await till.checkShift(env, { day: '2026-08-01', slot: 'afternoon' }, OWNER, { fetchImpl });
+    const waiting = (await till.linkToDecide(env)).issues;
+    assert.equal(waiting.length, 1);
+    assert.deepEqual([waiting[0].userId, waiting[0].amount, waiting[0].day, waiting[0].slot, waiting[0].checkedBy], [8, 2000, '2026-08-01', 'afternoon', 'Test Owner']);
+    // No answer from them is needed.
+    assert.equal(waiting[0].answer, null);
+
+    await assert.rejects(till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'maybe' }, { fetchImpl }), /Recover it, or not/);
+    await till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'writeoff', by: 'Pay Person' }, { fetchImpl });
+    assert.deepEqual((await till.linkToDecide(env)).issues, []);
+    const list = await till.linkIssues(env, { userId: 8 });
+    assert.deepEqual(list.issues, [], 'not recovered leaves their list');
   } finally {
     global.Date = RealDate;
     Date.now = realNow;
