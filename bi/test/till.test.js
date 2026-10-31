@@ -1171,3 +1171,18 @@ test('an expense with no PO the big safe paid: off the drawer, which kept the ca
   assert.equal(last.register.expenses, r0.expenses - 500);
   assert.deepEqual((await env.DB.prepare("SELECT description FROM safe_entry WHERE kind = 'pending'").all()).results.map((x) => x.description), ['Bulbs']);
 });
+
+test('HIVE asking about checks: a difference put on staff accounts is checked while the move stands', async () => {
+  const { env } = await setUp();
+  await env.DB.prepare("INSERT INTO shift_check (day, slot, by_name, at, snapshot) VALUES ('2026-08-01', 'morning', 'Test Owner', '2026-08-02 08:00:00', '{}')").run();
+  await env.DB.prepare("INSERT INTO till_move (id, key, kind, day, slot, amount, shares, reason, by_name, at) VALUES (7, 'f:6', 'drawer-short', '2026-08-01', 'night', -500, '[]', 'Taken', 'Test Owner', '2026-08-02 09:00:00')").run();
+  const out = await till.linkChecks(env, {
+    shifts: [{ day: '2026-08-01', slot: 'morning' }, { day: '2026-08-01', slot: 'night' }],
+    keys: ['moved:7:3', 'moved:8:3', 'not-a-key'],
+  });
+  assert.deepEqual(out.checked.map((c) => c.slot), ['morning']);
+  assert.deepEqual(out.keys, [{ key: 'moved:7:3', by: 'Test Owner', at: '2026-08-02 09:00:00' }]);
+  // Undone: no longer.
+  await env.DB.prepare("UPDATE till_move SET undone_at = '2026-08-03 08:00:00' WHERE id = 7").run();
+  assert.deepEqual((await till.linkChecks(env, { shifts: [], keys: ['moved:7:3'] })).keys, []);
+});

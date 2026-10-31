@@ -38,24 +38,30 @@ export async function syncTillChecks(db, env, { fetchImpl = null } = {}) {
     const shift = shiftOf(advance);
     if (shift) shifts.set(`${shift.day}|${shift.slot}`, shift);
   }
-  if (!shifts.size) return { asked: 0, checked: 0, held: rows.length };
+  // A difference an admin put on a staff account is checked by being put
+  // there, whether or not its shift was: Insight answers for it by its key.
+  // Asking only about the shift took the check off every one of them a few
+  // minutes after it was recovered, and the payslip dropped it.
+  const keys = [...new Set(rows.map((a) => String(a.till_key ?? '')).filter((k) => k.startsWith('moved:')))];
+  if (!shifts.size && !keys.length) return { asked: 0, checked: 0, held: rows.length };
 
   let answer;
   try {
     answer = await callLink({
       binding: env.INSIGHT, secret: env.INSIGHT_SSO_SECRET, fetchImpl,
-      path: '/api/link/till/checks', body: { shifts: [...shifts.values()] },
+      path: '/api/link/till/checks', body: { shifts: [...shifts.values()], keys },
     });
   } catch {
     return { asked: shifts.size, checked: null, held: null };
   }
   const checks = new Map((answer?.checked ?? []).map((c) => [`${c.day}|${c.slot}`, c]));
+  const byKey = new Map((answer?.keys ?? []).map((c) => [String(c.key), c]));
 
   let checked = 0;
   let held = 0;
   for (const advance of rows) {
     const shift = shiftOf(advance);
-    const c = shift ? checks.get(`${shift.day}|${shift.slot}`) : null;
+    const c = byKey.get(String(advance.till_key ?? '')) || (shift ? checks.get(`${shift.day}|${shift.slot}`) : null);
     if (c) checked += 1; else held += 1;
     const at = c ? String(c.at ?? '') || new Date().toISOString().slice(0, 19).replace('T', ' ') : null;
     const by = c ? String(c.by ?? '') || null : null;

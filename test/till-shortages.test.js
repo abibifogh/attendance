@@ -251,3 +251,24 @@ test('till shortages already pushed to the next month come back to the open one'
   // September's payroll is closed: it stays on October.
   assert.equal(start(3), '2026-10');
 });
+
+test('a shortage put on a staff account stays checked while the move stands, though its shift was never checked', async () => {
+  const { raw, db } = setup();
+  raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, status, purpose, start_month, taken_on, reason, till_key, till_day, till_slot, till_checked_at, till_checked_by, currency)
+    VALUES (1, 1, 40, 1, 40, 'approved', 'till', '2026-10', '2026-10-30', 'Till: put on your account, 2026-10-20 night', 'moved:7:3', '2026-10-20', 'night', '2026-10-21 09:00:00', 'Test Owner', 'GHS')`).run();
+  let asked = null;
+  // Insight: the shift has no check, but the move stands.
+  const standing = async (request) => {
+    asked = JSON.parse(await request.text());
+    return Response.json({ checked: [], keys: [{ key: 'moved:7:3', by: 'Test Owner', at: '2026-10-21 09:00:00' }] });
+  };
+  const out = await syncTillChecks(db, { INSIGHT_SSO_SECRET: 'secret' }, { fetchImpl: standing });
+  assert.deepEqual(asked.keys, ['moved:7:3']);
+  assert.deepEqual(out, { asked: 1, checked: 1, held: 0 });
+  const row = () => raw.prepare('SELECT till_checked_at FROM hr_advance WHERE id = 1').get();
+  assert.equal(row().till_checked_at, '2026-10-21 09:00:00');
+  assert.equal(dueThisMonth(raw.prepare('SELECT * FROM hr_advance WHERE id = 1').get(), [], '2026-10'), 40);
+  // The move undone in Insight: held.
+  await syncTillChecks(db, { INSIGHT_SSO_SECRET: 'secret' }, { fetchImpl: async () => Response.json({ checked: [], keys: [] }) });
+  assert.equal(row().till_checked_at, null);
+});

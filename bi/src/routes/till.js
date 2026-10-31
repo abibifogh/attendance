@@ -275,10 +275,19 @@ export async function linkChecks(env, body) {
   const shifts = (Array.isArray(body?.shifts) ? body.shifts : []).slice(0, 500)
     .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s?.day ?? '')) && ['morning', 'afternoon', 'night'].includes(String(s?.slot ?? '')));
   const checks = await shiftChecks(env);
+  // A difference an admin put on staff accounts is decided, amount and all,
+  // whether or not its shift was ever checked: it counts as checked for as
+  // long as the move stands (as it does on the person's list).
+  const keys = (Array.isArray(body?.keys) ? body.keys : []).slice(0, 500).map(String).filter((k) => /^moved:\d+:\d+$/.test(k));
+  const standing = new Map((await moves(env)).map((m) => [Number(m.id), m]));
   return {
     checked: shifts.map((s) => {
       const c = checks.get(`${s.day}|${s.slot}`);
       return c ? { day: s.day, slot: s.slot, by: c.by || null, at: c.at || null } : null;
+    }).filter(Boolean),
+    keys: keys.map((key) => {
+      const m = standing.get(Number(key.split(':')[1]));
+      return m ? { key, by: m.by_name || null, at: m.at || null } : null;
     }).filter(Boolean),
   };
 }
