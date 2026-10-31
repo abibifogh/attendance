@@ -747,6 +747,11 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
   if (!['accept', 'recover', 'cash', 'writeoff', 'back'].includes(outcome)) throw badRequest('Accept, recover, cash, write off or send back?');
   const note = str(body?.note, 'Note', { max: 600 });
   await requireArea(env, account, ['recover', 'writeoff', 'cash'].includes(outcome) ? 'money_out' : 'answers', 2);
+  // Whether a shortage comes off somebody's pay, or is let go, is an admin's
+  // decision, here and in HIVE. Recording cash handed back is not.
+  if (['recover', 'writeoff'].includes(outcome) && roleOf(account) !== 'admin') {
+    throw forbidden('Only an admin decides whether a shortage comes off pay or is written off.');
+  }
 
   const to = today();
   const { issues } = await issuesBetween(env, addDays(to, -LOOKBACK), to);

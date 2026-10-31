@@ -177,6 +177,17 @@ test('shortages on checked shifts wait in HIVE to be recovered or not, with who 
   const env = { INSIGHT_SSO_SECRET: 'secret' };
   const list = await (await tillToDecide({ db, env, session, fetchImpl, url: new URL('https://x/') })).json();
   assert.deepEqual(list.issues.map((i) => [i.name, i.department, i.amount]), [['Desk One', 'Front office', 25]]);
+  assert.equal(list.canDecide, true);
+
+  // Somebody who handles pay but is not an administrator sees them and decides nothing.
+  const payClerk = { user: { id: 2, name: 'Pay Clerk', role: 'manager' }, permissions: ['hr_pay'] };
+  const seen = await (await tillToDecide({ db, env, session: payClerk, fetchImpl, url: new URL('https://x/') })).json();
+  assert.equal(seen.canDecide, false);
+  assert.equal(seen.issues.length, 1);
+  const before = asked.length;
+  await assert.rejects(tillDecide({ db, env, session: payClerk, fetchImpl, request: new Request('https://x/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'k1', userId: 7, outcome: 'recover' }) }) }),
+    /Only an administrator/);
+  assert.equal(asked.length, before, 'Insight is not asked');
 
   const send = (body) => tillDecide({ db, env, session, fetchImpl, request: new Request('https://x/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
   await assert.rejects(send({ key: 'k1', userId: 7, outcome: 'maybe' }), /Recover it, or not/);

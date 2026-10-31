@@ -502,9 +502,9 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         note,
         h('div.tl-actions',
           actAnswers ? h('button.btn.primary', { type: 'button', onclick: decide('accept') }, 'Accept') : null,
-          actMoney && short && i.checked ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'Off the next payslip in HIVE, as a till shortage' }, 'Recover from pay') : null,
+          admin && actMoney && short && i.checked ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'Off the next payslip in HIVE, as a till shortage' }, 'Recover from pay') : null,
           actMoney && short ? h('button.btn', { type: 'button', onclick: decide('cash') }, 'Paid in cash') : null,
-          actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
+          admin && actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
           actAnswers && i.status === 'answered' ? h('button.btn', { type: 'button', onclick: decide('back') }, 'Send back') : null),
         actMoney && short && !i.checked ? h('p.tl-small', 'Recover from pay appears once the shift is checked and the amount is final. It can also be decided in HIVE, under Money › Advances › Till shortages.') : null) : null,
       // Proof of what they said, asked of them in HIVE.

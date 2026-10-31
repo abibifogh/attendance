@@ -154,10 +154,12 @@ function decisions(toDecide, cash, reload) {
     }
   };
   const total = issues.reduce((n, i) => n + (i.amount || 0), 0);
-  return h('section.card.wait.ts-decide',
-    h('div.card-head', h('h2', 'Waiting on you'), h('span.card-note', `${issues.length} · ${cash(total)}`)),
-    h('p.muted', { style: { margin: 0, fontSize: '.88rem' } },
-      'Shortages on shifts checked in Insight. Recover from pay, or not: not recovering takes it off their list.'),
+  const may = Boolean(toDecide.canDecide);
+  return h(`section.card${may ? '.wait' : ''}.ts-decide`,
+    h('div.card-head', h('h2', may ? 'Waiting on you' : 'Waiting for an administrator'), h('span.card-note', `${issues.length} · ${cash(total)}`)),
+    h('p.muted', { style: { margin: 0, fontSize: '.88rem' } }, may
+      ? 'Shortages on shifts checked in Insight. Recover from pay, or not: not recovering takes it off their list.'
+      : 'Shortages on shifts checked in Insight. An administrator decides whether each comes off pay.'),
     h('div.ts-decide-list', issues.map((issue) => {
       const recover = h('button.btn-sm.btn-primary', { type: 'button' }, 'Recover from pay');
       const leave = h('button.btn-sm', { type: 'button' }, 'Don’t recover');
@@ -172,7 +174,7 @@ function decisions(toDecide, cash, reload) {
             ? h('div.ts-said', h('strong', issue.answer.how === 'repay' ? 'Will pay it back: ' : 'Said: '), issue.answer.text)
             : h('div.muted', { style: { fontSize: '.82rem' } }, 'No answer from them yet.')),
         h('strong.ts-amount', cash(issue.amount)),
-        h('div.btn-row', leave, recover));
+        may ? h('div.btn-row', leave, recover) : h('span'));
     })));
 }
 

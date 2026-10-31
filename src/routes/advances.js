@@ -341,6 +341,8 @@ export async function tillToDecide(ctx) {
   const { currency } = await settingsOf(ctx.db);
   return json({
     currency,
+    // Only an administrator decides; anybody else who handles pay sees them.
+    canDecide: isAdmin(ctx.session),
     issues: (answer.issues ?? []).map((i) => {
       const p = byId.get(Number(i.userId));
       return {
@@ -354,8 +356,13 @@ export async function tillToDecide(ctx) {
   });
 }
 
-/** Decide one: recover it from pay, or not. Not recovering takes it off their list. */
+/**
+ * Decide one: recover it from pay, or not. Not recovering takes it off their
+ * list. An administrator's decision only: it is money off somebody's pay, or
+ * money the property lets go.
+ */
 export async function tillDecide(ctx) {
+  if (!isAdmin(ctx.session)) throw forbidden('Only an administrator decides whether a till shortage comes off pay.');
   const body = await readJson(ctx.request);
   const key = str(body.key, 'Which shortage', { required: true, max: 200 });
   const userId = int(body.userId, 'Whose', { required: true, min: 1 });
