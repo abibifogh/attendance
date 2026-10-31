@@ -1011,6 +1011,8 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 }
 .sh .sh-pickbar > div { flex: 1 1 16rem; min-width: 0; }
 .sh .sh-pickbar input[type='text'] { flex: 2 1 14rem; min-width: 0; }
+.sh .sh-pickbar > .sh-mvpanel { flex: 1 1 100%; margin-top: 0; }
+.sh .sh-pickbar:has(> .sh-mvpanel) { max-height: 85vh; overflow-y: auto; }
 
 /* ----------------------------------------------------------- the till -- */
 .sh .tl-kpi { cursor: default; }

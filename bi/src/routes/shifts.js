@@ -769,6 +769,10 @@ export async function removeLink(env, body, account, { pending = false } = {}) {
     const row = await first(env.DB, 'SELECT * FROM shift_link WHERE id = ?1', id);
     if (!row || row.status !== 'pending' || row.by_name !== who(account)) throw badRequest('Only an admin can undo that.');
   }
+  // What it left over is on staff accounts: undoing that undoes this too.
+  if (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL', `left:${id}`).catch(() => null)) {
+    throw badRequest('What was left after reconciling these is on a staff account. Take it off the account, and the reconciliation is undone with it.');
+  }
   await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', id);
   return { ok: true };
 }

@@ -2571,6 +2571,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
     // ASSD less the other side: a laundry that took money ASSD does not show is below nothing.
     if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
+    // A slip of the finger: ASSD has more (or less) than the terminal took.
+    if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
     if (x.kind === 'movement-twice') return a;
     return null;
   }
@@ -2706,6 +2708,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** What was open on the left, and the tab on the right, kept while moving from shift to shift. */
   const opened = new Set();
   let shTab = null;
+  // The ticked differences' leftover, being put on staff accounts.
+  let leftOpen = false;
 
   /** Beside the status: 🔒 when the shift is checked, so locked. */
   function lockChip(s) {
@@ -3438,10 +3442,12 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** Who carries a difference, how much each, and why: all of it placed, the reason required. */
   function movePanel(x) {
     const whole = Math.abs(x.amount);
-    // The drawer says which way its difference goes; anything else, the admin says.
-    const own = MOVABLE.has(x.kind);
+    // The drawer says which way its difference goes, and so does what was left
+    // after reconciling; anything else, the admin says.
+    const leftover = Boolean(x.leftOf);
+    const own = MOVABLE.has(x.kind) || leftover;
     let direction = null;
-    const word = () => (own ? (x.amount < 0 ? 'short' : 'over') : direction || 'difference');
+    const word = () => (leftover ? (x.amount < 0 ? 'deficit' : 'surplus') : own ? (x.amount < 0 ? 'short' : 'over') : direction || 'difference');
     const sideBtns = [['deficit', 'Deficit: they owe it'], ['surplus', 'Surplus: owed to them']].map(([key, text]) => h('button.sh-mvchip', {
       type: 'button', 'aria-pressed': 'false',
       onclick: (e) => {
@@ -3503,15 +3509,19 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       e.target.disabled = true;
       said.textContent = 'Moving…';
       try {
-        const out = await api('/till/charge', { method: 'POST', body: { key: x.key, day: x.day, shares, reason, ...(own ? {} : { direction }) } });
+        const out = leftover
+          ? await api('/till/charge-left', { method: 'POST', body: { keys: x.leftOf.map((o) => o.key), days: [...new Set(x.leftOf.map((o) => o.day).filter(Boolean))], amount: x.amount, shares, reason } })
+          : await api('/till/charge', { method: 'POST', body: { key: x.key, day: x.day, shares, reason, ...(own ? {} : { direction }) } });
         moving = null;
+        if (leftover) { picked.clear(); pickedAs.clear(); leftOpen = false; }
         till.forget();
         await load(banner('good', `Put on ${shares.length === 1 ? 'a staff account' : `${shares.length} staff accounts`}. ${out.told ? `${out.told} told in HIVE.` : 'HIVE could not be reached to tell them; it is on their list all the same.'}`));
       } catch (err) { said.textContent = err.message; e.target.disabled = false; }
     };
     recount();
     return h('div.sh-mvpanel',
-      h('h4', 'Put on a staff account'),
+      h('h4', leftover ? `Reconcile, and put the ${flowText(x.amount)} left on a staff account` : 'Put on a staff account'),
+      leftover ? h('p.small', `${x.leftOf.map((o) => `${(KIND[o.kind] || [o.kind])[0]} ${flowText(flowOf(o))}`).join(' and ')} are reconciled together; they leave ${flowText(x.amount)}, a ${word()}.`) : null,
       own ? null : [h('div.sh-mvlab', 'On their account as (required)'), h('div.sh-mvchips', sideBtns)],
       intro,
       x.proposed ? h('p.small', `This decides it instead of ${x.proposed.by}’s answer waiting for approval, which is set aside.`) : null,
@@ -3524,7 +3534,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       h('p.sh-mvtell', 'Each of them gets a message in HIVE with the amount, the shift and this reason, and it goes on their To sort out list. If it leaves the shift’s own person altogether, they are told too.'),
       h('div.sh-labels',
         h('button.btn.primary', { type: 'button', onclick: go_ }, `Move ${money(whole)}`),
-        h('button.btn', { type: 'button', onclick: () => { moving = null; paint(); } }, 'Cancel'),
+        h('button.btn', { type: 'button', onclick: () => { moving = null; leftOpen = false; paint(); } }, 'Cancel'),
         said));
   }
 
@@ -4171,8 +4181,15 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           e.target.disabled = true;
           try { await reconcile(chosen.map((x) => x.key), note.value.trim()); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
         },
-      }, chosen.length < 2 ? 'Tick at least two' : 'Reconcile together'),
+      }, chosen.length < 2 ? 'Tick at least two' : known && net !== 0 ? 'Reconcile, the difference explained' : 'Reconcile together'),
       // An admin's: reconciled together, and what they do not net to parked in suspense.
+      // An admin's: reconciled together, and what they do not net to on staff accounts.
+      admin && known && net !== 0 && chosen.length >= 2 ? h('button.btn', {
+        type: 'button',
+        'aria-expanded': String(leftOpen),
+        title: 'Reconcile them, and put the difference left on staff accounts',
+        onclick: () => { leftOpen = !leftOpen; paint(); },
+      }, `Reconcile, ${flowText(net)} on a staff account`) : null,
       admin && known && net !== 0 && chosen.length >= 2 ? h('button.btn', {
         type: 'button',
         title: 'Reconcile them, and put the difference left in the suspense account',
@@ -4187,8 +4204,11 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           } catch (err) { said.textContent = err.message; e.target.disabled = false; }
         },
       }, `Reconcile, ${flowText(net)} to suspense`) : null,
-      h('button.btn', { type: 'button', onclick: () => { picked.clear(); pickedAs.clear(); paint(); } }, 'Clear'),
-      said);
+      h('button.btn', { type: 'button', onclick: () => { picked.clear(); pickedAs.clear(); leftOpen = false; paint(); } }, 'Clear'),
+      said,
+      leftOpen && admin && known && net !== 0 && chosen.length >= 2
+        ? movePanel({ key: `left:${chosen.map((x) => x.key).join('|')}`, kind: 'left', amount: net, day: chosen.find((x) => x.day)?.day, leftOf: chosen })
+        : null);
   }
 
   // ------------------------------------------------------------ people --

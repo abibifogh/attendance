@@ -251,7 +251,11 @@ const ROUTES = [
   ['POST', '/api/shifts/refunds/paid', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.refundPaid(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/movement', 'shifts', movement],
   ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
-  ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
+  ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, async (env, ctx) => {
+    // An admin undoing a reconciliation whose leftover is on staff accounts takes that off too.
+    if (!isSupervisor(ctx)) await till.undoLeftOf(env, ctx.body?.id, ctx.account);
+    return shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) });
+  })],
   ['GET', '/api/shifts/files', 'shifts', area('files', 1, (env) => shiftRoutes.filesStatus(env))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
@@ -298,6 +302,7 @@ const ROUTES = [
   ['GET', '/api/odoo/links', 'owner', (env, ctx) => odooact.linksView(env, ctx.account)],
   ['POST', '/api/odoo/links', 'owner', (env, ctx) => odooact.saveLink(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge', 'shifts', (env, ctx) => till.moveToStaff(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/charge-left', 'shifts', (env, ctx) => till.moveLeftToStaff(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge/undo', 'shifts', (env, ctx) => till.undoMove(env, ctx.body, ctx.account)],
   // A shift checked: its differences are confirmed to its people (or taken back).
   ['POST', '/api/till/check', 'shifts', (env, ctx) => till.checkShift(env, ctx.body, ctx.account)],
@@ -469,7 +474,7 @@ const LOCKED = {
   '/api/shifts/form-match/apply': {}, '/api/shifts/receipts': {}, '/api/shifts/receipts-read': {}, '/api/shifts/answer': {}, '/api/shifts/answer-many': {},
   '/api/shifts/payment-home': {}, '/api/shifts/place': {}, '/api/suspense/add': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
   '/api/till/resolve': {}, '/api/till/reopen': { report: 'reportId' }, '/api/till/move': { report: 'reportId' }, '/api/till/owner': {},
-  '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
+  '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge-left': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
   '/api/np/review': {}, '/api/np/reread': {}, '/api/np/move': {}, '/api/np/reading': {}, '/api/np/upload': {}, '/api/np/check': {}, '/api/np/answer': {},
 };
 for (const route of ROUTES) {
