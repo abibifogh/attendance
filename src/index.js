@@ -439,6 +439,7 @@ export const ROUTES = [
   ['POST', '/api/payroll/schemes', 'hr_pay', payroll.saveScheme],
   ['DELETE', '/api/payroll/schemes/:id', 'hr_pay', payroll.removeScheme],
   ['POST', '/api/payroll/scores', 'hr_pay', payroll.setScores],
+  ['POST', '/api/payroll/from-maintenance', 'hr_pay', payroll.fromMaintenance],
   ['POST', '/api/payroll/penalties', 'hr_pay', payroll.addPenalty],
   ['DELETE', '/api/payroll/penalties/:id', 'hr_pay', payroll.removePenalty],
   ['POST', '/api/payroll/severance', 'hr_pay', payroll.addSeverance],
