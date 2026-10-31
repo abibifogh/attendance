@@ -1682,7 +1682,10 @@ export async function shifts(env, query, account) {
     };
   });
 
-  // Per person: counted variance, shifts, cash handled.
+  // Per person: counted variance, shifts, cash handled. A drawer difference
+  // reconciled with others is the same money as those, so it is not counted
+  // as over or short.
+  const reconciledDrawer = new Set(exceptions.filter((x) => x.group === 'drawer' && x.key.startsWith('drawer:') && x.link?.status === 'applied').map((x) => x.key));
   const people = new Map();
   for (const d of days) {
     for (const s of d.shifts) {
@@ -1693,6 +1696,7 @@ export async function shifts(env, query, account) {
       p.exceptions += s.exceptions;
       if (s.register?.variance != null) {
         p.counted += 1;
+        if (reconciledDrawer.has(`drawer:${s.day}:${s.slot}`)) { people.set(s.user, p); continue; }
         p.variance += s.register.variance;
         if (s.register.variance > 0) p.over += s.register.variance;
         if (s.register.variance < 0) p.short += s.register.variance;

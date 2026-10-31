@@ -177,6 +177,15 @@ again on its shift); **Undo** under Cleared opens a match, all of it, or a
 move to the safe the count has not taken in yet. A locked or checked shift
 refuses Put in suspense like any other change.
 
+### A drawer difference reconciled with others
+
+A drawer over or short reconciled with other differences (an expense ASSD
+moved twice, say) is the same money as those, so it is no longer over or
+short: the shift's drawer says **✓ Reconciled**, the day and calendar say
+✓ reconciled, and it is left out of its person's over and short on People.
+ASSD's own count is still shown, with how far it was out. One answered on
+its own (Explained, say) stays over or short, answered.
+
 ### What is left after reconciling, on a staff account
 
 Ticked differences that do not net to nothing say what is left in the bar:

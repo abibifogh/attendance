@@ -528,7 +528,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           evidence(x)) : null,
         s ? h('div.sh-brief-figs',
           fig('Cash in ASSD', whole(s.cash)),
-          h('span.sh-brief-fig', h('small', 'Drawer'), chip(r.variance ?? r.varianceSign, s.open, Boolean(drawerSettled(s)))),
+          h('span.sh-brief-fig', h('small', 'Drawer'), chip(r.variance ?? r.varianceSign, s.open, drawerSettled(s))),
           s.cardLines ? fig('Card and MoMo', `${s.cardFound + (s.cardAnswered || 0)} of ${s.cardLines} found`) : fig('Card and MoMo', 'none'),
           r.expenses != null ? fig('Expenses', whole(r.expenses)) : null,
           fig('Still to answer', String(exceptionsOf2(d, s).length))) : null);
@@ -641,7 +641,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   const chip = (v, open, settled = false) => (open ? h('span.sh-chip.none', 'ends here')
     : v == null ? h('span.sh-chip.none', 'no count')
       : v === 0 ? h('span.sh-chip.ok', '✓ agrees')
-        : settled ? h('span.sh-chip.ok', { title: 'Answered or reconciled' }, data.redacted ? '✓ settled' : `✓ ${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`)
+        // Reconciled with others: the same money as another difference, so no longer over or short.
+        : settled?.link ? h('span.sh-chip.ok', { title: data.redacted ? 'Reconciled with others' : `ASSD's count was ${v > 0 ? 'over' : 'short'} by ${money(Math.abs(v))}; reconciled with others` }, '✓ reconciled')
+        : settled ? h('span.sh-chip.ok', { title: 'Answered' }, data.redacted ? '✓ settled' : `✓ ${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`)
         : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, data.redacted ? (v > 0 ? 'over' : 'short') : `${v > 0 ? '+' : '−'}${whole(Math.abs(v))}`));
   const modesOf = (s) => {
     const out = {};
@@ -864,7 +866,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           type: 'button', title: `${nameOf(s.user)} · ${SLOT[sl].label} · ${dayText(s.day)}`, onclick: () => go('shift', s.id),
         },
         h('span.sh-who', avatar(s.user), h('b', { dataset: { k: `${s.day}|${s.slot}` } }, nameOf(s.user))),
-        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open, Boolean(drawerSettled(s)))),
+        h('span.sh-fig', h('span.num', `Cash ${whole(s.cash)}`), chip(s.register?.variance ?? s.register?.varianceSign, s.open, drawerSettled(s))),
         mixBar(s),
         h('span.sh-fig',
           h('span', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)}/${s.cardLines} card` : 'no card'),
@@ -986,7 +988,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         h('dt', 'Closing notes'), h('dd.num', money(r.closing))),
       h('div.sh-dayvar', v == null ? h('span.sh-chip.none', s.open ? 'journal ends here' : 'no closing count')
         : v === 0 ? h('span.sh-chip.ok', '✓ The drawer agrees')
-          : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}`)),
+          : drawerSettled(s)?.link ? h('span.sh-chip.ok', '✓ The drawer is reconciled with others')
+            : drawerSettled(s) ? h('span.sh-chip.ok', `✓ ${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}, answered`)
+              : h(`span.sh-chip.${v > 0 ? 'over' : 'short'}`, `${v > 0 ? 'Over' : 'Short'}${data.redacted ? '' : ` ${money(Math.abs(v))}`}`)),
       mixBar(s),
       h('div.sh-mixkey', MODES.filter(([k]) => m[k] > 0).map(([k, label, c]) => h('span', h('i', { style: `background:${c}` }), `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`))),
       h('div.sh-fig',
@@ -1370,11 +1374,13 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       const settled = n.variance && !n.recounted ? drawerSettled(s) : null;
       const cls = n.variance == null ? 'none' : n.variance === 0 || settled ? 'ok' : n.variance > 0 ? 'over' : 'short';
       mount(vbox, h(`div.sh-vbox.${cls}`,
-        h('div.big.num', n.variance == null ? 'No closing count' : n.variance === 0 ? '✓ The drawer agrees' : `${n.variance > 0 ? 'Over' : 'Short'} ${money(Math.abs(n.variance))}`),
+        h('div.big.num', n.variance == null ? 'No closing count' : n.variance === 0 ? '✓ The drawer agrees'
+          // Reconciled with others: the same money as another difference, so not over or short.
+          : settled?.link ? '✓ Reconciled with others' : `${n.variance > 0 ? 'Over' : 'Short'} ${money(Math.abs(n.variance))}`),
         h('p', n.variance == null
           ? (s.open ? 'The journal stops inside this shift. Load a journal that runs a day past it.' : 'ASSD has no closing count for this shift. Type a recount to check it.')
           : n.variance === 0 ? 'What should be in the drawer is exactly what was counted.'
-            : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
+            : `It should have held ${money(r.expected)}; ${n.recounted ? 'the recount' : 'ASSD counted'} ${money(n.closing)}${settled?.link ? `, ${money(Math.abs(n.variance))} ${n.variance > 0 ? 'more' : 'less'}. That is the same money as the differences it is reconciled with, so it is not counted as ${n.variance > 0 ? 'over' : 'short'}` : ''}.${!n.recounted && r.assdVariance === n.variance ? ' ASSD booked the same difference itself.' : ''}`),
         settled ? h('p', h('b', `✓ ${settledWords(settled).charAt(0).toUpperCase()}${settledWords(settled).slice(1)}`), settled.note ? `: ${settled.note}` : '', settled.by ? ` (${settled.by})` : '') : null,
         r.corrected && r.assdVariance !== n.variance ? h('p', `ASSD booked ${signed(r.assdVariance)} before the corrections to its cash movements.`) : null,
         r.handoverGap ? h('p', `This shift’s first count was ${money(Math.abs(r.handoverGap.amount))} ${r.handoverGap.amount < 0 ? 'less' : 'more'} than ${nameOf(r.handoverGap.from)}’s closing count.`) : null),
@@ -2761,8 +2767,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       hide ? null : tile('payments', 'Taken', money(total),
         h('span.sh-glancemix', mixBar(s), MODES.filter(([k]) => m[k] > 0).map(([k, label]) => `${label === 'Card and MoMo' ? 'Card' : label.replace('Prepaid by ', 'Prepaid ')} ${whole(m[k])}`).join(' · '))),
       tile('drawer', 'The drawer',
-        s.open ? 'Ends here' : v == null ? 'No count' : v === 0 ? '✓ Agrees' : settledDrawer ? `✓ ${v > 0 ? 'Over' : 'Short'}, settled` : `${v > 0 ? 'Over' : 'Short'}${hide ? '' : ` ${money(Math.abs(v))}`}`,
-        s.open ? 'the journal ends inside it' : v === 0 ? (hide ? 'what was counted is what it should hold' : `${money(n?.closing ?? s.register?.closing)} counted, as it should hold`) : settledDrawer ? settledWords(drawerSettled(s)) : v == null ? '' : 'see To sort out',
+        s.open ? 'Ends here' : v == null ? 'No count' : v === 0 ? '✓ Agrees' : settledDrawer && drawerSettled(s).link ? '✓ Reconciled' : settledDrawer ? `✓ ${v > 0 ? 'Over' : 'Short'}, settled` : `${v > 0 ? 'Over' : 'Short'}${hide ? '' : ` ${money(Math.abs(v))}`}`,
+        s.open ? 'the journal ends inside it' : v === 0 ? (hide ? 'what was counted is what it should hold' : `${money(n?.closing ?? s.register?.closing)} counted, as it should hold`) : settledDrawer && drawerSettled(s).link ? 'the same money as another difference' : settledDrawer ? settledWords(drawerSettled(s)) : v == null ? '' : 'see To sort out',
         s.open || v == null ? '' : v === 0 || settledDrawer ? 'ok' : v < 0 ? 'bad' : 'warn'),
       tile('payments', 'Card and MoMo', s.cardLines ? `${s.cardFound + (s.cardAnswered || 0)} of ${s.cardLines} found` : 'None',
         s.cardLines ? (allCard ? 'every one arrived' : `${s.cardLines - s.cardFound - (s.cardAnswered || 0)} not found`) : 'no card or MoMo this shift', !s.cardLines || allCard ? 'ok' : 'bad'),
