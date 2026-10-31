@@ -21,7 +21,7 @@ export const SLOT_ORDER = ['morning', 'afternoon', 'night'];
 const BANK = new Set(['never-settled', 'reversal', 'bank-only']);
 const DRAWER_KINDS = new Set(['drawer-short', 'drawer-over', 'handover-gap', 'movement-unlabelled', 'movement-twice', 'movement-reversal', 'receipts-unclear', 'receipts-carried', 'keyed-no-cash']);
 const NO_AMOUNT = new Set(['receipts-unclear', 'receipts-carried', 'movement-labelled', 'movement-matched', 'movement-twice', 'movement-reversal', 'keyed-no-cash']);
-const MINUS = new Set(['failed', 'not-found', 'paid-less', 'duplicate', 'never-settled', 'reversal', 'movement-unlabelled', 'expense-no-po', 'expense-po-gap']);
+const MINUS = new Set(['failed', 'not-found', 'paid-less', 'duplicate', 'never-settled', 'reversal', 'movement-unlabelled', 'expense-no-po']);
 const PLUS = new Set(['not-recorded', 'paid-more', 'double-charge', 'laundry-card', 'bank-only', 'refund']);
 
 /** Which column a difference goes in. */
@@ -42,6 +42,8 @@ export function signedAmount(x) {
   if (x.paid != null && x.assd != null && !['laundry-mismatch'].includes(x.kind)) return Number(x.paid) - Number(x.assd);
   // The laundry is ASSD less the laundry system: turned round, so plus is the system taking more.
   if (x.kind === 'laundry-mismatch') return -Number(x.amount);
+  // Expenses less the POs: POs above what was paid out is plus.
+  if (x.kind === 'expense-po-gap') return -Number(x.amount);
   if (MINUS.has(x.kind)) return -a;
   if (PLUS.has(x.kind)) return a;
   return Number(x.amount) || 0;

@@ -954,7 +954,15 @@ export function flowOf(x) {
   const a = Math.abs(x.amount);
   if (['not-recorded', 'bank-only', 'double-charge', 'paid-more', 'refund'].includes(x.kind)) return a;
   if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
+  // The laundry is ASSD less the laundry system, as it stands: it pulls against the
+  // drawer or card difference that is the same money seen from the other side.
   if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
+  // A card paid at the laundry and not in ASSD: money in that ASSD does not show.
+  if (x.kind === 'laundry-card') return a;
+  // Cash out of the drawer with no label, or as expenses with no PO: ASSD shows it gone, nothing says where.
+  if (['movement-unlabelled', 'expense-no-po'].includes(x.kind)) return -a;
+  // Expenses less the POs: more paid out than the POs show is minus, POs above what was paid out is plus.
+  if (x.kind === 'expense-po-gap') return -x.amount;
   // A slip of the finger: ASSD has more (or less) than the terminal took.
   if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
   if (x.kind === 'movement-twice') return a;
@@ -965,12 +973,16 @@ export function flowOf(x) {
 
 /**
  * Each exception's flow when reconciled with the others chosen. Cash keyed
- * while the drawer did not move is already inside its own shift's drawer
- * difference: with that chosen too it adds nothing, or it would count twice.
+ * while the drawer did not move, and a movement out keyed twice, are part of
+ * their own shift's drawer difference: chosen with it, each takes back the
+ * part of it that it explains, so what is left is what nothing explains.
+ * With differences on other shifts each counts as it is.
  */
+export const EXPLAINS_DRAWER = ['keyed-no-cash', 'movement-twice'];
+export const besideOwnDrawer = (x, chosen) => EXPLAINS_DRAWER.includes(x.kind)
+  && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot);
 export function netFlows(chosen) {
-  return chosen.map((x) => (x.kind === 'keyed-no-cash'
-    && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot) ? 0 : flowOf(x)));
+  return chosen.map((x) => (besideOwnDrawer(x, chosen) ? -flowOf(x) : flowOf(x)));
 }
 
 /**

@@ -1,4 +1,4 @@
-import { all, first } from '../lib/db.js';
+import { all, first, getSettings, setSetting } from '../lib/db.js';
 import { badRequest } from '../lib/http.js';
 import * as approvals from './approvals.js';
 import * as panels from './panels.js';
@@ -18,7 +18,8 @@ import { requireAdmin } from './till.js';
  * - **decide**: waiting on a yes or a no (approvals in every system, drafts
  *   from receipts, counters nobody could read, answers to look at);
  * - **fix**: something going wrong, with how to put it right (the findings,
- *   money held in floats too long, bills overdue in Odoo, to-dos nobody has);
+ *   money held in floats too long, bills overdue in Odoo (only when an admin
+ *   turns them on), to-dos nobody has);
  * - **review**: worth a read (the week's report, names not linked to Odoo,
  *   files not loaded);
  * - **done**: what Insight did by itself lately, to check.
@@ -74,12 +75,36 @@ export async function gatherOnce(env, account, { fresh = false } = {}) {
   return data;
 }
 
+/**
+ * Bills owed in Odoo are left out of what the Assistant flags unless an admin
+ * turns them on: what is owed to suppliers is paid on its own rhythm, and a
+ * big balance would otherwise sit at the top of the list and the summary.
+ * Buying › Suppliers still shows every bill.
+ */
+export const BILLS_SETTING = 'assistant_bills';
+export async function billsOn(env) {
+  const s = await getSettings(env.DB).catch(() => ({}));
+  return s[BILLS_SETTING] === '1';
+}
+
+/** An admin's: whether bills owed in Odoo are flagged. */
+export async function setBills(env, body, account) {
+  await requireAdmin(account);
+  if (typeof body?.on !== 'boolean') throw badRequest('Say on or off.');
+  await setSetting(env.DB, BILLS_SETTING, body.on ? '1' : '0');
+  recent.clear();
+  return { ok: true, on: body.on };
+}
+
 /** Everything, for an admin. */
 export async function gather(env, account, { now = Date.now(), sources = SOURCES } = {}) {
   await requireAdmin(account);
   const read = [];
   const items = [];
-  await Promise.all(sources.map(async (s) => {
+  const bills = await billsOn(env);
+  // Bills turned off: not read, and said so where the places read are listed.
+  if (!bills && sources.some((s) => s.id === 'bills')) read.push({ id: 'bills', label: 'Odoo bills', ok: true, off: true, count: 0 });
+  await Promise.all(sources.filter((s) => bills || s.id !== 'bills').map(async (s) => {
     try {
       let timer;
       const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Took too long to answer; it is read again next time.')), SOURCE_MS); });
@@ -108,6 +133,7 @@ export async function gather(env, account, { now = Date.now(), sources = SOURCES
       done: done.length,
     },
     read,
+    billsOn: bills,
   };
 }
 
@@ -363,7 +389,10 @@ export async function ask(env, body, account, { now = Date.now(), once = false }
   // Read only: the Brief's figures would re-save Insight's checks, which a question must not do.
   const data = once ? await gatherOnce(env, account) : await gather(env, account, { now });
   if (!env.AI) return { answer: 'Questions need the reader (Workers AI), which is not available just now. Everything I know is in the list.', by: 'plain' };
+  // Bills turned off are not flagged, but a question about them is still answered.
+  const bills = data.billsOn ? [] : await readBills(env, account, now).catch(() => []);
+  const owed = bills.length ? `\n\nBills owed in Odoo (not flagged, for questions only): ${JSON.stringify(factsOf({ items: bills.map((x) => ({ ...x, source: 'Odoo bills' })) }))}` : '';
   const answer = await askModel(env, VOICE,
-    `Question: ${question}\n\nWhat needs the admin now: ${JSON.stringify(factsOf(data))}\n\nAnswer in at most four sentences. If these facts do not answer it, say which page of Insight would: Reports › Money for revenue and costs, Reports › Guests for occupancy, Reports › Staff costs for wages, Front desk › Shifts for drawers, Buying › Suppliers for what is owed.`, 300);
+    `Question: ${question}\n\nWhat needs the admin now: ${JSON.stringify(factsOf(data))}${owed}\n\nAnswer in at most four sentences. If these facts do not answer it, say which page of Insight would: Reports › Money for revenue and costs, Reports › Guests for occupancy, Reports › Staff costs for wages, Front desk › Shifts for drawers, Buying › Suppliers for what is owed.`, 300);
   return { answer: answer || 'I could not answer that just now. Try again in a moment.', by: answer ? 'ai' : 'plain' };
 }

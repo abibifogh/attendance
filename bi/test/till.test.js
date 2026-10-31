@@ -858,14 +858,33 @@ test('a keying slip nets as what ASSD has over what the terminal took', () => {
   assert.equal(till.flowOf({ kind: 'not-recorded', amount: 1000 }) + till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -1000);
 });
 
-test('cash keyed while the drawer did not move is minus, and counts once beside its own drawer', () => {
+test('cash keyed while the drawer did not move is minus, and takes back its part of its own drawer', () => {
   const still = { kind: 'keyed-no-cash', amount: 28000, day: '2026-10-13', slot: 'afternoon' };
   assert.equal(till.flowOf(still), -28000, 'ASSD shows 280 the drawer never had');
   assert.equal(till.flowOf({ ...still, amount: -5000 }), 5000, 'keyed as paid out, never left');
   const over = { kind: 'drawer-over', amount: 28000, day: '2026-10-14', slot: 'morning' };
   assert.deepEqual(till.netFlows([still, over]), [-28000, 28000], 'another shift’s 280 over nets it');
+  assert.equal(till.flowOf({ kind: 'laundry-mismatch', amount: -1500 }), -1500, 'the laundry stays as it was: against its card or drawer twin');
   const own = { kind: 'drawer-short', amount: -30000, day: '2026-10-13', slot: 'afternoon' };
-  assert.deepEqual(till.netFlows([still, own, over]), [0, -30000, 28000], 'inside its own drawer’s short already');
+  assert.deepEqual(till.netFlows([still, own]), [28000, -30000], 'explains 280 of its own drawer’s 300 short: 20 left');
+});
+
+test('every difference with an amount of its own says which way it goes, as the month table does (the laundry aside)', async () => {
+  const { signedAmount } = await import('../public/js/difftable.js');
+  const cases = [
+    [{ kind: 'laundry-card', amount: 2000 }, 2000, 'card paid at the laundry, not in ASSD'],
+    [{ kind: 'movement-unlabelled', amount: 20000 }, -20000, 'cash out with no label'],
+    [{ kind: 'expense-no-po', amount: 4000 }, -4000, 'expenses with no PO'],
+    [{ kind: 'expense-po-gap', amount: 4000 }, -4000, 'paid out more than the POs show'],
+    [{ kind: 'expense-po-gap', amount: -4000 }, 4000, 'POs above what was paid out'],
+  ];
+  for (const [x, v, why] of cases) {
+    assert.equal(till.flowOf(x), v, why);
+    assert.equal(signedAmount(x), v, `the table agrees: ${why}`);
+  }
+  const twice = { kind: 'movement-twice', amount: 5000, day: '2026-10-13', slot: 'night' };
+  const own = { kind: 'drawer-over', amount: 5000, day: '2026-10-13', slot: 'night' };
+  assert.deepEqual(till.netFlows([twice, own]), [-5000, 5000], 'a movement out twice explains its own drawer’s over: nothing left');
 });
 
 test('admins are told an answer waits once a quarter of an hour, with what it is and how many wait in all', async () => {

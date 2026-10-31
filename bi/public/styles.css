@@ -2805,3 +2805,9 @@ main img, main svg, main canvas, main video { max-width: 100%; }
   @media (max-width: 860px) { .sh-fall { grid-template-columns: 6.8rem minmax(0, 1fr) minmax(5.6rem, max-content); } }
 }
 .sh-frow .amt { white-space: nowrap; }
+
+/* Assistant › What I read: the switch for bills owed in Odoo. */
+.as-bills { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.as-bills label { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+.as-bills input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; flex: none; }
+.as-bills p { margin: 6px 0 0; }

@@ -2488,7 +2488,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       case 'keyed-no-cash': return `The counts held ${stillRuns(x.spans || []).join('; ')}. Yet ASSD has cash keyed in between: `
         + `${(x.spans || []).flatMap((p) => p.lines).map((l) => `ASSD ${l.seq} ${signed(l.amount)}`).join(', ')}, ${signed(x.amount)} in all.`
         + ` By the drawer’s own counts that money ${x.amount > 0 ? 'never came in' : 'never went out'}, so ASSD shows ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} cash than the drawer had (${flowText(flowOf(x))}): stock put right through the till, or counts copied from the last one. Say which.`
-        + ' It is already part of this shift’s drawer difference: reconcile it with differences on other shifts, not with that one.';
+        + ' It is part of this shift’s drawer difference: reconciled with that, it takes back the part it explains, and what is left is what it does not.';
       case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
       case 'movement-matched': return `${x.reason === 'duplicate'
         ? `ASSD ${x.seq} (${money(x.amount)}) was matched as a duplicate of ASSD ${x.pair} and is left out of the drawer.`
@@ -2609,8 +2609,15 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (x.amount == null) return null;
     if (['not-recorded', 'bank-only', 'double-charge', 'paid-more', 'refund'].includes(x.kind)) return a;
     if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
-    // ASSD less the other side: a laundry that took money ASSD does not show is below nothing.
+    // The laundry is ASSD less the laundry system, as it stands: it pulls against the
+    // drawer or card difference that is the same money seen from the other side.
     if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
+    // A card paid at the laundry and not in ASSD: money in that ASSD does not show.
+    if (x.kind === 'laundry-card') return a;
+    // Cash out of the drawer with no label, or as expenses with no PO: ASSD shows it gone, nothing says where.
+    if (['movement-unlabelled', 'expense-no-po'].includes(x.kind)) return -a;
+    // Expenses less the POs: more paid out than the POs show is minus, POs above what was paid out is plus.
+    if (x.kind === 'expense-po-gap') return -x.amount;
     // A slip of the finger: ASSD has more (or less) than the terminal took.
     if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
     if (x.kind === 'movement-twice') return a;
@@ -2620,11 +2627,13 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   }
   /**
    * The net of exceptions reconciled together. Cash keyed while the drawer did
-   * not move is already inside its own shift's drawer difference: with that
-   * ticked too it adds nothing, or the same money would count twice.
+   * not move, and a movement out keyed twice, are part of their own shift's
+   * drawer difference: ticked with it, each takes back the part it explains,
+   * so what is left is what nothing explains. As the server has it.
    */
-  const netFlows = (chosen) => chosen.map((x) => (x.kind === 'keyed-no-cash'
-    && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot) ? 0 : flowOf(x)));
+  const besideOwnDrawer = (x, chosen) => ['keyed-no-cash', 'movement-twice'].includes(x.kind)
+    && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot);
+  const netFlows = (chosen) => chosen.map((x) => (besideOwnDrawer(x, chosen) ? -flowOf(x) : flowOf(x)));
   const flowText = (f) => (f == null ? '' : f > 0 ? `+${money(f)}` : `−${money(-f)}`);
 
   /** An exception by its key, in words, for the Approvals view. */
@@ -4224,7 +4233,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     return h('div.sh-pickbar',
       h('div', h('strong', `${chosen.length} ticked`),
         h('span', known ? ` · net ${net === 0 ? money(0) : flowText(net)}` : ' · net not worked out for every kind'),
-        h('div.small', chosen.map((x) => `${(KIND[x.kind] || [x.kind])[0]} ${flowText(flowOf(x)) || money(Math.abs(x.amount ?? 0))}`).join(' · '))),
+        h('div.small', chosen.map((x, i) => `${(KIND[x.kind] || [x.kind])[0]} ${flowText(flows[i]) || money(Math.abs(x.amount ?? 0))}${besideOwnDrawer(x, chosen) ? ' (explains part of its own drawer)' : ''}`).join(' · '))),
       note,
       h('button.btn.primary', {
         type: 'button',
