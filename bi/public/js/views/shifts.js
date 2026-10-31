@@ -610,6 +610,26 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     return 'good';
   }
 
+  /**
+   * Checked or not, on the tiles, cards and calendar bars of a view, once the
+   * checks are read: a checked shift is locked, so it says 🔒.
+   */
+  function fillChecks(root) {
+    till.checks().then((map) => {
+      for (const el of root.querySelectorAll('.sh-ck[data-k]')) {
+        const st = map.get(el.dataset.k);
+        if (!st) continue;
+        el.className = `sh-ck ${st}`;
+        el.textContent = { ok: '🔒 Checked', changed: '🔒 Changed since checked', wait: 'Not checked' }[st];
+        el.title = st === 'wait' ? '' : 'Checked, so locked: undo the check on the shift to change anything on it.';
+      }
+      for (const el of root.querySelectorAll('.sh-mslot[data-k]')) {
+        const st = map.get(el.dataset.k);
+        if ((st === 'ok' || st === 'changed') && !el.classList.contains('locked')) { el.classList.add('locked'); el.textContent += ' 🔒'; el.title += ' · checked and locked'; }
+      }
+    }).catch(() => {});
+  }
+
   const avatar = (user, large = false) => h(`span.sh-av${large ? '.lg' : ''}`, { style: `--pc:${colours[user] || 'var(--sh-info)'}` }, (user || '?')[0]);
   const chip = (v, open, settled = false) => (open ? h('span.sh-chip.none', 'ends here')
     : v == null ? h('span.sh-chip.none', 'no count')
@@ -690,7 +710,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       // Chosen dates: side by side up to ten days, as a calendar beyond.
       const out = ({ day: dayView, week, month: monthView, table: tableView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
       // What is still to sort out, shift by shift, over the views of the days.
-      const todo = () => { const c = section === 'shifts' ? outstandingCard() : null; if (c) v.prepend(c); };
+      const todo = () => { const c = section === 'shifts' ? outstandingCard() : null; if (c) v.prepend(c); fillChecks(v); };
       if (out?.then) out.then(todo, failed); else todo();
     } catch (err) { failed(err); }
     return undefined;
@@ -846,14 +866,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         h('span.sh-ck', { dataset: { k: `${s.day}|${s.slot}` } })));
       }
     }
-    till.checks().then((map) => {
-      for (const el of grid.querySelectorAll('.sh-ck')) {
-        const st = map.get(el.dataset.k);
-        if (!st) continue;
-        el.className = `sh-ck ${st}`;
-        el.textContent = { ok: '✓ Checked', changed: '! Changed since checked', wait: 'Not checked' }[st];
-      }
-    }).catch(() => {});
     // The name that holds: chosen, or a question where ASSD and HIVE differ.
     till.names().then((map) => {
       for (const el of grid.querySelectorAll('.sh-who b[data-k]')) {
@@ -975,6 +987,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       h('div.sh-fig',
         h('span', s.cardLines ? cardText(s) : 'No card or MoMo'),
         toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null),
+      h('span.sh-ck', { dataset: { k: `${s.day}|${s.slot}` } }),
       h('span.sh-open', 'Open the shift →'));
   }
 
@@ -1003,7 +1016,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         h('div.sh-mtop', h('span.n', String(Number(day.slice(8)))), open ? h('span.sh-chip.short', String(open)) : null),
         h('div.sh-mslots', ss.map((s, i) => (s
           ? h('button.sh-mslot', {
-            type: 'button', style: `background:${TONE[tone(s)]}`, title: `${nameOf(s.user)} · ${SLOT[SLOTS[i]].label}`,
+            type: 'button', style: `background:${TONE[tone(s)]}`, title: `${nameOf(s.user)} · ${SLOT[SLOTS[i]].label}`, dataset: { k: `${s.day}|${s.slot}` },
             onclick: (e) => { e.stopPropagation(); go('shift', s.id); },
           }, (s.user || '?')[0])
           : h('span.sh-mslot.empty')))),
@@ -1039,7 +1052,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
             h('span', h('i', { style: 'background:var(--sh-good)' }), 'Agrees'),
             h('span', h('i', { style: 'background:var(--sh-warn)' }), 'Look at it'),
             h('span', h('i', { style: 'background:var(--sh-bad)' }), 'Answer needed'),
-            h('span', h('i', { style: 'background:var(--sh-info)' }), 'Journal ends'))),
+            h('span', h('i', { style: 'background:var(--sh-info)' }), 'Journal ends'),
+            h('span', '🔒 Checked and locked'))),
         h('div', { style: 'overflow-x:auto' }, cal)),
       weeks.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'Week by week')),

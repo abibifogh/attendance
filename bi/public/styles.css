@@ -2527,3 +2527,6 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-tabh { font-size: 1rem; margin: 1.2rem 0 .2rem; }
 .sh-history .sh-hist li .small { font-size: .78rem; }
 @media (max-width: 960px) { .sh-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* A checked shift is locked: a padlock beside its letter on the month's calendar. */
+.sh-mslot.locked { font-size: .62rem; white-space: nowrap; overflow: hidden; }
