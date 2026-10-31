@@ -236,6 +236,7 @@ const ROUTES = [
   ['POST', '/api/shifts/tasks/:id', 'shifts', (env, ctx) => tasks.change(env, ctx.params.id, ctx.body, ctx.account, { origin: ctx.url.origin })],
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/place', 'shifts', adminOnly((env, ctx) => shiftRoutes.placeShift(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
   ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
   // Refunds owed to guests who paid more by card or MoMo than ASSD shows.

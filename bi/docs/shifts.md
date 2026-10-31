@@ -93,6 +93,19 @@ Past the first or last one on screen they carry on into the day before or
 after (a week or month at a time in those views), as far as the journal
 goes: from the last shift of 1 October, **›** opens the first of 2 October.
 
+### A shift on the wrong day or slot
+
+Insight places each shift from the date ASSD prints on its opening line and
+the times of its card and MoMo payments. A night shift whose opening ASSD
+dated the next morning can land on that morning. An admin opens it and
+presses **Wrong day or slot? Move this shift**, chooses where it belongs (up
+to two days either way; for a morning, the night before is offered first)
+and says why. It stays there whatever the journal says; its counts, answers,
+notes, to-dos and check go with it. The shift then says where it was moved
+from, by whom and why, with **Put it back**, which returns it and what came
+with it. Its closing report in HIVE moves on its own card. Locked days
+refuse both.
+
 ### What is still to sort out
 
 Every shift has a checklist under its title, **To sort out on this shift**:

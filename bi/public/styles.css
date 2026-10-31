@@ -2469,3 +2469,9 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-outbar { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .sh-outbar i { display: block; height: 100%; background: var(--sh-good); }
 .sh-flash { outline: 3px solid var(--accent, #4f46e5); outline-offset: 3px; transition: outline-color .3s; }
+.sh-movebox { margin: -.4rem 0 .2rem; }
+.sh-movebox > .sh-link { font-size: .85rem; }
+.sh-moveform { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: .8rem 1rem; display: grid; gap: .5rem; max-width: 40rem; }
+.sh-moveform p { margin: 0; color: var(--ink-2); }
+.sh-moveform select, .sh-moveform input { width: 100%; }
+.sh-movednote { background: #eef0ff; color: #312e81; border-radius: 12px; padding: .55rem .8rem; font-size: .9rem; }

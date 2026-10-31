@@ -1028,7 +1028,10 @@ export async function shifts(env, query, account) {
   // HIVE is evidence; sessions that share a shift (a quick log-in, a hand-over
   // in the middle of a night) are made one.
   const signer = await signers(env, entries);
-  const placed0 = placeShifts(sessions, events.map((e) => ({ ...e, minute: minuteOf(e.at) })), { signed: signer.signed });
+  // Shifts an admin put on another day or slot keep to it.
+  const placeRows = await optional(all(env.DB, 'SELECT * FROM shift_place'));
+  const pinned = new Map(placeRows.map((r) => [r.start_seq, slotIndex(r.day, SLOTS.indexOf(r.slot))]));
+  const placed0 = placeShifts(sessions, events.map((e) => ({ ...e, minute: minuteOf(e.at) })), { signed: signer.signed, pinned });
   const { shifts: raw, places } = joinShared(parts, placed0, corrections, signer.pick);
   // Payments an admin moved to another shift.
   const homeRows = await optional(all(env.DB, 'SELECT * FROM payment_home'));
@@ -1601,6 +1604,8 @@ export async function shifts(env, query, account) {
     byDay.get(s.day)?.push({
       day: s.day, slot: s.slotName, user: s.user, users: s.users, double: s.double, open: s.open,
       startSeq: s.startSeq, endSeq: s.endSeq,
+      // Moved here by an admin from where the journal put it.
+      moved: (() => { const m = placeRows.find((r) => r.start_seq === s.startSeq); return m ? { fromDay: m.from_day, fromSlot: m.from_slot, why: m.why, by: m.by_name, at: m.at } : null; })(),
       // More than one ASSD session on this shift (a quick log-in, a hand-over in the night): each login, in order.
       sessions: s.sessions || null,
       cash: s.cash, card: s.card, prepaid: s.prepaid, other: s.other, laundry: s.laundry, laundryCash: s.laundryCash,
@@ -1832,6 +1837,64 @@ export function forSupervisor(payload, access) {
   if (!access.files) out = { ...out, canUpload: false };
   if (!access.money) out = withoutMoney(out);
   return { ...out, redacted: !access.money };
+}
+
+// --------------------------------------------------------- moving a shift --
+
+/** What was typed or answered on a shift, by its day and slot: carried when the shift moves. */
+const BY_SLOT = ['shift_count', 'shift_expense', 'shift_receipts_swap', 'shift_check', 'shift_owner', 'shift_po_safe', 'shift_task', 'till_move'];
+
+async function carry(env, from, to) {
+  const tables = new Set((await all(env.DB, "SELECT name FROM sqlite_master WHERE type = 'table'")).map((r) => r.name));
+  const steps = BY_SLOT.filter((n) => tables.has(n)).map((n) => env.DB.prepare(`UPDATE OR IGNORE ${n} SET day = ?3, slot = ?4 WHERE day = ?1 AND slot = ?2`).bind(from.day, from.slot, to.day, to.slot));
+  // Answers, notes and to-dos are kept by the difference's key, which names the shift: drawer:2026-10-01:morning.
+  const a = `:${from.day}:${from.slot}`;
+  const b = `:${to.day}:${to.slot}`;
+  for (const [n, col] of [['shift_answer', 'key'], ['shift_history', 'key'], ['shift_task', 'key'], ['till_move', 'key']]) {
+    if (tables.has(n)) steps.push(env.DB.prepare(`UPDATE OR IGNORE ${n} SET ${col} = replace(${col}, ?1, ?2) WHERE ${col} LIKE '%' || ?1 || '%'`).bind(a, b));
+  }
+  if (steps.length) await env.DB.batch(steps);
+}
+
+/**
+ * A whole shift the journal put on the wrong day or slot (a night whose
+ * opening ASSD dated the next morning), moved by an admin to where it
+ * belongs, at most two days away, saying why. Its counts, answers, notes and
+ * check go with it. `back: true` puts it where the journal puts it again.
+ */
+export async function placeShift(env, body, account) {
+  const seqs = (Array.isArray(body?.startSeqs) ? body.startSeqs : [body?.startSeq]).map(Number).filter(Number.isInteger);
+  if (!seqs.length) throw badRequest('Which shift?');
+  const by = account?.name || account?.email || 'Owner';
+  const was = await all(env.DB, `SELECT * FROM shift_place WHERE start_seq IN (${seqs.map((_, i) => `?${i + 1}`).join(', ')})`, ...seqs);
+  const lock = await lockOf(env);
+  const lockedDay = (d) => lock?.through && d && d <= lock.through;
+  if (body?.back) {
+    const m = was[0];
+    if (!m) return { ok: true, back: true };
+    if (lockedDay(m.day) || lockedDay(m.from_day)) throw badRequest(`Days up to ${lock.through} are locked.`);
+    await carry(env, { day: m.day, slot: m.slot }, { day: m.from_day, slot: m.from_slot });
+    await run(env.DB, `DELETE FROM shift_place WHERE start_seq IN (${seqs.map((_, i) => `?${i + 1}`).join(', ')})`, ...seqs);
+    await logEvent(env, `shift:${m.from_day}:${m.from_slot}`, `Put back on ${m.from_day} ${m.from_slot}, where the journal puts it`, by);
+    return { ok: true, back: true };
+  }
+  const day = dayOf(body?.day);
+  const slot = slotOf(body?.slot);
+  const fromDay = dayOf(body?.fromDay);
+  const fromSlot = slotOf(body?.fromSlot);
+  if (day === fromDay && slot === fromSlot) throw badRequest('That is where it is already.');
+  if (Math.abs(dayNumber(day) - dayNumber(fromDay)) > 2) throw badRequest('A shift moves at most two days.');
+  if (lockedDay(day) || lockedDay(fromDay)) throw badRequest(`Days up to ${lock.through} are locked: move the lock back first (Settings › Locked dates).`);
+  const why = str(body?.why, 'Why', { max: 300 });
+  if (!why || why.length < 3) throw badRequest('Say why it belongs there.');
+  // Where the journal put it first: kept through a second move, for Put it back.
+  const origin = was[0] ? { day: was[0].from_day, slot: was[0].from_slot } : { day: fromDay, slot: fromSlot };
+  await carry(env, { day: fromDay, slot: fromSlot }, { day, slot });
+  const at = now();
+  await env.DB.batch(seqs.map((seq) => env.DB.prepare(`INSERT INTO shift_place (start_seq, day, slot, from_day, from_slot, why, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      ON CONFLICT (start_seq) DO UPDATE SET day = ?2, slot = ?3, why = ?6, by_name = ?7, at = ?8`).bind(seq, day, slot, origin.day, origin.slot, why, by, at)));
+  await logEvent(env, `shift:${day}:${slot}`, `Moved here from ${fromDay} ${fromSlot}: “${why}”`, by);
+  return { ok: true, day, slot };
 }
 
 /**
