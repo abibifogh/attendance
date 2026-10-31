@@ -3345,6 +3345,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           h('button.btn', { type: 'button', onclick: () => decide(false) }, 'Reject'),
           // Or, instead of the answer, put it on somebody's account.
           movable(x) ? h('button.btn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
+          suspenseBtn(x),
           // Proof asked of whoever gave the answer, and what they sent.
           proofBox(x.proposed.link ? `link:${x.proposed.link}` : `answer:${x.key}`, { who: x.proposed.by }),
           movable(x) && moving === x.key ? movePanel(x) : null,
@@ -3409,6 +3410,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
             : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : x.kind === 'paid-less' ? PAID_LESS_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
               movable(x) ? h('button.sh-movebtn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
+              suspenseBtn(x, note),
               said,
               x.kind === 'laundry-card' ? h('p.small', { style: 'flex-basis:100%;margin:.2rem 0 0' }, 'Answered here, both are settled. “Not the same payment” splits them back into two.') : null),
             movable(x) && moving === x.key ? movePanel(x) : null]);
@@ -4115,6 +4117,27 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   }
 
   /** The bar that appears once exceptions are ticked: what they net to, and Reconcile together. */
+  /**
+   * An admin's: the difference parked in the suspense account (Front desk ›
+   * Safe › Suspense), answered "In suspense", to match or move to the safe later.
+   */
+  function suspenseBtn(x, noteInput = null) {
+    if (!admin || x.amount == null || !x.amount) return null;
+    const amount = flowOf(x) ?? x.amount;
+    return h('button.sh-movebtn.sh-suspbtn', {
+      type: 'button',
+      title: 'Park it in the suspense account, to match with another or move to the safe later',
+      onclick: async (e) => {
+        const note = noteInput?.value?.trim() || prompt(`Put ${flowText(amount)} in suspense. A note for later (optional):`, '') || '';
+        e.target.disabled = true;
+        try {
+          const out = await api('/suspense/add', { method: 'POST', body: { key: x.key, amount, what: (KIND[x.kind] || [x.kind])[0], day: x.day, slot: x.slot, note } });
+          await load(banner('good', `In suspense as ${out.entry.ref}: ${flowText(amount)}. Match it or move it to the safe under Front desk › Safe › Suspense.`));
+        } catch (err) { alert(err.message); e.target.disabled = false; }
+      },
+    }, 'Put in suspense');
+  }
+
   function pickedBar() {
     const chosen = [...picked].map((k) => data.exceptions.find((x) => x.key === k) || pickedAs.get(k)).filter(Boolean);
     if (!chosen.length) return null;
@@ -4137,6 +4160,21 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           try { await reconcile(chosen.map((x) => x.key), note.value.trim()); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
         },
       }, chosen.length < 2 ? 'Tick at least two' : 'Reconcile together'),
+      // An admin's: reconciled together, and what they do not net to parked in suspense.
+      admin && known && net !== 0 && chosen.length >= 2 ? h('button.btn', {
+        type: 'button',
+        title: 'Reconcile them, and put the difference left in the suspense account',
+        onclick: async (e) => {
+          e.target.disabled = true;
+          const first_ = chosen[0];
+          try {
+            await api('/shifts/link', { method: 'POST', body: { keys: chosen.map((x) => x.key), note: note.value.trim() || `${flowText(net)} left, to suspense` } });
+            const out = await api('/suspense/add', { method: 'POST', body: { keys: chosen.map((x) => x.key), amount: net, reconciled: true, what: `Left after reconciling ${chosen.length} together`, day: first_.day, slot: first_.slot, note: note.value.trim() } });
+            picked.clear(); pickedAs.clear();
+            await load(banner('good', `Reconciled together; the ${flowText(net)} left is in suspense as ${out.entry.ref}.`));
+          } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+        },
+      }, `Reconcile, ${flowText(net)} to suspense`) : null,
       h('button.btn', { type: 'button', onclick: () => { picked.clear(); pickedAs.clear(); paint(); } }, 'Clear'),
       said);
   }

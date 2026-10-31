@@ -16,7 +16,7 @@ const nameOf = (user) => (user ? user.charAt(0) + user.slice(1).toLowerCase() : 
 const dayText = (day, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(`${day}T12:00:00Z`)
   .toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
 
-const TABS = [['book', 'Safe book'], ['envelopes', 'Envelopes received']];
+const TABS = [['book', 'Safe book'], ['envelopes', 'Envelopes received'], ['suspense', 'Suspense']];
 const remembered = () => { try { return localStorage.getItem('insight-safe-tab') || 'book'; } catch { return 'book'; } };
 
 export async function renderSafe(root, { range }) {
@@ -32,7 +32,7 @@ export async function renderSafe(root, { range }) {
   const show = (id) => {
     try { localStorage.setItem('insight-safe-tab', id); } catch { /* private mode */ }
     mount(tabs, tabsFor.map(([k, label]) => h(`button.sv-tab${k === id ? '.on' : ''}`, { type: 'button', role: 'tab', 'aria-selected': String(k === id), onclick: () => show(k) }, label)));
-    const view = id === 'envelopes' ? envelopesView(v, range, null, { act }) : safeView(v, range);
+    const view = id === 'envelopes' ? envelopesView(v, range, null, { act }) : id === 'suspense' ? suspenseView(v) : safeView(v, range);
     return view.catch((err) => mount(v, banner('problem', err.message)));
   };
   await show(tabsFor.some(([k]) => k === remembered()) ? remembered() : tabsFor[0][0]);
@@ -251,7 +251,11 @@ async function safeView(v, range, notice = null) {
   const rows = [
     d.start ? h('tr.start', h('td', dayText(d.start.day)), h('td', h('b', 'Counted'), h('small', d.start.with ? `with ${d.start.with}` : 'the start of this page')), h('td.num', ''), h('td.num', ''), h('td.num', h('b', money(d.start.counted))))
       : null,
-    ...d.lines.map((l) => (l.type === 'in' && l.kind === 'pickup'
+    ...d.lines.map((l) => (l.kind === 'suspense'
+      ? h('tr', h('td', dayText(l.day)),
+        h('td', h('b', `From suspense · ${l.ref}`), h('small', `${l.what}${l.note ? ` · ${l.note}` : ''}${l.by ? ` · ${l.by}` : ''}`)),
+        h('td.num.in', l.type === 'in' ? money(l.amount) : ''), h('td.num.out', l.type === 'out' ? money(l.amount) : ''), h('td.num', money(l.balance)))
+      : l.type === 'in' && l.kind === 'pickup'
       ? h('tr', h('td', dayText(l.day)),
         h('td', h('b', 'Nice Place pickup'), h('small', `counted by ${l.by}${l.status === 'review' ? ' · waiting for review' : ''}`)),
         h('td.num.in', money(l.amount)), h('td.num', ''), h('td.num', money(l.balance)))
@@ -404,4 +408,90 @@ async function safeView(v, range, notice = null) {
             },
           }, 'Undo')))))))) : null);
   paintSuggestions();
+}
+
+// ------------------------------------------------------------ suspense --
+
+const SLOT_WORD = { morning: 'morning', afternoon: 'afternoon', night: 'night' };
+const signed = (minor) => `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`;
+
+/**
+ * The suspense account: differences an admin parked from the shifts, each
+ * with its amount (plus: money in that ASSD does not show; minus: money
+ * ASSD shows that is not there). Tick some and match them, or move one to
+ * the safe, where it is a line in or out until the next count.
+ */
+async function suspenseView(v, notice = null) {
+  mount(v, h('p.muted', 'Reading the suspense account…'));
+  const d = await api('/suspense');
+  const ticked = new Set();
+  const re = (words) => suspenseView(v, banner('good', words));
+  const fail = (err) => alert(err.message);
+  const bar = h('div');
+  const drawBar = () => {
+    const chosen = d.open.filter((e) => ticked.has(e.id));
+    const net = chosen.reduce((t, e) => t + e.amount, 0);
+    const note = h('input', { type: 'text', maxlength: '600', placeholder: net === 0 ? 'What happened (optional)' : 'What happened (needed: they do not net to nothing)' });
+    mount(bar, chosen.length ? h('div.sh-pickbar',
+      h('div', h('strong', `${chosen.length} ticked`), h('span', ` · net ${net === 0 ? money(0) : signed(net)}`)),
+      note,
+      h('button.btn.primary', { type: 'button', disabled: chosen.length < 2, onclick: async (e) => {
+        e.target.disabled = true;
+        try { await api('/suspense/match', { method: 'POST', body: { ids: chosen.map((x) => x.id), note: note.value } }); await re(`${chosen.length} matched${net ? `, ${signed(net)} explained` : ''}.`); } catch (err) { fail(err); e.target.disabled = false; }
+      } }, chosen.length < 2 ? 'Tick at least two' : 'Match them'),
+      h('button.btn', { type: 'button', onclick: () => { ticked.clear(); paint(); } }, 'Clear')) : null);
+  };
+  const toSafe = (e) => {
+    const box = h('div.sh-safeinline');
+    const day = h('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+    const note = h('input', { type: 'text', placeholder: 'Note (optional)' });
+    mount(box, h('label.field', 'Into the safe on', day), note,
+      h('button.btn.primary', { type: 'button', onclick: async (ev) => {
+        ev.target.disabled = true;
+        try { await api('/suspense/safe', { method: 'POST', body: { id: e.id, day: day.value, note: note.value } }); await re(`${e.ref} moved to the safe: ${e.amount > 0 ? 'in' : 'out'} ${money(Math.abs(e.amount))} on the safe book.`); } catch (err) { fail(err); ev.target.disabled = false; }
+      } }, e.amount > 0 ? `Put ${money(e.amount)} into the safe` : `Take ${money(-e.amount)} out of the safe`));
+    return box;
+  };
+  const where = (e) => [e.day ? dayText(e.day) : null, e.slot ? SLOT_WORD[e.slot] : null].filter(Boolean).join(' ');
+  const list = h('div');
+  const paint = () => {
+    mount(list, d.open.length ? h('div.sh-dtable', h('table',
+      h('thead', h('tr', h('th', ''), h('th', 'Ref'), h('th', 'Shift'), h('th', 'What'), h('th.num', 'Amount'), h('th', ''))),
+      h('tbody', d.open.map((e) => {
+        const act = h('div');
+        return h('tr',
+          h('td', h('input', { type: 'checkbox', checked: ticked.has(e.id), 'aria-label': `Tick ${e.ref}`, onchange: (ev) => { if (ev.target.checked) ticked.add(e.id); else ticked.delete(e.id); drawBar(); } })),
+          h('td', h('b', e.ref)), h('td', where(e) || '—'),
+          h('td', e.what, h('small', `${e.note ? `${e.note} · ` : ''}${e.by || ''}, ${String(e.at).slice(0, 10)}`)),
+          h(`td.num${e.amount > 0 ? '.in' : '.out'}`, signed(e.amount)),
+          h('td', act,
+            h('button.sh-link', { type: 'button', onclick: () => mount(act, toSafe(e)) }, 'Move to the safe'), ' · ',
+            h('button.sh-link', { type: 'button', onclick: async () => {
+              if (!confirm(`Take ${e.ref} out of suspense? Its difference is open again on its shift.`)) return;
+              try { await api('/suspense/undo', { method: 'POST', body: { id: e.id } }); await re(`${e.ref} taken out of suspense.`); } catch (err) { fail(err); }
+            } }, 'Take out')));
+      })),
+      h('tfoot', h('tr', h('td', { colspan: '4' }, `${d.open.length} open`), h('td.num', h('b', d.total === 0 ? money(0) : signed(d.total))), h('td')))))
+      : h('p.muted', 'Nothing in suspense. Put a difference here from its shift (Put in suspense), or what is left when some reconciled together do not net to nothing.'));
+    drawBar();
+  };
+  paint();
+  mount(v,
+    notice,
+    h('section.card',
+      h('div.sh-cardhead', h('h2', 'Suspense account'),
+        h('p.sh-sub', 'Differences parked from the shifts, to sort out later. Plus is money in that ASSD does not show; minus is money ASSD shows that is not there. Tick some and match them (netting to nothing, or saying why), or move one to the safe.')),
+      list, bar),
+    d.cleared.length ? h('section.card',
+      h('div.sh-cardhead', h('h2', 'Cleared')),
+      h('div.sh-dtable', h('table',
+        h('thead', h('tr', h('th', 'Ref'), h('th', 'What'), h('th.num', 'Amount'), h('th', 'How'), h('th', ''))),
+        h('tbody', d.cleared.map((e) => h('tr',
+          h('td', h('b', e.ref)), h('td', e.what, h('small', where(e))),
+          h('td.num', signed(e.amount)),
+          h('td', e.status === 'matched' ? `Matched with ${d.cleared.filter((o) => o.group === e.group && o.id !== e.id).map((o) => o.ref).join(', ') || 'others'}` : `Moved to the safe, ${dayText(e.safeDay)}${e.counted ? ' · counted' : ''}`,
+            h('small', `${e.clearedNote ? `${e.clearedNote} · ` : ''}${e.clearedBy || ''}`)),
+          h('td', e.counted ? null : h('button.sh-link', { type: 'button', onclick: async () => {
+            try { await api('/suspense/undo', { method: 'POST', body: { id: e.id } }); await re(`${e.ref} is open again${e.status === 'matched' ? ', with what it was matched with' : ''}.`); } catch (err) { fail(err); }
+          } }, 'Undo')))))))) : null);
 }

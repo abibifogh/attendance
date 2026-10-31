@@ -9,6 +9,7 @@ import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
 import * as viewAs from './routes/viewas.js';
 import * as floats from './routes/floats.js';
+import * as suspense from './routes/suspense.js';
 import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
@@ -237,6 +238,12 @@ const ROUTES = [
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/place', 'shifts', adminOnly((env, ctx) => shiftRoutes.placeShift(env, ctx.body, ctx.account))],
+  // The suspense account: an admin's.
+  ['GET', '/api/suspense', 'shifts', adminOnly((env) => suspense.suspenseView(env))],
+  ['POST', '/api/suspense/add', 'shifts', adminOnly((env, ctx) => suspense.addSuspense(env, ctx.body, ctx.account))],
+  ['POST', '/api/suspense/match', 'shifts', adminOnly((env, ctx) => suspense.matchSuspense(env, ctx.body, ctx.account))],
+  ['POST', '/api/suspense/safe', 'shifts', adminOnly((env, ctx) => suspense.suspenseToSafe(env, ctx.body, ctx.account))],
+  ['POST', '/api/suspense/undo', 'shifts', adminOnly((env, ctx) => suspense.undoSuspense(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
   ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
   // Refunds owed to guests who paid more by card or MoMo than ASSD shows.
@@ -459,7 +466,7 @@ const ROUTES = [
 const LOCKED = {
   '/api/shifts/count': {}, '/api/shifts/po-safe': {}, '/api/shifts/expense': {}, '/api/shifts/expense/pull': {}, '/api/shifts/expense/link': {},
   '/api/shifts/form-match/apply': {}, '/api/shifts/receipts': {}, '/api/shifts/receipts-read': {}, '/api/shifts/answer': {}, '/api/shifts/answer-many': {},
-  '/api/shifts/payment-home': {}, '/api/shifts/place': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
+  '/api/shifts/payment-home': {}, '/api/shifts/place': {}, '/api/suspense/add': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
   '/api/till/resolve': {}, '/api/till/reopen': { report: 'reportId' }, '/api/till/move': { report: 'reportId' }, '/api/till/owner': {},
   '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
   '/api/np/review': {}, '/api/np/reread': {}, '/api/np/move': {}, '/api/np/reading': {}, '/api/np/upload': {}, '/api/np/check': {}, '/api/np/answer': {},

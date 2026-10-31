@@ -158,6 +158,25 @@ those checked, so locked: on the week's tiles and the day's cards (🔒
 Checked), beside the letter on the month's bars, and in the Table (beside the
 name, and a Checked column with how many of the month's shifts are).
 
+### The suspense account
+
+A difference an admin cannot settle yet can be parked: **Put in suspense** on
+its card (admins only, beside Put on a staff account) puts its amount in the
+suspense account as S12, and the difference counts as answered "In suspense"
+(S12 and the note). When differences reconciled together do not net to
+nothing, **Reconcile, +GH₵64 to suspense** in the bar reconciles them and
+parks what is left. Plus is money in that ASSD does not show; minus is money
+ASSD shows that is not there.
+
+**Front desk › Safe › Suspense** lists what is open, with the total. Tick two
+or more and **Match them** (a note is needed when they do not net to
+nothing), or **Move to the safe** on a day: a plus goes into the safe book as
+a line in, a minus as a line out, until the safe is next counted, when the
+count takes it in. **Take out** returns an open one (its difference is open
+again on its shift); **Undo** under Cleared opens a match, all of it, or a
+move to the safe the count has not taken in yet. A locked or checked shift
+refuses Put in suspense like any other change.
+
 ### Exceptions that are one story
 
 Two or more exceptions are often the same money seen twice: GH₵ 203 by MoMo
