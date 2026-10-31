@@ -179,9 +179,20 @@ test('a person’s list over the link, and settling it', async () => {
       return Response.json(url.pathname.endsWith('/recover') ? { ok: true, advanceId: 55 } : { ok: true });
     };
     await assert.rejects(till.resolve(env, { key: list.issues[0].key, userId: 8, outcome: 'recover' }, SUPERVISOR, { fetchImpl }), /not been shared|not change/);
+    // Not until the shift is checked: the amount may still change.
+    await assert.rejects(till.resolve(env, { key: list.issues[0].key, userId: 8, outcome: 'recover', note: 'agreed' }, OWNER, { fetchImpl }), /not been checked yet/);
+    assert.equal(asked.length, 0, 'HIVE is not asked');
+    await till.checkShift(env, { day: '2026-08-01', slot: 'afternoon' }, OWNER, { fetchImpl });
+    asked.length = 0;
     const out = await till.resolve(env, { key: list.issues[0].key, userId: 8, outcome: 'recover', note: 'agreed' }, OWNER, { fetchImpl });
     assert.equal(out.advanceId, 55);
-    assert.deepEqual(asked[0], ['/api/link/till/recover', { userId: 8, amount: 2000, key: list.issues[0].key, reason: 'Till: Cash left the drawer with no envelope or PO, 2026-08-01 afternoon', by: 'Test Owner' }]);
+    const [path, sent] = asked[0];
+    assert.equal(path, '/api/link/till/recover');
+    assert.deepEqual({ ...sent, checkedAt: undefined }, {
+      userId: 8, amount: 2000, key: list.issues[0].key, reason: 'Till: Cash left the drawer with no envelope or PO, 2026-08-01 afternoon', by: 'Test Owner',
+      day: '2026-08-01', slot: 'afternoon', checked: true, checkedBy: 'Test Owner', checkedAt: undefined,
+    });
+    assert.ok(sent.checkedAt, 'when it was checked goes with it');
     assert.equal(asked[1][0], '/api/link/till/tell');
 
     list = await till.linkIssues(env, { userId: 8 });

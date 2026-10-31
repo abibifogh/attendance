@@ -24,6 +24,7 @@ import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
 import { watchHolidayChoices } from './lib/holiday-choice.js';
+import { syncTillChecks } from './lib/till-checks.js';
 import { watchReminders } from './lib/reminders.js';
 import { watchInterviews } from './lib/interview-mail.js';
 import { watchOffers } from './routes/offers.js';
@@ -1133,6 +1134,14 @@ export default {
       if (tills.before || tills.after) {
         console.log(`Till: ${tills.before} reminded before the end, ${tills.after} after`);
       }
+
+      // Which till shortages may come off pay: only those whose shift is
+      // checked in Insight. Quiet when there are none to ask about.
+      const tillChecks = await syncTillChecks(env.DB, env).catch((err) => {
+        console.error('Till check sync failed', err);
+        return { held: 0 };
+      });
+      if (tillChecks.held) console.log(`Till: ${tillChecks.held} shortage(s) held until their shift is checked`);
 
       // And the question to whoever runs the floor when somebody has not come
       // in: off sick, absent, or here? Asked until somebody answers.

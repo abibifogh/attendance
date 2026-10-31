@@ -907,14 +907,29 @@ export async function fromInsight(ctx) {
  *
  * As an advance: money they owe, agreed and approved, one month, coming off
  * the next payslip the way any advance does. The payroll already knows how to
- * take an advance back and how to show it on a payslip, and a second way of
- * taking money off pay would be a second thing to get wrong.
+ * take an advance back, and a second way of taking money off pay would be a
+ * second thing to get wrong. It is marked as a till shortage, so the payslip
+ * gives it its own line, and it carries its shift: it comes off pay only while
+ * that shift is checked in Insight (lib/till-checks.js). Only a checked shift
+ * may be sent at all.
  */
 export async function linkRecover(ctx) {
   const body = await fromInsight(ctx);
   const userId = Number(body.userId);
   const amount = Number(body.amount);
   if (!Number.isInteger(userId) || !Number.isInteger(amount) || amount <= 0) throw badRequest('Whose pay, and how much?');
+  if (body.checked !== true) throw badRequest('That shift has not been checked yet. A shortage comes off pay only once its shift is checked.');
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(body.day ?? '')) ? String(body.day) : null;
+  const slot = SLOTS.includes(String(body.slot ?? '')) ? String(body.slot) : null;
+  if (!day || !slot) throw badRequest('Which shift was it?');
+  const key = str(body.key, 'Which difference', { max: 200 });
+  // Sent twice (a retry after a timeout) is still one shortage.
+  if (key) {
+    const again = await ctx.db.prepare('SELECT id FROM hr_advance WHERE till_key = ?1').bind(key).first();
+    if (again) return json({ ok: true, advanceId: again.id, again: true });
+  }
+  const checkedAt = str(body.checkedAt, 'Checked at', { max: 40 }) || nowUtc();
+  const checkedBy = str(body.checkedBy, 'Checked by', { max: 120 });
   const user = await ctx.db.prepare('SELECT id, name, staff_id FROM users WHERE id = ?1').bind(userId).first();
   if (!user) throw notFound('That HIVE login no longer exists.');
   if (!user.staff_id) throw badRequest(`${user.name}'s login is not linked to a staff record in HIVE, so there is no pay to take it from.`);
@@ -927,14 +942,14 @@ export async function linkRecover(ctx) {
   const startMonth = firstMonthFor(today);
   const row = await ctx.db.prepare(
     `INSERT INTO hr_advance (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
-       asked_by, decided_by, decided_at, decision, purpose)
-     VALUES (?1, ?2, 1, ?2, ?3, ?4, 'approved', ?5, ?6, ?7, ?7, datetime('now'), ?8, 'other') RETURNING id`,
+       asked_by, decided_by, decided_at, decision, purpose, till_key, till_day, till_slot, till_checked_at, till_checked_by)
+     VALUES (?1, ?2, 1, ?2, ?3, ?4, 'approved', ?5, ?6, ?7, ?7, datetime('now'), ?8, 'till', ?9, ?10, ?11, ?12, ?13) RETURNING id`,
   ).bind(user.staff_id, cedi, currency, reason, today, startMonth, `${by} (Insight)`,
-    'A till shortage, recovered from pay as agreed under My till').first();
+    'A till shortage, recovered from pay as agreed under My till', key, day, slot, checkedAt, checkedBy).first();
 
   await createNotice(ctx.db, {
     kind: 'till.recovered', level: 'warn', title: `${cedis(amount)} till shortage to come off ${user.name}'s pay`,
-    body: `${reason}. Recorded as an advance coming off ${startMonth}, decided by ${by}.`,
+    body: `${reason}. Coming off ${startMonth} pay as a till shortage, decided by ${by}.`,
     link: '#/att-advances', audience: 'hr_pay', text: false,
     mail: safeMail(() => ({
       tone: 'warn', status: 'Off their pay', eyebrow: 'Till',
@@ -945,7 +960,7 @@ export async function linkRecover(ctx) {
         ['Reason', reason],
         ['Decided by', by],
       ],
-      note: 'It is recorded as an advance, so it comes off the payslip the way any advance does.',
+      note: 'It comes off the payslip on a line of its own, Till shortage, while its shift stays checked in Insight.',
       button: 'See the advances',
       subject: `${cedis(amount)} till shortage to come off ${user.name}'s pay`,
       preheader: `${reason}. Decided by ${by}.`,

@@ -502,11 +502,12 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         note,
         h('div.tl-actions',
           actAnswers ? h('button.btn.primary', { type: 'button', onclick: decide('accept') }, 'Accept') : null,
-          actMoney && short && i.answer?.how === 'repay' ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'A one-month advance in HIVE, off the next payslip' }, 'Recover from pay') : null,
+          actMoney && short && i.answer?.how === 'repay' && i.checked ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'Off the next payslip in HIVE, as a till shortage' }, 'Recover from pay') : null,
           actMoney && short ? h('button.btn', { type: 'button', onclick: decide('cash') }, 'Paid in cash') : null,
           actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
           actAnswers && i.status === 'answered' ? h('button.btn', { type: 'button', onclick: decide('back') }, 'Send back') : null),
-        actMoney && short && i.answer?.how !== 'repay' ? h('p.tl-small', 'Recover from pay appears once they have agreed to pay it back.') : null) : null,
+        actMoney && short && i.answer?.how !== 'repay' ? h('p.tl-small', 'Recover from pay appears once they have agreed to pay it back.') : null,
+        actMoney && short && i.answer?.how === 'repay' && !i.checked ? h('p.tl-small', 'Recover from pay appears once the shift is checked and the amount is final.') : null) : null,
       // Proof of what they said, asked of them in HIVE.
       i.status === 'answered' && i.userId != null ? proofBox(`issue:${i.key}`, { who: i.name }) : null);
   }

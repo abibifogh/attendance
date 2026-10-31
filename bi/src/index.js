@@ -300,6 +300,7 @@ const ROUTES = [
   ['POST', '/api/link/till/setup', 'link', (env) => till.linkSetup(env)],
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
+  ['POST', '/api/link/till/checks', 'link', (env, ctx) => till.linkChecks(env, ctx.body)],
   ['POST', '/api/link/till/lock', 'link', (env) => lock.linkLock(env)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
   // A staff member sending the proof an admin asked for, from HIVE's To sort out.

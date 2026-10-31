@@ -66,7 +66,7 @@ async function body(reload) {
     }[a.status] ?? ['', a.status];
     items.push({
       at: String(a.askedAt || '').slice(0, 10),
-      el: line(`Advance, ${cash(a.amount, advances.currency)}`,
+      el: line(`${a.purpose === 'till' ? 'Till shortage' : 'Advance'}, ${cash(a.amount, advances.currency)}`,
         a.months ? `${a.months} month${a.months === 1 ? '' : 's'} to pay back` : '', state),
     });
   }

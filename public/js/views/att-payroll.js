@@ -114,7 +114,8 @@ export async function renderAttPayroll(params) {
           `${data.totals.people} on the payroll`),
         tile('Deductions', cash(data.totals.ssnitEmployee + data.totals.paye + data.totals.loans),
           `SSNIT ${cash(data.totals.ssnitEmployee)} · PAYE ${cash(data.totals.paye)}`
-          + (data.totals.loans ? ` · advances ${cash(data.totals.loans)}` : '')),
+          + (data.totals.loans - tillOf(data) > 0.004 ? ` · advances ${cash(data.totals.loans - tillOf(data))}` : '')
+          + (tillOf(data) ? ` · till shortages ${cash(tillOf(data))}` : '')),
         tile('Net to pay', cash(data.totals.net), netSplit(data)),
         tile('Cost to the property', cash(data.totals.cost),
           `including ${cash(data.totals.ssnitEmployer)} employer SSNIT`))
@@ -244,7 +245,8 @@ export async function renderAttPayroll(params) {
           h('dt', 'Gross pay'), h('dd', cash(data.totals.gross)),
           h('dt', 'PAYE to the GRA'), h('dd', cash(data.totals.paye)),
           h('dt', 'SSNIT, staff'), h('dd', cash(data.totals.ssnitEmployee)),
-          data.totals.loans ? [h('dt', 'Advances coming off'), h('dd', cash(data.totals.loans))] : null,
+          data.totals.loans - tillOf(data) > 0.004 ? [h('dt', 'Advances coming off'), h('dd', cash(data.totals.loans - tillOf(data)))] : null,
+          tillOf(data) ? [h('dt', 'Till shortages coming off'), h('dd', cash(tillOf(data)))] : null,
           h('dt', h('strong', 'Net pay to the bank')), h('dd', h('strong', cash(data.totals.net))),
           h('dt', 'Cost to the property'), h('dd', cash(data.totals.cost))),
         h('button.btn.btn-primary', { onclick: () => close(month, data, reload, cash) }, 'Close the month')));
@@ -692,10 +694,17 @@ function takeHomeNote(data, cash) {
  * record somebody has to fix, and until this line existed the only way to tell
  * them apart was to open the Advances screen and work it out.
  */
+/** What comes off for till shortages, which the payslip shows on its own line. */
+function tillOf(data) {
+  return Math.round((data.lines ?? []).flatMap((l) => l.loans ?? [])
+    .filter((l) => l.what === 'till').reduce((n, l) => n + (l.amount || 0), 0) * 100) / 100;
+}
+
 const NOT_DUE = {
   no_start: 'no month set for it to start',
   let_go: 'let go this month',
   not_on_payroll: 'not on the payroll, so there is nothing for it to come off',
+  not_checked: 'a till shortage whose shift is not checked in Insight yet',
 };
 
 function advanceNote(data, cash) {

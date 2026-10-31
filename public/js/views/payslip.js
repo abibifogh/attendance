@@ -109,12 +109,21 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
     // that belongs on the advance screen, where it is shown properly with the
     // months behind and ahead of it; on a payslip it is a number with no
     // working, printed on a document somebody keeps.
-    (line.loans ?? []).length
-      ? row(
-        (line.loans ?? []).length > 1 ? 'Salary advances' : 'Salary advance',
-        cash(line.loanTotal ?? (line.loans ?? []).reduce((n, l) => n + (l.amount || 0), 0)),
-      )
-      : null,
+    //
+    // A TILL SHORTAGE IS NOT AN ADVANCE to the person reading it: nobody
+    // handed them money. It is recorded as one so the payroll takes it back
+    // the same way, and it gets its own line here so they recognise it.
+    ...(() => {
+      const loans = line.loans ?? [];
+      const till = loans.filter((l) => l.what === 'till');
+      const lent = loans.filter((l) => l.what !== 'till');
+      const sum = (list) => list.reduce((n, l) => n + (l.amount || 0), 0);
+      const lentTotal = till.length ? sum(lent) : (line.loanTotal ?? sum(lent));
+      return [
+        lent.length ? row(lent.length > 1 ? 'Salary advances' : 'Salary advance', cash(lentTotal)) : null,
+        till.length ? row(till.length > 1 ? 'Till shortages' : 'Till shortage', cash(sum(till))) : null,
+      ];
+    })(),
   ].filter(Boolean);
 
   const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0);

@@ -266,6 +266,23 @@ function withCheck(issue, checks) {
   return { ...issue, checked: ok, checkedBy: ok ? c.by : null, checkedAt: ok ? c.at : null };
 }
 
+/**
+ * Which of these shifts are checked, for HIVE. A till shortage comes off pay
+ * only while its shift is checked, so HIVE asks about the shift behind each
+ * one still being repaid.
+ */
+export async function linkChecks(env, body) {
+  const shifts = (Array.isArray(body?.shifts) ? body.shifts : []).slice(0, 500)
+    .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s?.day ?? '')) && ['morning', 'afternoon', 'night'].includes(String(s?.slot ?? '')));
+  const checks = await shiftChecks(env);
+  return {
+    checked: shifts.map((s) => {
+      const c = checks.get(`${s.day}|${s.slot}`);
+      return c ? { day: s.day, slot: s.slot, by: c.by || null, at: c.at || null } : null;
+    }).filter(Boolean),
+  };
+}
+
 /** Where one shift stands: checked by whom, and whether anything changed since. */
 function checkOf(checks, issues, day, slot) {
   const c = checks.get(`${day}|${slot}`);
@@ -699,9 +716,16 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
   const amount = issue.amount < 0 ? -issue.amount : 0;
   if (outcome === 'recover') {
     if (!amount) throw badRequest('There is nothing to recover: this was not a shortage.');
+    // Only a figure somebody has confirmed comes off pay. Until the shift is
+    // checked its amounts may still change, and a payslip is not the place to
+    // find out they did.
+    if (!issue.checked) throw badRequest('That shift has not been checked yet. Check it first: a shortage comes off pay only once its amount is final.');
     const done = await hiveCall({
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/recover',
-      body: { userId, amount, key, reason: `Till: ${KINDS[issue.kind]}, ${issue.day} ${issue.slot}`, by: who(account) },
+      body: {
+        userId, amount, key, reason: `Till: ${KINDS[issue.kind]}, ${issue.day} ${issue.slot}`, by: who(account),
+        day: issue.day, slot: issue.slot, checked: true, checkedBy: issue.checkedBy || null, checkedAt: issue.checkedAt || null,
+      },
     });
     advanceId = done.advanceId ?? null;
   }

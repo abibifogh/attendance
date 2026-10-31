@@ -75,7 +75,11 @@ function shape(advance, entries, { withSchedule = false, asOfMonth = null } = {}
     currency: advance.currency,
     reason: advance.reason,
     purpose: advance.purpose ?? null,
-    purposeLabel: purposeOf(advance.purpose)?.label ?? null,
+    purposeLabel: advance.purpose === 'till' ? 'Till shortage' : purposeOf(advance.purpose)?.label ?? null,
+    // A till shortage comes off pay only while its shift is checked in Insight.
+    till: advance.purpose === 'till'
+      ? { day: advance.till_day ?? null, slot: advance.till_slot ?? null, checkedAt: advance.till_checked_at ?? null, checkedBy: advance.till_checked_by ?? null }
+      : null,
     hasPaper: Boolean(advance.document_id),
     status: advance.status,
     takenOn: advance.taken_on,

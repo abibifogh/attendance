@@ -323,6 +323,7 @@ export const NOT_DUE = {
   not_yet: 'has not started yet',
   let_go: 'let go this month',
   paid_off: 'paid off',
+  not_checked: 'a till shortage whose shift is not checked in Insight yet',
 };
 
 export function whyNotDue(advance, entries = [], month) {
@@ -346,6 +347,10 @@ export function whyNotDue(advance, entries = [], month) {
   // Nothing recorded for the month, so it comes down to whether the advance is
   // still running and has reached its first month.
   if (!isOpen(advance)) return 'closed';
+
+  // A till shortage comes off pay only while its shift is checked in Insight:
+  // until then the amount may still change. See lib/till-checks.js.
+  if (advance.purpose === 'till' && !advance.till_checked_at) return 'not_checked';
 
   const start = startsOn(advance);
   if (!start) return 'no_start';

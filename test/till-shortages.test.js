@@ -1,0 +1,116 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+
+import { dueThisMonth, whyNotDue, NOT_DUE } from '../src/lib/advances.js';
+import { shiftOf, syncTillChecks } from '../src/lib/till-checks.js';
+
+/**
+ * Till shortages: their own line on the payslip, and off pay only while their
+ * shift is checked in Insight. Made-up people only.
+ */
+
+function d1(db) {
+  const st = (sql, binds = []) => ({
+    bind(...a) { return st(sql, a); },
+    async all() { return { results: db.prepare(sql).all(...binds) }; },
+    async first() { return db.prepare(sql).get(...binds) ?? null; },
+    async run() {
+      const r = db.prepare(sql).run(...binds);
+      return { success: true, meta: { changes: Number(r.changes ?? 0) } };
+    },
+  });
+  return {
+    prepare: (sql) => st(sql),
+    async batch(l) { const o = []; for (const s of l) o.push(await s.run()); return o; },
+  };
+}
+
+function setup({ stopBefore = null } = {}) {
+  const raw = new DatabaseSync(':memory:');
+  raw.exec('PRAGMA foreign_keys = ON;');
+  const files = readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort();
+  for (const f of files) {
+    if (stopBefore && f >= stopBefore) break;
+    raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  }
+  raw.exec('DELETE FROM att_staff; DELETE FROM hr_advance;');
+  raw.prepare("INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (1, '1', 'Desk One', 'Front office', '2020-01-01')").run();
+  return { raw, db: d1(raw), files };
+}
+
+const TILL = {
+  id: 1, staff_id: 1, amount: 50, months: 1, monthly: 50, status: 'approved', purpose: 'till',
+  start_month: '2026-10', taken_on: '2026-10-07', reason: 'Till: the drawer did not agree, 2026-10-06 afternoon',
+};
+
+test('a till shortage whose shift is not checked comes off nothing, and the payroll says why', () => {
+  assert.equal(whyNotDue(TILL, [], '2026-10'), 'not_checked');
+  assert.equal(dueThisMonth(TILL, [], '2026-10'), 0);
+  assert.match(NOT_DUE.not_checked, /not checked in Insight/);
+  const checked = { ...TILL, till_checked_at: '2026-10-07 09:00:00' };
+  assert.equal(whyNotDue(checked, [], '2026-10'), null);
+  assert.equal(dueThisMonth(checked, [], '2026-10'), 50);
+  // A salary advance is not held by any of this.
+  assert.equal(dueThisMonth({ ...TILL, purpose: 'other' }, [], '2026-10'), 50);
+});
+
+test('its shift is read from its columns, or from the reason it was written with', () => {
+  assert.deepEqual(shiftOf({ till_day: '2026-10-06', till_slot: 'night' }), { day: '2026-10-06', slot: 'night' });
+  assert.deepEqual(shiftOf({ reason: 'Till: Cash left the drawer with no envelope or PO, 2026-08-01 afternoon' }), { day: '2026-08-01', slot: 'afternoon' });
+  assert.equal(shiftOf({ reason: 'School fees' }), null);
+});
+
+test('the sync asks Insight about each open shortage, and holds one whose check was taken back', async () => {
+  const { raw, db } = setup();
+  const insert = raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, status, purpose, start_month, taken_on, reason, till_day, till_slot, till_checked_at, till_checked_by, currency)
+    VALUES (?, 1, ?, 1, ?, 'approved', 'till', '2026-10', '2026-10-07', ?, ?, ?, ?, ?, 'GHS')`);
+  insert.run(1, 50, 50, 'Till: drawer, 2026-10-06 afternoon', '2026-10-06', 'afternoon', null, null);
+  // Recovered before the rule: no shift columns, only the reason.
+  insert.run(2, 20, 20, 'Till: drawer, 2026-10-05 morning', null, null, null, null);
+  // Checked when sent, check taken back since.
+  insert.run(3, 30, 30, 'Till: drawer, 2026-10-04 night', '2026-10-04', 'night', '2026-10-05 08:00:00', 'Test Owner');
+  // Paid off already: not asked about.
+  insert.run(4, 10, 10, 'Till: drawer, 2026-09-01 night', '2026-09-01', 'night', null, null);
+  raw.prepare("INSERT INTO hr_advance_entry (advance_id, month, kind, amount, actor) VALUES (4, '2026-09', 'repayment', 10, 'x')").run();
+
+  let asked = null;
+  const fetchImpl = async (request) => {
+    asked = JSON.parse(await request.text());
+    return Response.json({ checked: [
+      { day: '2026-10-06', slot: 'afternoon', by: 'Test Owner', at: '2026-10-07 10:00:00' },
+      { day: '2026-10-05', slot: 'morning', by: 'Test Owner', at: '2026-10-06 10:00:00' },
+    ] });
+  };
+  const out = await syncTillChecks(db, { INSIGHT_SSO_SECRET: 'secret' }, { fetchImpl });
+  assert.deepEqual(asked.shifts.map((s) => `${s.day} ${s.slot}`).sort(), ['2026-10-04 night', '2026-10-05 morning', '2026-10-06 afternoon']);
+  assert.deepEqual(out, { asked: 3, checked: 2, held: 1 });
+  const rows = raw.prepare('SELECT id, till_day, till_slot, till_checked_at FROM hr_advance ORDER BY id').all();
+  assert.deepEqual(rows.map((r) => [r.id, r.till_day, r.till_slot, r.till_checked_at]), [
+    [1, '2026-10-06', 'afternoon', '2026-10-07 10:00:00'],
+    [2, '2026-10-05', 'morning', '2026-10-06 10:00:00'],
+    [3, '2026-10-04', 'night', null],
+    [4, '2026-09-01', 'night', null],
+  ]);
+
+  // Insight out of reach: the last answer stands.
+  const down = await syncTillChecks(db, { INSIGHT_SSO_SECRET: 'secret' }, { fetchImpl: async () => { throw new Error('down'); } });
+  assert.equal(down.checked, null);
+  assert.equal(raw.prepare('SELECT till_checked_at FROM hr_advance WHERE id = 1').get().till_checked_at, '2026-10-07 10:00:00');
+});
+
+test('shortages already recovered are marked as till shortages, and nothing else is', () => {
+  const { raw } = setup({ stopBefore: '0141' });
+  raw.exec(`INSERT INTO hr_advance (staff_id, amount, months, monthly, status, purpose, decision, currency) VALUES
+    (1, 50, 1, 50, 'approved', 'other', 'A till shortage, recovered from pay as agreed under My till', 'GHS'),
+    (1, 500, 5, 100, 'approved', 'other', 'Recorded by the office', 'GHS');`);
+  raw.exec(readFileSync('migrations/0141_till_shortages.sql', 'utf8'));
+  assert.deepEqual(raw.prepare('SELECT purpose FROM hr_advance ORDER BY id').all().map((r) => r.purpose), ['till', 'other']);
+});
+
+test('the payslip gives till shortages a line of their own', () => {
+  const view = readFileSync('public/js/views/payslip.js', 'utf8');
+  assert.match(view, /'Till shortages' : 'Till shortage'/);
+  assert.match(view, /l\.what === 'till'/);
+});
