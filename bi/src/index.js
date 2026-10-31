@@ -282,6 +282,7 @@ const ROUTES = [
 
   // Closing reports from HIVE, what staff answered, and the settings.
   ['GET', '/api/till', 'shifts', (env, ctx) => till.overview(env, ctx.query, ctx.account)],
+  ['GET', '/api/till/checks', 'shifts', (env, ctx) => till.checkList(env, ctx.query, ctx.account)],
   ['POST', '/api/till/resolve', 'shifts', (env, ctx) => till.resolve(env, ctx.body, ctx.account)],
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
   ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],

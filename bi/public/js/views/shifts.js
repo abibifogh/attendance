@@ -365,7 +365,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    */
   async function load(notice = null, { cached = false, inboxRead = false } = {}) {
     period = periodNow();
-    if (!cached) cache.clear();
+    if (!cached) { cache.clear(); till.forget(); }
+    // Which shifts are checked, asked at once beside the shifts: the padlocks and the check card wait for nothing else.
+    till.checks().catch(() => {});
     const waitingFor = canShifts && !cache.has(keyOf(period));
     if (waitingFor && view.firstChild) view.classList.add('sh-loading');
     try {
@@ -615,10 +617,10 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    * checks are read: a checked shift is locked, so it says 🔒.
    */
   function fillChecks(root) {
-    till.checks().then((map) => {
+    // At once from the checks alone; again once the full reading says which changed since.
+    const fill = (map) => {
       for (const el of root.querySelectorAll('.sh-ck[data-k]')) {
-        const st = map.get(el.dataset.k);
-        if (!st) continue;
+        const st = map.get(el.dataset.k) || 'wait';
         el.className = `sh-ck ${st}`;
         el.textContent = { ok: '🔒 Checked', changed: '🔒 Changed since checked', wait: 'Not checked' }[st];
         el.title = st === 'wait' ? '' : 'Checked, so locked: undo the check on the shift to change anything on it.';
@@ -627,6 +629,11 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         const st = map.get(el.dataset.k);
         if ((st === 'ok' || st === 'changed') && !el.classList.contains('locked')) { el.classList.add('locked'); el.textContent += ' 🔒'; el.title += ' · checked and locked'; }
       }
+    };
+    till.checks().then((map) => {
+      fill(map);
+      // Only a checked shift can have changed since: no need to wait for the rest otherwise.
+      if (map.size) till.changes().then((full) => { if ([...full.values()].includes('changed')) fill(new Map([...map].map(([k, v]) => [k, full.get(k) === 'changed' ? 'changed' : v]))); }).catch(() => {});
     }).catch(() => {});
   }
 
@@ -2703,12 +2710,17 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** Beside the status: 🔒 when the shift is checked, so locked. */
   function lockChip(s) {
     const el = h('span');
-    till.checks().then((map) => {
-      const st = map.get(`${s.day}|${s.slot}`);
+    const k = `${s.day}|${s.slot}`;
+    const show = (st) => {
       if (st === 'ok' || st === 'changed') {
         mount(el, h(`span.sh-chip.${st === 'ok' ? 'ok' : 'over'}.sh-lockchip`, { title: 'Checked, so locked: nothing on it can be changed until the check is undone (below, in To sort out).' },
           st === 'ok' ? '🔒 Checked · locked' : '🔒 Locked · changed since checked'));
       }
+    };
+    // At once from the checks alone; then the full reading says whether it changed since.
+    till.checks().then((map) => {
+      show(map.get(k));
+      if (map.get(k) === 'ok') till.changes().then((full) => { if (full.get(k) === 'changed') show('changed'); }).catch(() => {});
     }).catch(() => {});
     return el;
   }
