@@ -1195,7 +1195,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       ? banner('info', `🔒 This day is locked: days up to ${shortDay(data.lock.through)} were locked by ${data.lock.by || 'an admin'}. Nothing on this shift can be changed until an admin moves the lock back (Settings › Locked dates).`)
       : null;
     if (!may('money')) {
-      mount(v, back, head, lockNote, todoCard(s), whose, checked, report,
+      mount(v, back, head, lockNote, moveBox(s), todoCard(s), whose, checked, report,
         exceptionsBlock(s));
       return;
     }
@@ -1236,6 +1236,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       back,
       head,
       lockNote,
+      moveBox(s),
       todoCard(s),
       whose,
       checked,
@@ -2654,6 +2655,75 @@ export async function renderShifts(root, { range, section: only = null, onSectio
 
   /** Answered, or explained by the rules: nothing left to do. */
   const settled = (x) => Boolean(x.answer) || x.severity === 'info';
+
+  // ------------------------------------------------------ moving a shift --
+
+  /**
+   * A whole shift on the wrong day or slot (a night whose opening ASSD dated
+   * the next morning): an admin moves it, at most two days either way, saying
+   * why. Its counts, answers and notes go with it; Put it back undoes it.
+   */
+  function moveBox(s) {
+    const seqs = (s.sessions || []).map((x) => x.startSeq).filter((n) => n != null);
+    const startSeqs = seqs.length ? seqs : [s.startSeq];
+    const where = (day, slot) => `the ${SLOT[slot]?.label.toLowerCase() || slot} of ${dayText(day)}`;
+    // Read again from the server, and open the shift where it now is.
+    const reopen = (day, slot, words) => {
+      currentId = `${day}|${slot}`;
+      store.set('shift', currentId);
+      section = 'shifts';
+      detail = true;
+      anchor = day;
+      remember();
+      return load(banner('good', words));
+    };
+    if (s.moved) {
+      return h('div.sh-movednote', `↪ Moved here from ${where(s.moved.fromDay, s.moved.fromSlot)} by ${s.moved.by || 'an admin'}: “${s.moved.why}”. `,
+        admin ? h('button.sh-link', { type: 'button', onclick: async () => {
+          if (!confirm(`Put this shift back on ${where(s.moved.fromDay, s.moved.fromSlot)}, where the journal puts it? Its counts and answers go back with it.`)) return;
+          try {
+            await api('/shifts/place', { method: 'POST', body: { startSeqs, back: true } });
+            reopen(s.moved.fromDay, s.moved.fromSlot, `Put back on ${where(s.moved.fromDay, s.moved.fromSlot)}.`);
+          } catch (err) { alert(err.message); }
+        } }, 'Put it back') : null);
+    }
+    if (!admin || s.open || !s.startSeq) return null;
+    const box = h('div.sh-movebox');
+    const open = () => {
+      const choices = [];
+      for (let d = -2; d <= 2; d += 1) {
+        const day = plusDays(s.day, d);
+        for (const sl of SLOTS) {
+          if (day === s.day && sl === s.slot) continue;
+          const taken = byId.get(`${day}|${sl}`);
+          choices.push(h('option', { value: `${day}|${sl}` }, `${dayText(day)} · ${SLOT[sl].label} ${SLOT[sl].hours}${taken ? ` (has ${nameOf(taken.user)}’s shift)` : ''}`));
+        }
+      }
+      const to = h('select', choices);
+      // The usual mistake: a night dated the next morning. Offered first.
+      const night = SLOTS.indexOf(s.slot) === 0 ? `${plusDays(s.day, -1)}|night` : null;
+      if (night) to.value = night;
+      const why = h('input', { type: 'text', maxlength: '300', placeholder: 'e.g. The night shift of the 30th; ASSD dated its opening the next morning' });
+      const said = h('span.small');
+      const go = h('button.btn.primary', { type: 'button', onclick: async () => {
+        if (!why.value.trim()) { said.textContent = 'Say why it belongs there.'; why.focus(); return; }
+        const [day, slot] = to.value.split('|');
+        go.disabled = true; said.textContent = 'Moving…';
+        try {
+          await api('/shifts/place', { method: 'POST', body: { startSeqs, day, slot, fromDay: s.day, fromSlot: s.slot, why: why.value } });
+          reopen(day, slot, `Moved to ${where(day, slot)}. Its counts and answers came with it.`);
+        } catch (err) { said.textContent = err.message; go.disabled = false; }
+      } }, 'Move it');
+      mount(box, h('div.sh-moveform',
+        h('strong', `Move ${nameOf(s.user)}’s shift`),
+        h('p.small', 'For a shift the journal put on the wrong day or slot. Its counts, answers, notes and check go with it, and Put it back undoes it. Its closing report in HIVE is moved on its own card, below.'),
+        h('label.field', 'It belongs on', to), h('label.field', 'Why', why),
+        h('div.sh-save', go, h('button.btn', { type: 'button', onclick: () => mount(box, opener) }, 'Cancel'), said)));
+    };
+    const opener = h('button.sh-link', { type: 'button', onclick: open }, 'Wrong day or slot? Move this shift');
+    mount(box, opener);
+    return box;
+  }
 
   // ---------------------------------------------------------- checklist --
 

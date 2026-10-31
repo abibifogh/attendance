@@ -1183,3 +1183,30 @@ test('moving a payment needs a payment, a shift and a reason; it can be put back
   await routes.movePayment(env, { eventId: 't:x', back: true }, who);
   assert.equal(await db.prepare('SELECT slot FROM payment_home WHERE event_id = ?').bind('t:x').first(), null);
 });
+
+test('a whole shift moved to the day and slot it belongs to: its answers come with it, and it can be put back', async () => {
+  const env = await loaded();
+  let out = await routes.shifts(env, { from: '2026-07-31', to: '2026-08-02' }, OWNER);
+  const alpha = out.days.find((d) => d.day === '2026-08-01').shifts.find((s) => s.user === 'ALPHA');
+  assert.equal(alpha.slot, 'morning');
+  // Answered and counted where the journal put it.
+  await env.DB.prepare("INSERT INTO shift_answer (key, answer, note, by_name, at) VALUES ('drawer:2026-08-01:morning', 'Explained', 'Two cedis in the tips jar', 'Test Owner', '2026-08-02 09:00:00')").run();
+  await env.DB.prepare("INSERT INTO shift_count (day, slot, closing, by_name, at) VALUES ('2026-08-01', 'morning', 31800, 'Test Owner', '2026-08-02 09:00:00')").run().catch(() => {});
+
+  await assert.rejects(routes.placeShift(env, { startSeq: alpha.startSeq, day: '2026-07-31', slot: 'night', fromDay: '2026-08-01', fromSlot: 'morning' }, OWNER), /Say why/);
+  await assert.rejects(routes.placeShift(env, { startSeq: alpha.startSeq, day: '2026-07-25', slot: 'night', fromDay: '2026-08-01', fromSlot: 'morning', why: 'Wrong' }, OWNER), /two days/);
+  await routes.placeShift(env, { startSeq: alpha.startSeq, day: '2026-07-31', slot: 'night', fromDay: '2026-08-01', fromSlot: 'morning', why: 'The night of the 31st; ASSD dated it the next morning' }, OWNER);
+
+  out = await routes.shifts(env, { from: '2026-07-31', to: '2026-08-02' }, OWNER);
+  const moved = out.days.find((d) => d.day === '2026-07-31').shifts.find((s) => s.user === 'ALPHA');
+  assert.equal(moved.slot, 'night', 'where the admin put it');
+  assert.deepEqual([moved.moved.fromDay, moved.moved.fromSlot, moved.moved.by], ['2026-08-01', 'morning', 'Test Owner']);
+  assert.ok(!out.days.find((d) => d.day === '2026-08-01').shifts.some((s) => s.user === 'ALPHA'), 'and no longer on the morning');
+  const drawer = out.exceptions.find((x) => x.key === 'drawer:2026-07-31:night');
+  assert.equal(drawer?.answer?.answer, 'Explained', 'its answer came with it');
+
+  await routes.placeShift(env, { startSeq: alpha.startSeq, back: true }, OWNER);
+  out = await routes.shifts(env, { from: '2026-07-31', to: '2026-08-02' }, OWNER);
+  assert.equal(out.days.find((d) => d.day === '2026-08-01').shifts.find((s) => s.user === 'ALPHA').slot, 'morning', 'put back');
+  assert.equal(out.exceptions.find((x) => x.key === 'drawer:2026-08-01:morning')?.answer?.answer, 'Explained', 'and its answer with it');
+});
