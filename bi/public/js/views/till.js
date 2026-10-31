@@ -429,7 +429,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         h('div', h('strong', '⏳ Not checked yet'),
           h('div.tl-small', r.issues
             ? `${people} sees ${r.issues === 1 ? 'its difference' : `its ${r.issues} differences`} as “not checked yet”: the amounts may change. Look at the report, the drawer and the payments, then mark it checked.`
-            : 'Nothing on it for anybody to sort out. Look at the report, the drawer and the payments, then mark it checked.'),
+            : 'No question on it for the staff. Look at the report, the drawer and the payments, then mark it checked.'),
           notes),
         may && day < today ? h('div.ck-acts', check, said) : null);
     }
@@ -443,7 +443,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     }
     return h('section.card.ck-bar.ok',
       h('div', h('strong', `✓ Checked by ${r.check.by}, ${when}`),
-        h('div.tl-small', r.issues ? `${people} sees what is on it as checked, to sort out.` : 'Nothing on it for anybody to sort out.'),
+        h('div.tl-small', r.issues ? `${people} sees what is on it as checked, to sort out.` : 'No question on it for the staff.'),
         notes),
       may ? h('div.ck-acts', undo, said) : null);
   }

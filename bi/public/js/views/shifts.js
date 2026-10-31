@@ -683,7 +683,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       if (detail) return shiftView(v);
       // Chosen dates: side by side up to ten days, as a calendar beyond.
       const out = ({ day: dayView, week, month: monthView, table: tableView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
-      if (out?.catch) out.catch(failed);
+      // What is still to sort out, shift by shift, over the views of the days.
+      const todo = () => { const c = section === 'shifts' ? outstandingCard() : null; if (c) v.prepend(c); };
+      if (out?.then) out.then(todo, failed); else todo();
     } catch (err) { failed(err); }
     return undefined;
   }
@@ -938,7 +940,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           : `Laundry: ${money(l.assd)} in ASSD, ${money(l.system)} in the laundry system${l.assd === l.system ? ', they agree.' : '.'}`) : null),
       exs.length ? h('section.card',
         h('div.sh-cardhead', h('h2', `What does not agree on ${shortDay(d.day)}`)),
-        h('div.sh-exgrid', exs.map(exceptionCard))) : null);
+        h('div.sh-exgrid', exs.map(exceptionCard))) : null,
+      // Ticked to reconcile together: the bar to do it, as on a shift and in the Inbox.
+      pickedBar());
   }
 
   /** A shift as a large card on the Day view: the drawer in four lines, how it was paid, and what is open. */
@@ -1180,7 +1184,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       ? banner('info', `🔒 This day is locked: days up to ${shortDay(data.lock.through)} were locked by ${data.lock.by || 'an admin'}. Nothing on this shift can be changed until an admin moves the lock back (Settings › Locked dates).`)
       : null;
     if (!may('money')) {
-      mount(v, back, head, lockNote, whose, checked, report,
+      mount(v, back, head, lockNote, todoCard(s), whose, checked, report,
         exceptionsBlock(s));
       return;
     }
@@ -1221,6 +1225,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       back,
       head,
       lockNote,
+      todoCard(s),
       whose,
       checked,
       report,
@@ -2509,7 +2514,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (x.amount == null) return null;
     if (['not-recorded', 'bank-only', 'double-charge', 'paid-more', 'refund'].includes(x.kind)) return a;
     if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
-    if (['drawer-over', 'drawer-short', 'handover-gap'].includes(x.kind)) return x.amount;
+    // ASSD less the other side: a laundry that took money ASSD does not show is below nothing.
+    if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
     if (x.kind === 'movement-twice') return a;
     return null;
   }
@@ -2638,6 +2644,84 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   /** Answered, or explained by the rules: nothing left to do. */
   const settled = (x) => Boolean(x.answer) || x.severity === 'info';
 
+  // ---------------------------------------------------------- checklist --
+
+  /**
+   * What a shift has to sort out, as a checklist: each difference, ticked
+   * once it is answered, reconciled with others or explained, and the check
+   * itself, ticked once an admin marks the shift checked.
+   */
+  function todoOf(s) {
+    return exceptionsOf(s).filter((x) => x.severity !== 'info' && seesEx(x)).map((x) => {
+      const done = Boolean(x.answer) || Boolean(x.link && !x.proposed);
+      return {
+        key: x.key, done, waiting: !done && Boolean(x.proposed), bad: x.severity === 'critical',
+        text: `${(KIND[x.kind] || [x.kind])[0]}${x.amount != null && !data.redacted ? ` · ${money(Math.abs(x.amount))}` : ''}`,
+        sub: x.answer ? `${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by})` : ''}`
+          : x.link ? 'Reconciled with others' : x.proposed ? 'Answered, waiting for an admin' : null,
+      };
+    });
+  }
+
+  /** One line of a checklist: a box, ticked or not, what it is, and how it was settled. */
+  const todoLine = (i, onclick) => h(`li.sh-todo${i.done ? '.done' : i.waiting ? '.wait' : i.bad ? '.bad' : ''}`,
+    h('span.box', { 'aria-hidden': 'true' }, i.done ? '✓' : i.waiting ? '…' : ''),
+    h('span.t', onclick ? h('button.sh-link', { type: 'button', onclick }, i.text) : h('span', i.text), i.sub ? h('small', i.sub) : null),
+    h('span.sr', i.done ? 'done' : i.waiting ? 'waiting' : 'to do'));
+  const checkLine = (st) => ({ done: st === 'ok', waiting: false, text: 'Marked checked by an admin',
+    sub: st === 'ok' ? null : st === 'changed' ? 'Changed since it was checked: check it again' : 'Not checked yet' });
+
+  /** On the shift: everything to sort out, ticked as it is done. Each line takes you to its card. */
+  function todoCard(s) {
+    const items = todoOf(s);
+    const list = h('ul.sh-todos');
+    const count = h('span.sh-todocount');
+    const card = h('section.card.sh-todocard',
+      h('div.sh-cardhead', h('div', h('h2', 'To sort out on this shift'),
+        h('p.sh-sub', 'Every difference on it, ticked when it is answered, reconciled or explained, and the check itself. Tap one to go to it.')), count),
+      list);
+    const draw = (st) => {
+      const all = [...items, ...(st !== undefined ? [checkLine(st)] : [])];
+      const done = all.filter((i) => i.done).length;
+      mount(count, h(`span.sh-chip.${done === all.length ? 'ok' : 'none'}`, `${done} of ${all.length} done`));
+      mount(list, all.map((i) => todoLine(i, i.key ? () => {
+        const el = document.getElementById(`ex-${i.key}`);
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('sh-flash'); setTimeout(() => el.classList.remove('sh-flash'), 1600); }
+      } : null)));
+    };
+    draw();
+    till.checks().then((map) => draw(map.get(`${s.day}|${s.slot}`) || 'wait')).catch(() => {});
+    return card;
+  }
+
+  /** Over the days: every shift with something still to sort out, each as its checklist. */
+  function outstandingCard() {
+    const rows = shifts.map((s) => ({ s, items: todoOf(s) })).filter((r) => r.items.some((i) => !i.done));
+    if (!rows.length) return null;
+    const open = rows.reduce((n, r) => n + r.items.filter((i) => !i.done && !i.waiting).length, 0);
+    const shown = h('div.sh-outgrid');
+    let all = false;
+    const draw = (checks) => mount(shown, (all ? rows : rows.slice(-6)).slice().reverse().map(({ s, items }) => {
+      const st = checks?.get(`${s.day}|${s.slot}`);
+      const list = [...items, ...(st ? [checkLine(st)] : [])];
+      const done = list.filter((i) => i.done).length;
+      return h('div.sh-outshift',
+        h('button.sh-outhead', { type: 'button', onclick: () => go('shift', s.id) },
+          avatar(s.user), h('span', h('b', nameOf(s.user)), h('small', `${SLOT[s.slot].label} · ${dayText(s.day)}`)),
+          h('span.sh-chip.none', `${done} of ${list.length}`), h('span.sh-open', '›')),
+        h('div.sh-outbar', h('i', { style: `width:${(done / list.length) * 100}%` })),
+        h('ul.sh-todos', list.map((i) => todoLine(i))));
+    }));
+    let checks = null;
+    const more = rows.length > 6 ? h('button.btn', { type: 'button', onclick: () => { all = !all; more.textContent = all ? 'Show the latest 6' : `Show all ${rows.length}`; draw(checks); } }, `Show all ${rows.length}`) : null;
+    draw();
+    till.checks().then((map) => { checks = map; draw(map); }).catch(() => {});
+    return h('section.card.sh-outcard',
+      h('div.sh-cardhead', h('div', h('h2', `Still to sort out · ${rows.length} shift${rows.length === 1 ? '' : 's'}`),
+        h('p.sh-sub', `${open} difference${open === 1 ? '' : 's'} to answer in these days. Each shift’s list ticks itself as they are answered; tap a shift to open it.`))),
+      shown, more);
+  }
+
   /**
    * A shift's differences: what still needs somebody first, then what was
    * matched or explained, in green, so a settled one does not read as a
@@ -2649,7 +2733,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     const done = all.filter(settled);
     const seen = seenTwice(s);
     // Each with its notes and history underneath.
-    const withNotes = (x) => { const c = exceptionCard(x); c.append(taskBox(x), notesBox(x)); return c; };
+    const withNotes = (x) => { const c = exceptionCard(x); c.id = `ex-${x.key}`; c.append(taskBox(x), notesBox(x)); return c; };
     const blocks = [
       open.length ? h('section.card',
         h('div.sh-cardhead', h('h2', 'What does not agree on this shift')),
@@ -2917,7 +3001,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     const others = x.link ? x.link.keys.filter((k) => k !== x.key) : [];
     const label = (o) => `${(KIND[o.kind] || [o.kind])[0]}, ${o.day ? dayText(o.day) : ''}${o.slot ? ` ${SLOT[o.slot].label.toLowerCase()}` : ''}`;
     return h(`article.sh-ex.${sev}${x.answer ? '.done' : ''}${picked.has(x.key) ? '.picked' : ''}`,
-      h('div.hd', h('span.sq', mark), h('h3', title), h('span.amt.num', money(Math.abs(x.amount ?? 0))),
+      // With its sign where it has one: two that cancel out read as + and −.
+      h('div.hd', h('span.sq', mark), h('h3', title), h('span.amt.num', flowText(flowOf(x)) || money(Math.abs(x.amount ?? 0))),
         canLink ? h('label.sh-pick', { title: 'Tick to reconcile with others' },
           h('input', { type: 'checkbox', checked: picked.has(x.key), onchange: (e) => { if (e.target.checked) { picked.add(x.key); pickedAs.set(x.key, x); } else { picked.delete(x.key); pickedAs.delete(x.key); } paint(); } }),
           h('span', 'Reconcile with others'), x.proposed ? h('small', `sets aside ${x.proposed.by ? `${x.proposed.by}’s` : 'the waiting'} answer`) : null) : null),
