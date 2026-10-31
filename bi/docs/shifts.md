@@ -86,6 +86,13 @@ shift, a small note at the end of the line says which; open it for what to do.
 A supervisor sees only the tabs and kinds an admin gave them, and amounts only
 if they were given those (see `docs/till.md`).
 
+### Stepping through shifts
+
+On a shift, **‹** and **›** beside its name open the shift before and after.
+Past the first or last one on screen they carry on into the day before or
+after (a week or month at a time in those views), as far as the journal
+goes: from the last shift of 1 October, **›** opens the first of 2 October.
+
 ### What is still to sort out
 
 Every shift has a checklist under its title, **To sort out on this shift**:

@@ -269,6 +269,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   let currentId = store.get('shift', null);
   // A shift opened from the period: its story fills the Shifts tab until Back.
   let detail = false;
+  // Stepping past the first or last shift on screen: the next days are read, and their first (1) or last (-1) shift opened.
+  let edge = 0;
   // Exceptions ticked to reconcile together, kept as they were when ticked,
   // so a tick on another day or week stays while the next one is found
   // (a supervisor may only open one day at a time).
@@ -385,6 +387,10 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     }
     byId = new Map(shifts.map((s) => [s.id, s]));
     colours = paletteFor(shifts.map((s) => s.user));
+    if (edge) {
+      currentId = (edge > 0 ? shifts[0] : shifts[shifts.length - 1])?.id || null;
+      edge = 0;
+    }
     if (!byId.has(currentId)) {
       // The latest shift with something to answer, else the latest shift.
       const flagged = [...shifts].reverse().find((s) => tone(s) === 'bad');
@@ -1165,9 +1171,14 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     const title = h('h2', nameOf(s.user));
     till.whoseShift(s.day, s.slot, { title, after: (words) => load(words ? banner('good', words) : null) }).then((card) => mount(whose, card)).catch(() => {});
     const back = h('button.sh-back', { type: 'button', onclick: () => go(mode) }, `‹ Back to ${period.label}`);
+    // Past the first or last shift on screen, the arrows go on into the days either side, as far as the journal goes.
+    const journal = data.coverage?.journal || {};
+    const earlier = !journal.from || journal.from < period.from;
+    const later = !journal.to || journal.to > period.to;
+    const across = (dir) => { edge = dir; detail = true; window.scrollTo({ top: 0, behavior: 'smooth' }); return step(dir); };
     const head = h('section.card',
       h('div.sh-shifthead',
-        h('button.sh-arrow', { type: 'button', disabled: i <= 0, 'aria-label': 'Previous shift', onclick: () => go('shift', shifts[i - 1].id) }, '‹'),
+        h('button.sh-arrow', { type: 'button', disabled: i <= 0 && !earlier, 'aria-label': i > 0 ? 'Previous shift' : 'Last shift of the day before', title: i > 0 ? 'Previous shift' : 'Last shift of the day before', onclick: () => (i > 0 ? go('shift', shifts[i - 1].id) : across(-1)) }, '‹'),
         h('div.t', avatar(s.user, true),
           h('div', title,
             h('div.m', glyph(s.slot), `${SLOT[s.slot].label} · ${SLOT[s.slot].hours} · ${dayText(s.day, { weekday: 'long', day: 'numeric', month: 'long' })}`,
@@ -1176,7 +1187,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
                 `${s.sessions.length} ASSD sessions: ${s.sessions.map((x) => nameOf(x.user)).join(' → ')}`) : null))),
         h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
         may('money') ? h('button.btn.sh-reconbtn', { type: 'button', onclick: () => openRecon(s) }, '⤓ Reconciliation report') : null,
-        h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1, 'aria-label': 'Next shift', onclick: () => go('shift', shifts[i + 1].id) }, '›')));
+        h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1 && !later, 'aria-label': i < shifts.length - 1 ? 'Next shift' : 'First shift of the next day', title: i < shifts.length - 1 ? 'Next shift' : 'First shift of the next day', onclick: () => (i < shifts.length - 1 ? go('shift', shifts[i + 1].id) : across(1)) }, '›')));
     // Without the amounts, the drawer's story is nothing but blanks: the
     // closing report and what does not agree are what there is to see.
     // A locked day: say so at the top; every change on it is refused.
