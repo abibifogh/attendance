@@ -145,7 +145,7 @@ async function gather(ctx, month, { open = true } = {}) {
   const run = await runFor(ctx.db, month, actorOf(ctx), { open, company });
 
   const [everybody, profiles, allowances, schemes, members, scores, penalties, severances,
-    advances, entries, slips]
+    advances, entries, slips, credits]
     = await Promise.all([
       ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on, company_id FROM att_staff ORDER BY name').all()
         // A database from before there were companies has no column to read.
@@ -174,6 +174,9 @@ async function gather(ctx, month, { open = true } = {}) {
       ).all().catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM hr_advance_entry').all().catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM pay_slip WHERE run_id = ?').bind(run.id).all(),
+      // Till surpluses paid with this month's pay.
+      ctx.db.prepare("SELECT * FROM till_credit WHERE month = ? AND status = 'due' ORDER BY id").bind(month).all()
+        .catch(() => ({ results: [] })),
     ]);
 
   // This company's people, and anybody already on one of its payslips this
@@ -232,6 +235,7 @@ async function gather(ctx, month, { open = true } = {}) {
     // something this payroll could take anything off.
     advances: (advances.results ?? []).filter((a) => ours.has(a.staff_id)),
     entriesBy,
+    creditsBy: group((credits.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
     slipBy: new Map((slips.results ?? []).map((s) => [s.staff_id, s])),
     paidBy: new Map((staff.results ?? []).map((person) => {
       const closed = (earlier.results ?? []).find((r) => r.staff_id === person.id);
@@ -351,6 +355,9 @@ function linesFrom(data, month) {
         id: p.id, amount: p.amount, reason: p.reason, at: p.at,
       })),
       loans,
+      tillCredits: (data.creditsBy?.get(person.id) ?? []).map((c) => ({
+        creditId: c.id, amount: Number(c.amount), reason: c.reason ?? null, day: c.till_day ?? null, slot: c.till_slot ?? null,
+      })),
       annualBasic: round2(profile.basic * 12),
       bonusPaidThisYear: data.paidBy.get(person.id) ?? 0,
       // Older profiles have nothing written here and every figure in them was
@@ -1288,7 +1295,7 @@ export async function exportBook(ctx) {
     money(line.gross),
     money(line.ssnit?.employee),
     money(line.paye?.total),
-    money(line.loanTotal),
+    money(round2((line.loanTotal ?? 0) - (line.tillCredit ?? 0))),
     money(line.net),
     money(line.ssnit?.employer),
     money(line.employerCost),
@@ -1296,7 +1303,7 @@ export async function exportBook(ctx) {
   const payTotals = [{ v: 'Everybody', s: S.total }, { v: '', s: S.total },
     totalMoney(totals.basic), totalMoney(totals.allowancesOnSlip ?? totals.allowances),
     totalMoney(totals.bonusNet), totalMoney(totals.carriedOnBonus ?? 0), totalMoney(totals.gross),
-    totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(totals.loans),
+    totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(round2((totals.loans ?? 0) - (totals.tillCredit ?? 0))),
     totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
 
   const payroll = {
@@ -2546,6 +2553,7 @@ export async function closeRun(ctx) {
     // the month has already been answered by hand, which the unique index
     // would refuse anyway.
     for (const loan of line.loans) {
+      if (loan.advanceId == null) continue;
       await ctx.db.prepare(
         `INSERT OR IGNORE INTO hr_advance_entry (advance_id, month, kind, amount, note, actor, source)
          VALUES (?1, ?2, 'repayment', ?3, ?4, ?5, 'payroll')`,

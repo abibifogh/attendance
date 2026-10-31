@@ -33,7 +33,7 @@ export const KINDS = {
 };
 
 /** Outcomes that settle an issue for good. "back" sends it back to the person. */
-export const FINAL = new Set(['accept', 'recover', 'cash', 'writeoff']);
+export const FINAL = new Set(['accept', 'recover', 'pay', 'cash', 'writeoff']);
 
 const sum = (list, f) => list.reduce((t, x) => t + (Number(f(x)) || 0), 0);
 const cedis = (minor) => `GH₵ ${(Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

@@ -235,6 +235,7 @@ export const ROUTES = [
   // And Insight asking, server to server. No session reaches these; each
   // request is signed with the secret the two share for the sign-in hand-off.
   ['POST', '/api/link/till/recover', 'public', till.linkRecover],
+  ['POST', '/api/link/till/credit', 'public', till.linkCredit],
   ['POST', '/api/link/till/reopen', 'public', till.linkReopen],
   ['POST', '/api/link/till/move', 'public', till.linkMove],
   ['POST', '/api/link/till/tell', 'public', till.linkTell],

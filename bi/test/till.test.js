@@ -198,7 +198,7 @@ test('a person’s list over the link, and settling it', async () => {
     // Recovered from pay stays on their list, marked so; nothing else settled does.
     list = await till.linkIssues(env, { userId: 8 });
     assert.equal(list.issues.length, 1);
-    assert.deepEqual({ ...list.issues[0].recovered, at: undefined }, { amount: 2000, at: undefined, by: 'Test Owner', advanceId: 55 });
+    assert.deepEqual({ ...list.issues[0].recovered, at: undefined }, { how: 'recover', amount: 2000, at: undefined, by: 'Test Owner', advanceId: 55 });
     assert.equal(list.cleared, 0);
     // And it is decided, so it is no longer waiting in HIVE.
     assert.deepEqual((await till.linkToDecide(env)).issues, []);
@@ -224,7 +224,7 @@ test('HIVE lists shortages on checked shifts and decides them: not recovered lea
     // No answer from them is needed.
     assert.equal(waiting[0].answer, null);
 
-    await assert.rejects(till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'maybe' }, { fetchImpl }), /Recover it, or not/);
+    await assert.rejects(till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'maybe' }, { fetchImpl }), /Recover it, pay it, or not/);
     await till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'writeoff', by: 'Pay Person' }, { fetchImpl });
     assert.deepEqual((await till.linkToDecide(env)).issues, []);
     const list = await till.linkIssues(env, { userId: 8 });
@@ -1185,4 +1185,39 @@ test('HIVE asking about checks: a difference put on staff accounts is checked wh
   // Undone: no longer.
   await env.DB.prepare("UPDATE till_move SET undone_at = '2026-08-03 08:00:00' WHERE id = 7").run();
   assert.deepEqual((await till.linkChecks(env, { shifts: [], keys: ['moved:7:3'] })).keys, []);
+});
+
+test('a surplus put on somebody’s account can be paid with salary, from HIVE or Insight, by an admin', async () => {
+  const { env } = await setUp();
+  const realNow = Date.now;
+  const RealDate = Date;
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [RealDate.parse('2026-08-03T09:00:00Z')])); } static now() { return RealDate.parse('2026-08-03T09:00:00Z'); } };
+  try {
+    await env.DB.prepare(`INSERT INTO till_move (id, key, kind, day, slot, owner_name, amount, shares, reason, by_name, at)
+      VALUES (4, 'drawer:2026-08-01:night', 'drawer-over', '2026-08-01', 'night', 'Someone', 1500, '[{"userId":8,"name":"Kofi","amount":1500}]', 'Over at the count', 'Test Owner', '2026-08-02 08:00:00')`).run();
+    const asked = [];
+    const fetchImpl = async (request) => {
+      const path = new URL(request.url).pathname;
+      asked.push([path, JSON.parse(await request.text())]);
+      return Response.json(path === '/api/link/till/credit' ? { ok: true, creditId: 12 } : { ok: true });
+    };
+    const waiting = (await till.linkToDecide(env)).issues.filter((i) => i.key === 'moved:4:8');
+    assert.equal(waiting.length, 1);
+    assert.deepEqual([waiting[0].amount, waiting[0].surplus], [1500, true]);
+    // A supervisor cannot; recovering a surplus makes no sense.
+    await assert.rejects(till.resolve(env, { key: 'moved:4:8', userId: 8, outcome: 'pay' }, SUPERVISOR, { fetchImpl }), /not been shared|not change|Only an admin/);
+    await assert.rejects(till.resolve(env, { key: 'moved:4:8', userId: 8, outcome: 'recover' }, OWNER, { fetchImpl }), /not a shortage/);
+
+    await till.linkDecide(env, { key: 'moved:4:8', userId: 8, outcome: 'pay', by: 'Pay Person' }, { fetchImpl });
+    const [path, sent] = asked[0];
+    assert.equal(path, '/api/link/till/credit');
+    assert.deepEqual([sent.userId, sent.amount, sent.key, sent.day, sent.slot, sent.checked], [8, 1500, 'moved:4:8', '2026-08-01', 'night', true]);
+    // Off the waiting list, and on theirs marked paid through payroll.
+    assert.deepEqual((await till.linkToDecide(env)).issues.filter((i) => i.key === 'moved:4:8'), []);
+    const mine = (await till.linkIssues(env, { userId: 8 })).issues.find((i) => i.key === 'moved:4:8');
+    assert.deepEqual([mine.recovered.how, mine.recovered.creditId, mine.recovered.amount], ['pay', 12, 1500]);
+  } finally {
+    global.Date = RealDate;
+    Date.now = realNow;
+  }
 });

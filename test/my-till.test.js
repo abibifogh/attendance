@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
+  answer, closeShift, closedSummary, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkCredit, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -616,4 +616,27 @@ test('a closing report still owed has to go in before any later one', async (t) 
   assert.equal(sent.ok, true, 'the owed one goes in');
   const now = await (await closeShift(ctx(db, AMA, { env, body: good(current, { rentals: { padlock: { start: 5, end: 5 } } }) }))).json();
   assert.equal(now.ok, true, 'and then today’s');
+});
+
+test('Insight can pay a till surplus with salary: one per difference, into the open payroll', async () => {
+  const { db, raw } = await setup();
+  const path = '/api/link/till/credit';
+  const send = async (payload) => {
+    const text = JSON.stringify(payload);
+    return linkCredit({
+      db, env: { INSIGHT_SSO_SECRET: SECRET }, url: new URL(`https://x${path}`), session: null, executionContext: null,
+      request: new Request(`https://x${path}`, { method: 'POST', headers: await signLink(SECRET, path, text), body: text }),
+    });
+  };
+  const shift = { key: 'moved:4:7', day: '2026-10-06', slot: 'night', checked: true, checkedBy: 'Test Owner', checkedAt: '2026-10-07 09:00:00' };
+  const out = await (await send({ userId: 7, amount: 3000, reason: 'Till: put on your account, 2026-10-06 night', by: 'Test Owner', ...shift })).json();
+  const credit = raw.prepare('SELECT * FROM till_credit WHERE id = ?').get(out.creditId);
+  assert.deepEqual([credit.staff_id, credit.amount, credit.till_key, credit.status], [1, 30, 'moved:4:7', 'due']);
+  assert.match(credit.month, /^\d{4}-\d{2}$/);
+  // Sent again: still one.
+  const again = await (await send({ userId: 7, amount: 3000, ...shift })).json();
+  assert.equal(again.creditId, out.creditId);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM till_credit').get().n, 1);
+  await assert.rejects(send({ userId: 7, amount: 3000, key: 'k3', day: '2026-10-06', slot: 'night' }), /not been checked yet/);
+  await assert.rejects(send({ userId: 8, amount: 3000, key: 'k4', day: '2026-10-06', slot: 'night', checked: true }), /not linked to a staff record/);
 });

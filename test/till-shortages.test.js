@@ -139,7 +139,7 @@ test('the till shortages list: shift, check, who recovered it, and where it stan
   assert.equal(by[2].status, 'held');
   assert.equal(by[3].status, 'deducted');
   assert.deepEqual(by[3].deducted, [{ month: '2026-09', amount: 30 }]);
-  assert.deepEqual(data.totals, { coming: 50, held: 20, deducted: 30 });
+  assert.deepEqual(data.totals, { coming: 50, held: 20, deducted: 30, surplus: 0 });
 });
 
 test('closing off the month on Advances leaves a held till shortage alone, as the payroll does', async () => {
@@ -190,12 +190,15 @@ test('shortages on checked shifts wait in HIVE to be recovered or not, with who 
   assert.equal(asked.length, before, 'Insight is not asked');
 
   const send = (body) => tillDecide({ db, env, session, fetchImpl, request: new Request('https://x/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
-  await assert.rejects(send({ key: 'k1', userId: 7, outcome: 'maybe' }), /Recover it, or not/);
+  await assert.rejects(send({ key: 'k1', userId: 7, outcome: 'maybe' }), /Recover it, pay it, or not/);
   const out = await (await send({ key: 'k1', userId: 7, outcome: 'recover' })).json();
   assert.equal(out.advanceId, 9);
   assert.deepEqual(asked.at(-1), ['/api/link/till/decide', { key: 'k1', userId: 7, outcome: 'recover', by: 'Pay Roll', note: null }]);
   await send({ key: 'k1', userId: 7, outcome: 'writeoff' });
   assert.equal(asked.at(-1)[1].outcome, 'writeoff');
+  // A surplus: paid with salary.
+  await send({ key: 'k2', userId: 7, outcome: 'pay' });
+  assert.equal(asked.at(-1)[1].outcome, 'pay');
 
   // Insight out of reach: said, not a broken page.
   const down = await (await tillToDecide({ db, env, session, fetchImpl: async () => { throw new Error('down'); }, url: new URL('https://x/') })).json();
@@ -227,6 +230,10 @@ test('a till shortage decided in the last week of a month comes off that month, 
   // October's payroll closed: the next one.
   raw.prepare("INSERT INTO pay_run (month, status, company_id) VALUES ('2026-10', 'final', 1)").run();
   assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-11');
+  // November closed too: the next one still open.
+  raw.prepare("INSERT INTO pay_run (month, status, company_id) VALUES ('2026-11', 'final', 1)").run();
+  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-12');
+  raw.prepare("DELETE FROM pay_run WHERE month = '2026-11'").run();
   // Another company's closed payroll does not move it.
   raw.exec("UPDATE att_staff SET company_id = (SELECT MAX(id) FROM company WHERE main = 0) WHERE id = 1;");
   assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-10');

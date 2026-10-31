@@ -584,7 +584,7 @@ export async function renderAttMyTillIssues() {
         waiting.length ? [h('h2.till-group', '⏳ Not checked yet'),
           h('p.till-group-why', 'These are the figures as they stand now. The office has not checked these shifts, so the amounts may change or go away. You will be told when they are checked.'),
           waiting.map(issueCard)] : null,
-        recovered.length ? [h('h2.till-group', 'Recovered through payroll'),
+        recovered.length ? [h('h2.till-group', 'Through payroll'),
           h('p.till-group-why', 'These were taken from your pay, on a line of their own: Till shortage. Nothing to do.'),
           recovered.map(recoveredCard)] : null,
       ] : emptyState('Nothing to sort out', 'Every one of your shifts agrees. A shift only shows here when it is short, over, missing a PO or missing a rental.'),
@@ -597,6 +597,13 @@ export async function renderAttMyTillIssues() {
     const month = r.month
       ? new Date(`${r.month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
       : null;
+    if (r.how === 'pay') {
+      const paid = r.taken ? `Paid with your ${month} pay.` : month ? `Paid with your ${month} pay.` : 'Paid with your next pay.';
+      return card(`${SLOT[issue.slot]} · ${dayText(issue.day)}`, { cls: 'till-issue till-recovered', note: 'paid through payroll' },
+        h('div.till-amount', h('strong', issue.amount ? signed(issue.amount) : ''), h('span.till-kind', issue.label)),
+        h('div.till-checked', `✓ Paid through payroll${r.by ? `, decided by ${r.by}` : ''}. ${paid}`),
+        h('p.till-hint', 'It meets any till shortage on the same payslip first; the rest is added to your pay, untaxed.'));
+    }
     const when = r.taken ? `Taken from your ${month} pay.`
       : r.held ? 'Waiting: it comes off once the shift is checked again.'
         : month ? `Comes off your ${month} pay.` : 'Comes off your next pay.';

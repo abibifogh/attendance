@@ -189,9 +189,9 @@ export function firstMonthFor(takenOn) {
 }
 
 /**
- * The month a till shortage comes off: the month it was decided in, unless
- * that month's payroll for the person's company is closed already; then the
- * next one.
+ * The month a till shortage comes off (or a till surplus is paid with): the
+ * month it was decided in, unless that month's payroll for the person's
+ * company is closed already; then the next payroll still open.
  *
  * NOT THE LAST-WEEK RULE. An advance handed over in the last week of a month
  * waits a month because the payroll is usually being prepared by then. A till
@@ -209,10 +209,18 @@ export async function tillMonthFor(db, takenOn, staffId) {
   if (!month) return null;
   const staff = await db.prepare('SELECT company_id FROM att_staff WHERE id = ?1').bind(staffId).first().catch(() => null);
   const company = Number(staff?.company_id) || 1;
-  const run = await db.prepare(
-    "SELECT 1 AS shut FROM pay_run WHERE substr(month, 1, 7) = ?1 AND COALESCE(company_id, 1) = ?2 AND status = 'final'",
-  ).bind(month, company).first().catch(() => null);
-  return run ? addMonths(month, 1) : month;
+  // The first payroll from then on that is still open: a closed one is past
+  // changing, and so may the one after it be.
+  let open = month;
+  for (let i = 0; i < 24; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const run = await db.prepare(
+      "SELECT 1 AS shut FROM pay_run WHERE substr(month, 1, 7) = ?1 AND COALESCE(company_id, 1) = ?2 AND status = 'final'",
+    ).bind(open, company).first().catch(() => null);
+    if (!run) break;
+    open = addMonths(open, 1);
+  }
+  return open;
 }
 
 /**
