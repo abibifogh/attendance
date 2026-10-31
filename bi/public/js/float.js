@@ -113,7 +113,8 @@ function line(i) {
 function changeBox(s) {
   const c = s.change;
   const said = c.admin === 'accept' ? `The office accepted ${ghs(c.now)}.` : c.admin === 'keep' ? `The office kept the receipt’s ${ghs(c.was)}.`
-    : c.holder === 'accept' ? `You accepted ${ghs(c.now)}.` : c.holder === 'dispute' ? 'You said it is not right: the office will decide.' : '';
+    : !c.asksHolder ? 'The office will decide which amount counts.'
+      : c.holder === 'accept' ? `You accepted ${ghs(c.now)}.` : c.holder === 'dispute' ? 'You said it is not right: the office will decide.' : '';
   return `<div class="memo ask"><b>The PO was changed in Odoo to ${esc(ghs(c.now))}</b> (the receipt said ${esc(ghs(c.was))}).
     ${said ? `<span>${esc(said)}</span>` : `<span>Is the new amount right?</span>
     <span class="askbtns"><button type="button" class="btn pri" data-amount="accept" data-id="${s.id}">Yes, ${esc(ghs(c.now))}</button><button type="button" class="btn" data-amount="dispute" data-id="${s.id}">No, it is not right</button></span>`}</div>`;
@@ -155,7 +156,7 @@ function paint() {
   const given = d.given || 1;
   const recent = new Date(Date.now() - 14 * 86400000).toISOString();
   const refused = d.sent.filter((s) => s.status === 'refused' && (!s.decidedAt || s.decidedAt.replace(' ', 'T') >= recent.slice(0, 19)));
-  const changed = d.sent.filter((s) => s.change && !s.change.holder && !s.change.admin);
+  const changed = d.sent.filter((s) => s.change && s.change.asksHolder && !s.change.holder && !s.change.admin);
   page.innerHTML = `
     <div class="top"><div class="avatar">${esc((d.name || '?').trim().charAt(0).toUpperCase())}</div><div><small>Hello,</small><b>${esc(d.name)}</b></div><span class="ref">${esc(d.ref)}</span></div>
     <div class="hero"><small>Still with you</small><div class="big num">${esc(ghs(d.held))}</div>

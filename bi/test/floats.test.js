@@ -257,4 +257,14 @@ test('a PO changed to another total in Odoo: they and an admin are asked, and th
   pos[0].amount_total = 300;
   view = await floats.linkView(env, { t: out.token });
   assert.equal(view.sent[0].change, null);
+
+  // Changed more than 30 days after it was sent: only an admin is asked, and their answer would not count.
+  await env.DB.prepare("UPDATE float_receipt SET at = '2026-01-05 09:00:00'").run();
+  pos[0].amount_total = 330;
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].change.now, view.sent[0].change.asksHolder], [33000, false]);
+  await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept' }), /office decides/);
+  assert.equal((await floats.list(env)).people[0].toLookAt, 1, 'the admin is asked');
+  await floats.decideAmount(env, { id: r.id, answer: 'accept' }, OWNER);
+  assert.equal((await floats.linkView(env, { t: out.token })).sent[0].amount, 33000);
 });
