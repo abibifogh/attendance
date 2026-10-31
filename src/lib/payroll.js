@@ -41,6 +41,7 @@ function oneLine({
   schemes = [],
   penalties = [],
   loans = [],
+  tillCredits = [],
   annualBasic = null,
   bonusPaidThisYear = 0,
   bonusIsNet = true,
@@ -146,7 +147,11 @@ function oneLine({
   const tax = round2(paye.tax + grossed.final);
 
   const loanDue = round2(loans.reduce((n, l) => n + round2(l.amount), 0));
-  const net = round2(gross - contributions.employee - tax - loanDue);
+  // Till surpluses paid with salary: their own money handed back, so after
+  // tax and untaxed. They meet any till shortage coming off the same payslip
+  // first, because what is short and what is over are the same till.
+  const tillCredit = round2(tillCredits.reduce((n, c) => n + round2(c.amount), 0));
+  const net = round2(gross - contributions.employee - tax - loanDue + tillCredit);
   const cost = round2(gross + contributions.employer);
 
   // ---- how it reads on a payslip ---------------------------------------
@@ -273,6 +278,8 @@ function oneLine({
     },
     loans: loans.map((l) => ({ ...l, amount: round2(l.amount) })),
     loanTotal: loanDue,
+    tillCredits: tillCredits.map((c) => ({ ...c, amount: round2(c.amount) })),
+    tillCredit,
     net,
     employerCost: cost,
     rates: { label: standing.label, ssnitEmployee: rates.ssnitEmployee, ssnitEmployer: rates.ssnitEmployer },
@@ -362,7 +369,7 @@ export function computeLine(given) {
   const wanted = terms.takeHome;
   if (wanted == null || wanted === '') return finish(oneLine({ ...terms, topUp: 0 }));
 
-  const clean = { ...terms, penalties: [], loans: [] };
+  const clean = { ...terms, penalties: [], loans: [], tillCredits: [] };
   const reach = (pence) => oneLine({ ...clean, topUp: pence / 100 }).net;
 
   // WHAT THE TARGET IS DEPENDS ON WHAT THE TAKE-HOME MEANS.
@@ -436,6 +443,7 @@ export function totalsOf(lines) {
     ssnitEmployer: add(null, (l) => l.ssnit.employer),
     paye: add(null, (l) => l.paye.total),
     loans: add('loanTotal'),
+    tillCredit: add(null, (l) => l.tillCredit ?? 0),
     net: add('net'),
     cost: add('employerCost'),
   };

@@ -48,8 +48,9 @@ export async function renderTillShortages(params = {}) {
     h('div', h('h1', 'Advances'),
       h('div.sub', 'Till shortages taken from pay. Each comes off only while its shift is checked in Insight.')));
 
+  const surplusCard = surplusesCard(data.surpluses ?? [], cash);
   if (!data.items.length) {
-    mount(host, head, decideCard, toDecide.issues.length ? null : emptyState('No till shortages',
+    mount(host, head, decideCard, surplusCard, toDecide.issues.length || surplusCard ? null : emptyState('No till shortages',
       'Once a shift with a shortage is checked in Insight, the shortage waits here for you to recover it from pay or not.'));
     return host;
   }
@@ -123,8 +124,31 @@ export async function renderTillShortages(params = {}) {
       h('p.muted.ts-note',
         'To change one, hold it over a month or take it off, open the person under the Advances view: each shortage is one of their advances. '
         + 'Why it was theirs, and their answer, are on their till list in Insight.')),
+    surplusCard,
   );
   return host;
+}
+
+/** Surpluses paid with salary: netted against a shortage on the same payslip, the rest added to pay. */
+function surplusesCard(list, cash) {
+  if (!list.length) return null;
+  const coming = list.filter((c) => c.status === 'coming');
+  return h('section.card',
+    h('div.card-head', h('h2', 'Surpluses paid with salary'),
+      coming.length ? h('span.card-note', `${coming.length} to pay · ${cash(coming.reduce((n, c) => n + c.amount, 0))}`) : null),
+    h('p.muted', { style: { margin: 0, fontSize: '.88rem' } },
+      'Money over on somebody’s account. On the payslip it meets any till shortage coming off that month first; what is left is added to their pay, untaxed.'),
+    table([
+      { key: 'staff', label: 'Name', format: (v) => h('div', h('div', v.name), v.department ? h('small.muted', v.department) : null) },
+      { key: 'day', label: 'Shift', format: (v, r) => (v ? h('div', h('div', fmtDay(v)), r.slot ? h('small.muted', SLOT[r.slot] ?? r.slot) : null) : h('span.muted', '—')) },
+      { key: 'what', label: 'What', format: (v) => h('small', v) },
+      { key: 'amount', label: 'Amount', align: 'right', format: (v) => cash(v) },
+      { key: 'decidedBy', label: 'Decided by', format: (v) => v || '—' },
+      {
+        key: 'status', label: 'Pay',
+        format: (v, r) => h('div.ts-pay', h(`span.pill${v === 'paid' ? '.ok' : '.warn'}`, v === 'paid' ? 'Paid' : 'To pay'), h('small.muted', niceMonth(r.month))),
+      },
+    ], list, { empty: 'None.' }));
 }
 
 /**
@@ -142,28 +166,35 @@ function decisions(toDecide, cash, reload) {
   const issues = toDecide.issues ?? [];
   if (!issues.length) return null;
   const decide = async (issue, outcome, button) => {
-    if (outcome === 'writeoff' && !window.confirm(`Not recover ${cash(issue.amount)} from ${issue.name}? It leaves their list and nothing comes off their pay.`)) return;
+    if (outcome === 'writeoff' && !window.confirm(issue.surplus
+      ? `Not pay ${cash(issue.amount)} to ${issue.name}? It leaves their list and nothing is added to their pay.`
+      : `Not recover ${cash(issue.amount)} from ${issue.name}? It leaves their list and nothing comes off their pay.`)) return;
     button.disabled = true;
     try {
       await api.tillDecide({ key: issue.key, userId: issue.userId, outcome });
-      toast(outcome === 'recover' ? `${cash(issue.amount)} comes off ${issue.name}'s next pay.` : `Not recovered. It has left ${issue.name}'s list.`, 'good');
+      toast(outcome === 'recover' ? `${cash(issue.amount)} comes off ${issue.name}'s next pay.`
+        : outcome === 'pay' ? `${cash(issue.amount)} goes on ${issue.name}'s next pay, after any till shortage.`
+          : `Done. It has left ${issue.name}'s list.`, 'good');
       await reload();
     } catch (err) {
       toast(err.message, 'bad');
       button.disabled = false;
     }
   };
-  const total = issues.reduce((n, i) => n + (i.amount || 0), 0);
+  const total = issues.reduce((n, i) => n + (i.surplus ? -(i.amount || 0) : (i.amount || 0)), 0);
   const may = Boolean(toDecide.canDecide);
   return h(`section.card${may ? '.wait' : ''}.ts-decide`,
-    h('div.card-head', h('h2', may ? 'Waiting on you' : 'Waiting for an administrator'), h('span.card-note', `${issues.length} · ${cash(total)}`)),
+    h('div.card-head', h('h2', may ? 'Waiting on you' : 'Waiting for an administrator'),
+      h('span.card-note', `${issues.length} · ${total < 0 ? `${cash(-total)} over` : cash(total)}`)),
     h('p.muted', { style: { margin: 0, fontSize: '.88rem' } }, may
-      ? 'Shortages on shifts checked in Insight. Recover from pay, or not: not recovering takes it off their list.'
-      : 'Shortages on shifts checked in Insight. An administrator decides whether each comes off pay.'),
+      ? 'Shortages and surpluses on shifts checked in Insight. Recover a shortage from pay, or pay a surplus with salary: a surplus meets any till shortage on the same payslip first. Not doing either takes it off their list.'
+      : 'Shortages and surpluses on shifts checked in Insight. An administrator decides whether each goes through pay.'),
     h('div.ts-decide-list', issues.map((issue) => {
-      const recover = h('button.btn-sm.btn-primary', { type: 'button' }, 'Recover from pay');
-      const leave = h('button.btn-sm', { type: 'button' }, 'Don’t recover');
-      recover.addEventListener('click', () => decide(issue, 'recover', recover));
+      const recover = issue.surplus
+        ? h('button.btn-sm.btn-primary', { type: 'button' }, 'Pay with salary')
+        : h('button.btn-sm.btn-primary', { type: 'button' }, 'Recover from pay');
+      const leave = h('button.btn-sm', { type: 'button' }, issue.surplus ? 'Don’t pay' : 'Don’t recover');
+      recover.addEventListener('click', () => decide(issue, issue.surplus ? 'pay' : 'recover', recover));
       leave.addEventListener('click', () => decide(issue, 'writeoff', leave));
       return h('div.ts-decide-row',
         h('div', h('strong', issue.name), issue.department ? h('small.muted', ` · ${issue.department}`) : null,
@@ -173,7 +204,7 @@ function decisions(toDecide, cash, reload) {
           issue.answer
             ? h('div.ts-said', h('strong', issue.answer.how === 'repay' ? 'Will pay it back: ' : 'Said: '), issue.answer.text)
             : h('div.muted', { style: { fontSize: '.82rem' } }, 'No answer from them yet.')),
-        h('strong.ts-amount', cash(issue.amount)),
+        h('strong.ts-amount', issue.surplus ? h('span', { title: 'Over: owed to them' }, `+${cash(issue.amount)}`) : cash(issue.amount)),
         may ? h('div.btn-row', leave, recover) : h('span'));
     })));
 }

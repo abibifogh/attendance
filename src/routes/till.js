@@ -799,6 +799,22 @@ export async function myIssues(ctx) {
       issue.recovered.held = !off.length && !advance.till_checked_at;
     }
   }
+  // Surpluses paid with salary: which month's pay, and whether it has gone.
+  const credits = (answer.issues ?? []).map((i) => Number(i.recovered?.creditId)).filter((n) => Number.isInteger(n) && n > 0);
+  if (credits.length) {
+    const rows = (await ctx.db.prepare(`SELECT c.id, c.month, COALESCE(s.company_id, 1) AS company FROM till_credit c
+      LEFT JOIN att_staff s ON s.id = c.staff_id WHERE c.id IN (${credits.map(() => '?').join(',')})`).bind(...credits).all()
+      .catch(() => ({ results: [] }))).results ?? [];
+    const closed = new Set(((await ctx.db.prepare("SELECT substr(month, 1, 7) AS month, COALESCE(company_id, 1) AS company FROM pay_run WHERE status = 'final'").all()
+      .catch(() => ({ results: [] }))).results ?? []).map((r) => `${r.month}|${r.company}`));
+    const byId = new Map(rows.map((r) => [Number(r.id), r]));
+    for (const issue of answer.issues) {
+      const c = byId.get(Number(issue.recovered?.creditId));
+      if (!c) continue;
+      issue.recovered.month = c.month;
+      issue.recovered.taken = closed.has(`${c.month}|${c.company}`);
+    }
+  }
   return json(answer);
 }
 
@@ -1004,6 +1020,50 @@ export async function linkRecover(ctx) {
     })),
   }, ctx);
   return json({ ok: true, advanceId: row?.id ?? null });
+}
+
+/**
+ * Insight: a till surplus on somebody's account, to be paid with their pay.
+ * It nets against any till shortage on the same payslip; what is left is paid
+ * untaxed. The month is the open payroll's, as for a shortage.
+ */
+export async function linkCredit(ctx) {
+  const body = await fromInsight(ctx);
+  const userId = Number(body.userId);
+  const amount = Number(body.amount);
+  if (!Number.isInteger(userId) || !Number.isInteger(amount) || amount <= 0) throw badRequest('Whose pay, and how much?');
+  if (body.checked !== true) throw badRequest('That shift has not been checked yet. A surplus is paid only once its amount is final.');
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(body.day ?? '')) ? String(body.day) : null;
+  const slot = SLOTS.includes(String(body.slot ?? '')) ? String(body.slot) : null;
+  if (!day || !slot) throw badRequest('Which shift was it?');
+  const key = str(body.key, 'Which difference', { max: 200 });
+  if (key) {
+    const again = await ctx.db.prepare('SELECT id FROM till_credit WHERE till_key = ?1').bind(key).first();
+    if (again) return json({ ok: true, creditId: again.id, again: true });
+  }
+  const user = await ctx.db.prepare('SELECT id, name, staff_id FROM users WHERE id = ?1').bind(userId).first();
+  if (!user) throw notFound('That HIVE login no longer exists.');
+  if (!user.staff_id) throw badRequest(`${user.name}'s login is not linked to a staff record in HIVE, so there is no pay to add it to.`);
+  const tz = await timezoneOf(ctx.db);
+  const month = await tillMonthFor(ctx.db, todayIn(tz), user.staff_id);
+  const reason = str(body.reason, 'Reason', { max: 300 }) || 'Till surplus';
+  const by = str(body.by, 'By', { max: 120 }) || 'Insight';
+  const currency = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'currency'").first().catch(() => null))?.value || 'GHS';
+  const row = await ctx.db.prepare(
+    `INSERT INTO till_credit (staff_id, amount, currency, month, reason, till_key, till_day, till_slot, decided_by)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id`,
+  ).bind(user.staff_id, amount / 100, currency, month, reason, key, day, slot, `${by} (Insight)`).first();
+
+  await createNotice(ctx.db, {
+    kind: 'till.credited', level: 'info', title: `${cedis(amount)} till surplus to be paid with ${user.name}'s pay`,
+    body: `${reason}. With ${sayMonth(month)} pay, after any till shortage that month. Decided by ${by}.`,
+    link: '#/att-payroll', audience: 'hr_pay', text: false,
+  }, ctx);
+  await createNotice(ctx.db, {
+    kind: 'till.credited', level: 'info', title: `${cedis(amount)} will be paid with your ${sayMonth(month)} pay`,
+    body: `${reason}. It meets any till shortage that month first; the rest is added to your pay.`, userId, text: false,
+  }, ctx);
+  return json({ ok: true, creditId: row?.id ?? null, month });
 }
 
 /** Reopen a signed report so its person can send it again. */

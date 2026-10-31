@@ -119,14 +119,21 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
       const lent = loans.filter((l) => l.what !== 'till');
       const sum = (list) => list.reduce((n, l) => n + (l.amount || 0), 0);
       const lentTotal = till.length ? sum(lent) : (line.loanTotal ?? sum(lent));
+      // A till surplus paid with salary meets the till shortage first: one
+      // till, so one line, with what was short and over said under it.
+      const short = sum(till);
+      const over = Number(line.tillCredit) || 0;
+      const both = short > 0 && over > 0 ? `${cash(short)} short, less ${cash(over)} over` : null;
       return [
         lent.length ? row(lent.length > 1 ? 'Salary advances' : 'Salary advance', cash(lentTotal)) : null,
-        till.length ? row(till.length > 1 ? 'Till shortages' : 'Till shortage', cash(sum(till))) : null,
+        short > over ? row(till.length > 1 ? 'Till shortages' : 'Till shortage', cash(short - over), both) : null,
+        over > short ? row('Till surplus paid', `−${cash(over - short)}`, both || 'Money over on your account, handed back untaxed') : null,
+        over > 0 && over === short ? row('Till', cash(0), both) : null,
       ];
     })(),
   ].filter(Boolean);
 
-  const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0);
+  const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0) - (Number(line.tillCredit) || 0);
 
   return h('div.slip-page', { style: { width: `${PAGE_W}px`, height: `${PAGE_H}px` } },
     h('div.slip-fit',

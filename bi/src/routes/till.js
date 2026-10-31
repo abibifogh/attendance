@@ -275,10 +275,19 @@ export async function linkChecks(env, body) {
   const shifts = (Array.isArray(body?.shifts) ? body.shifts : []).slice(0, 500)
     .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s?.day ?? '')) && ['morning', 'afternoon', 'night'].includes(String(s?.slot ?? '')));
   const checks = await shiftChecks(env);
+  // A difference an admin put on staff accounts is decided, amount and all,
+  // whether or not its shift was ever checked: it counts as checked for as
+  // long as the move stands (as it does on the person's list).
+  const keys = (Array.isArray(body?.keys) ? body.keys : []).slice(0, 500).map(String).filter((k) => /^moved:\d+:\d+$/.test(k));
+  const standing = new Map((await moves(env)).map((m) => [Number(m.id), m]));
   return {
     checked: shifts.map((s) => {
       const c = checks.get(`${s.day}|${s.slot}`);
       return c ? { day: s.day, slot: s.slot, by: c.by || null, at: c.at || null } : null;
+    }).filter(Boolean),
+    keys: keys.map((key) => {
+      const m = standing.get(Number(key.split(':')[1]));
+      return m ? { key, by: m.by_name || null, at: m.at || null } : null;
     }).filter(Boolean),
   };
 }
@@ -440,7 +449,7 @@ export async function linkIssues(env, body) {
   const lock = await lockOf(env);
   // Settled leaves the list, except what was recovered from pay: that stays,
   // marked as recovered through payroll, so the person can see where it went.
-  const recovered = (i) => i.status === 'settled' && i.decision?.outcome === 'recover';
+  const recovered = (i) => i.status === 'settled' && ['recover', 'pay'].includes(i.decision?.outcome);
   return {
     lockedThrough: lock.through,
     issues: mine.filter((i) => i.status !== 'settled' || recovered(i)).map((i) => ({
@@ -454,7 +463,10 @@ export async function linkIssues(env, body) {
       // A locked day: nothing more can be sent on it.
       locked: isLocked(lock, i.day),
       recovered: recovered(i)
-        ? { amount: i.decision.amount ?? null, at: i.decision.at, by: i.decision.by, advanceId: i.decision.advanceId ?? null }
+        ? {
+          how: i.decision.outcome, amount: i.decision.amount ?? null, at: i.decision.at, by: i.decision.by,
+          ...(i.decision.outcome === 'pay' ? { creditId: i.decision.advanceId ?? null } : { advanceId: i.decision.advanceId ?? null }),
+        }
         : null,
     })),
     cleared: mine.filter((i) => i.status === 'settled' && !recovered(i) && String(i.decision?.at || '').startsWith(month)).length,
@@ -471,10 +483,11 @@ export async function linkToDecide(env) {
   const { issues } = await issuesBetween(env, addDays(to, -LOOKBACK), to);
   return {
     issues: issues
-      .filter((i) => i.checked && i.status !== 'settled' && i.userId != null && Number(i.amount) < 0)
+      // Shortages to recover or not, and surpluses to pay or not.
+      .filter((i) => i.checked && i.status !== 'settled' && i.userId != null && Number(i.amount) !== 0 && i.amount != null)
       .map((i) => ({
         key: i.key, userId: Number(i.userId), kind: i.kind, label: i.kind === 'moved' ? 'Put on their account' : KINDS[i.kind],
-        day: i.day, slot: i.slot, amount: -Number(i.amount), text: i.text,
+        day: i.day, slot: i.slot, amount: Math.abs(Number(i.amount)), surplus: Number(i.amount) > 0, text: i.text,
         answer: i.answer ? { how: i.answer.how, text: i.answer.text, at: i.answer.at } : null,
         checkedBy: i.checkedBy || null, checkedAt: i.checkedAt || null,
         moved: i.moved ? { reason: i.moved.reason, by: i.moved.by } : null,
@@ -489,11 +502,11 @@ export async function linkToDecide(env) {
  * HIVE; HIVE has already checked they may.
  */
 export async function linkDecide(env, body, { fetchImpl } = {}) {
-  const outcome = body?.outcome === 'recover' ? 'recover' : body?.outcome === 'writeoff' ? 'writeoff' : null;
-  if (!outcome) throw badRequest('Recover it, or not?');
+  const outcome = ['recover', 'writeoff', 'pay'].includes(body?.outcome) ? body.outcome : null;
+  if (!outcome) throw badRequest('Recover it, pay it, or not?');
   const by = str(body?.by, 'Who', { max: 120 }) || 'HIVE';
   const note = str(body?.note, 'Note', { max: 600 })
-    || (outcome === 'writeoff' ? 'Not recovered from pay, decided in HIVE.' : 'Recovered from pay, decided in HIVE.');
+    || ({ writeoff: 'Not through pay, decided in HIVE.', recover: 'Recovered from pay, decided in HIVE.', pay: 'Paid with salary, decided in HIVE.' })[outcome];
   return resolve(env, { key: body?.key, userId: body?.userId, outcome, note }, { name: by, isOwner: true }, { fetchImpl });
 }
 
@@ -760,13 +773,13 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
   const userId = Number(body?.userId);
   if (!Number.isInteger(userId)) throw badRequest('Whose issue?');
   const outcome = String(body?.outcome || '');
-  if (!['accept', 'recover', 'cash', 'writeoff', 'back'].includes(outcome)) throw badRequest('Accept, recover, cash, write off or send back?');
+  if (!['accept', 'recover', 'pay', 'cash', 'writeoff', 'back'].includes(outcome)) throw badRequest('Accept, recover, pay, cash, write off or send back?');
   const note = str(body?.note, 'Note', { max: 600 });
-  await requireArea(env, account, ['recover', 'writeoff', 'cash'].includes(outcome) ? 'money_out' : 'answers', 2);
+  await requireArea(env, account, ['recover', 'pay', 'writeoff', 'cash'].includes(outcome) ? 'money_out' : 'answers', 2);
   // Whether a shortage comes off somebody's pay, or is let go, is an admin's
   // decision, here and in HIVE. Recording cash handed back is not.
-  if (['recover', 'writeoff'].includes(outcome) && roleOf(account) !== 'admin') {
-    throw forbidden('Only an admin decides whether a shortage comes off pay or is written off.');
+  if (['recover', 'pay', 'writeoff'].includes(outcome) && roleOf(account) !== 'admin') {
+    throw forbidden('Only an admin decides whether a difference goes through pay or is written off.');
   }
 
   const to = today();
@@ -792,8 +805,24 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
     });
     advanceId = done.advanceId ?? null;
   }
+  // A surplus (money over, owed to them) paid with their pay. In HIVE it
+  // meets any till shortage on the same payslip first; the rest is added.
+  const over = issue.amount > 0 ? issue.amount : 0;
+  if (outcome === 'pay') {
+    if (!over) throw badRequest('There is nothing to pay: this was not a surplus.');
+    if (!issue.checked) throw badRequest('That shift has not been checked yet. Check it first: a surplus is paid only once its amount is final.');
+    const done = await hiveCall({
+      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/credit',
+      body: {
+        userId, amount: over, key, reason: `Till: ${KINDS[issue.kind]}, ${issue.day} ${issue.slot}`, by: who(account),
+        day: issue.day, slot: issue.slot, checked: true, checkedBy: issue.checkedBy || null, checkedAt: issue.checkedAt || null,
+      },
+    });
+    // Kept in the same column: the outcome says which kind of record it is.
+    advanceId = done.creditId ?? null;
+  }
   await run(env.DB, `INSERT INTO till_resolution (key, hive_user_id, outcome, amount, note, advance_id, by_name, at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`, key, userId, outcome, outcome === 'recover' ? amount : null, note, advanceId, who(account), now());
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`, key, userId, outcome, outcome === 'recover' ? amount : outcome === 'pay' ? over : null, note, advanceId, who(account), now());
   // Settled on their list: nothing a supervisor proposed for it still waits.
   if (FINAL.has(outcome)) await setAside(env, [key], `settled on the person’s list instead (${SETTLED_WORDS[outcome]})`, account).catch(() => 0);
 
@@ -802,6 +831,7 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
     back: ['Sent back to you', `${note || 'The supervisor needs more from you.'} Open To sort out in HIVE.`],
     accept: ['Settled', 'Your answer was accepted.'],
     recover: ['Settled from your pay', 'It will come off your next payslip.'],
+    pay: ['Paid through your pay', 'It goes on your next payslip, after any till shortage that month.'],
     cash: ['Settled', 'Your repayment was recorded.'],
     writeoff: ['Settled', 'It has been written off.'],
   }[outcome];
@@ -859,7 +889,7 @@ async function settledAs(env, key, userId = null) {
   return row && FINAL.has(row.outcome) ? row : null;
 }
 
-const SETTLED_WORDS = { accept: 'accepted', recover: 'recovered from pay', cash: 'paid in cash', writeoff: 'written off' };
+const SETTLED_WORDS = { accept: 'accepted', recover: 'recovered from pay', pay: 'paid with salary', cash: 'paid in cash', writeoff: 'written off' };
 
 /** Who may carry a difference: the front desk first, then everybody else in HIVE. */
 export async function staffList(env, account) {

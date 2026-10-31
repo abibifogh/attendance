@@ -12,6 +12,7 @@ import { holdRefresh, replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyFrom, payslipPage, showPayslips } from './payslip.js';
+import { payslipMailCard } from './payslip-mail.js';
 import { belowZero } from '../pay-checks.js';
 import { returnsSheet } from './pay-returns.js';
 import { readXlsx } from '../xlsx-read.js';
@@ -113,10 +114,11 @@ export async function renderAttPayroll(params) {
       ? h('div.grid.grid-4.pay-tiles',
         tile('Gross', cash(data.totals.gross),
           `${data.totals.people} on the payroll`),
-        tile('Deductions', cash(data.totals.ssnitEmployee + data.totals.paye + data.totals.loans),
+        tile('Deductions', cash(data.totals.ssnitEmployee + data.totals.paye + data.totals.loans - (data.totals.tillCredit || 0)),
           `SSNIT ${cash(data.totals.ssnitEmployee)} · PAYE ${cash(data.totals.paye)}`
           + (data.totals.loans - tillOf(data) > 0.004 ? ` · advances ${cash(data.totals.loans - tillOf(data))}` : '')
-          + (tillOf(data) ? ` · till shortages ${cash(tillOf(data))}` : '')),
+          + (tillOf(data) ? ` · till shortages ${cash(tillOf(data))}` : '')
+          + (data.totals.tillCredit ? ` · less till surpluses ${cash(data.totals.tillCredit)}` : '')),
         tile('Net to pay', cash(data.totals.net), netSplit(data)),
         tile('Cost to the property', cash(data.totals.cost),
           `including ${cash(data.totals.ssnitEmployer)} employer SSNIT`))
@@ -198,7 +200,12 @@ export async function renderAttPayroll(params) {
           h('td.num', h('strong', cash(line.gross))),
           h('td.num', line.ssnit.employee ? cash(line.ssnit.employee) : h('span.muted', '—')),
           h('td.num', cash(line.paye.total)),
-          h('td.num', line.loanTotal ? cash(line.loanTotal) : h('span.muted', '—')),
+          h('td.num', (() => {
+            // Advances and till shortages off, less any till surplus paid back.
+            const off = Math.round(((line.loanTotal || 0) - (line.tillCredit || 0)) * 100) / 100;
+            if (!off) return line.tillCredit ? h('span.muted', { title: 'Till surplus met the till shortage' }, cash(0)) : h('span.muted', '—');
+            return off < 0 ? h('span', { title: 'Till surplus paid with salary' }, `+${cash(-off)}`) : cash(off);
+          })()),
           h('td.num', line.net < 0
             ? h('div', h('strong', { style: { color: 'var(--bad)' } }, cash(line.net)), h('small.pill.bad', { style: { display: 'block', marginTop: '.15rem' } }, 'below zero'))
             : h('strong', cash(line.net))),
@@ -212,7 +219,7 @@ export async function renderAttPayroll(params) {
             h('td.num', h('strong', cash(data.totals.gross))),
             h('td.num', cash(data.totals.ssnitEmployee)),
             h('td.num', cash(data.totals.paye)),
-            h('td.num', cash(data.totals.loans)),
+            h('td.num', cash((data.totals.loans || 0) - (data.totals.tillCredit || 0))),
             h('td.num', h('strong', cash(data.totals.net))),
             h('td.num', movementCell(wholeMonthAgainst(data), cash)),
             h('td.num.off-phone',
@@ -250,6 +257,7 @@ export async function renderAttPayroll(params) {
           h('dt', 'SSNIT, staff'), h('dd', cash(data.totals.ssnitEmployee)),
           data.totals.loans - tillOf(data) > 0.004 ? [h('dt', 'Advances coming off'), h('dd', cash(data.totals.loans - tillOf(data)))] : null,
           tillOf(data) ? [h('dt', 'Till shortages coming off'), h('dd', cash(tillOf(data)))] : null,
+          data.totals.tillCredit ? [h('dt', 'Till surpluses paid back'), h('dd', cash(data.totals.tillCredit))] : null,
           h('dt', h('strong', 'Net pay to the bank')), h('dd', h('strong', cash(data.totals.net))),
           h('dt', 'Cost to the property'), h('dd', cash(data.totals.cost))),
         h('button.btn.btn-primary', { onclick: () => close(month, data, reload, cash) }, 'Close the month')));
@@ -276,7 +284,7 @@ export async function renderAttPayroll(params) {
       severanceCard(data, month, closed, reload, cash),
     ],
     3: [closeCard],
-    4: [papersCard],
+    4: [data.slips ? payslipMailCard(month, closed) : null, papersCard].filter(Boolean),
   }[step];
 
   const stepNav = h('div.pay-nav',

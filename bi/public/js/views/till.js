@@ -40,7 +40,7 @@ const AREA_TEXT = {
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
-export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
+export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', pay: 'Paid with salary', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
 
 const dayText = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`);
@@ -555,6 +555,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         h('div.tl-actions',
           actAnswers ? h('button.btn.primary', { type: 'button', onclick: decide('accept') }, 'Accept') : null,
           admin && actMoney && short && i.checked ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'Off the next payslip in HIVE, as a till shortage' }, 'Recover from pay') : null,
+          admin && actMoney && !short && i.amount > 0 && i.checked ? h('button.btn', { type: 'button', onclick: decide('pay'), title: 'With their next payslip in HIVE, after any till shortage that month' }, 'Pay with salary') : null,
           actMoney && short ? h('button.btn', { type: 'button', onclick: decide('cash') }, 'Paid in cash') : null,
           admin && actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
           actAnswers && i.status === 'answered' ? h('button.btn', { type: 'button', onclick: decide('back') }, 'Send back') : null),

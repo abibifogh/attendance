@@ -295,6 +295,27 @@ export async function tillShortages(ctx) {
     };
   });
 
+  const credits = ((await ctx.db.prepare("SELECT * FROM till_credit WHERE status = 'due' ORDER BY month DESC, id DESC LIMIT 300").all()
+    .catch(() => ({ results: [] }))).results ?? []);
+  const closed = new Set(((await ctx.db.prepare("SELECT substr(month, 1, 7) AS month, COALESCE(company_id, 1) AS company FROM pay_run WHERE status = 'final'").all()
+    .catch(() => ({ results: [] }))).results ?? []).map((r) => `${r.month}|${r.company}`));
+  const companyOf = new Map(((await ctx.db.prepare('SELECT id, company_id FROM att_staff').all().catch(() => ({ results: [] }))).results ?? [])
+    .map((r) => [r.id, Number(r.company_id) || 1]));
+  const surpluses = credits.map((c) => {
+    const person = staffById.get(c.staff_id);
+    return {
+      id: c.id,
+      staff: person ? { id: person.id, name: person.name, department: person.department ?? null } : { id: c.staff_id, name: 'Somebody', department: null },
+      amount: round2(c.amount),
+      month: c.month,
+      what: String(c.reason ?? '').replace(/^Till:\s*/, '').replace(/,?\s*\d{4}-\d{2}-\d{2} (morning|afternoon|night)\s*$/, '') || 'Till surplus',
+      day: c.till_day ?? null,
+      slot: c.till_slot ?? null,
+      decidedBy: String(c.decided_by ?? '').replace(/\s*\(Insight\)\s*$/, '') || null,
+      status: closed.has(`${c.month}|${companyOf.get(c.staff_id) ?? 1}`) ? 'paid' : 'coming',
+    };
+  });
+
   const sum = (list, pick) => round2(list.reduce((n, i) => n + pick(i), 0));
   return json({
     currency,
@@ -304,7 +325,11 @@ export async function tillShortages(ctx) {
       coming: sum(items.filter((i) => i.status === 'coming'), (i) => i.left),
       held: sum(items.filter((i) => i.status === 'held'), (i) => i.left),
       deducted: sum(items, (i) => i.deducted.reduce((n, d) => n + d.amount, 0)),
+      surplus: sum(surpluses.filter((c) => c.status === 'coming'), (c) => c.amount),
     },
+    // Surpluses paid with salary: each nets against a till shortage on the
+    // same payslip, and what is left is added to the pay.
+    surpluses,
   });
 }
 
@@ -366,12 +391,14 @@ export async function tillDecide(ctx) {
   const body = await readJson(ctx.request);
   const key = str(body.key, 'Which shortage', { required: true, max: 200 });
   const userId = int(body.userId, 'Whose', { required: true, min: 1 });
-  const outcome = body.outcome === 'recover' ? 'recover' : body.outcome === 'writeoff' ? 'writeoff' : null;
-  if (!outcome) throw badRequest('Recover it, or not?');
+  // A shortage is recovered from pay or not; a surplus is paid with pay or not.
+  const outcome = ['recover', 'writeoff', 'pay'].includes(body.outcome) ? body.outcome : null;
+  if (!outcome) throw badRequest('Recover it, pay it, or not?');
   const out = await askInsight(ctx, '/api/link/till/decide', {
     key, userId, outcome, by: ctx.session.user.name, note: str(body.note, 'Note', { max: 600 }),
   });
-  await audit(ctx, outcome === 'recover' ? 'till.recovered_in_hive' : 'till.not_recovered_in_hive', key, { userId, advanceId: out?.advanceId ?? null });
+  const kind = { recover: 'till.recovered_in_hive', pay: 'till.paid_in_hive', writeoff: 'till.not_recovered_in_hive' }[outcome];
+  await audit(ctx, kind, key, { userId, advanceId: out?.advanceId ?? null });
   return json({ ok: true, outcome, advanceId: out?.advanceId ?? null });
 }
 
