@@ -958,7 +958,19 @@ export function flowOf(x) {
   // A slip of the finger: ASSD has more (or less) than the terminal took.
   if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
   if (x.kind === 'movement-twice') return a;
+  // Cash keyed as taken while the drawer did not move: ASSD shows money that never came in.
+  if (x.kind === 'keyed-no-cash') return -x.amount;
   return null;
+}
+
+/**
+ * Each exception's flow when reconciled with the others chosen. Cash keyed
+ * while the drawer did not move is already inside its own shift's drawer
+ * difference: with that chosen too it adds nothing, or it would count twice.
+ */
+export function netFlows(chosen) {
+  return chosen.map((x) => (x.kind === 'keyed-no-cash'
+    && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot) ? 0 : flowOf(x)));
 }
 
 /**
@@ -980,7 +992,7 @@ export async function moveLeftToStaff(env, body, account, { fetchImpl } = {}) {
   const chosen = keys.map((k) => (data.exceptions || []).find((e) => e.key === k));
   if (chosen.some((x) => !x)) throw badRequest('One of those is not there any more: the shift may agree now. Reload and try again.');
   if (chosen.some((x) => x.answer || x.link || x.moved)) throw badRequest('One of those has an answer already. Take it back first.');
-  const flows = chosen.map(flowOf);
+  const flows = netFlows(chosen);
   if (flows.some((f) => f == null)) throw badRequest('What one of those comes to cannot be netted against the others.');
   const net = flows.reduce((t, f) => t + f, 0);
   if (!net) throw badRequest('They net to nothing: reconcile them together, nothing is left to put on anybody.');

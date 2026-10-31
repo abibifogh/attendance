@@ -2487,7 +2487,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         + (x.still ? ` ${money(Math.abs(x.still))} of the cash ASSD ${x.still > 0 ? 'counts as taken' : 'counts as paid out'} was keyed while the drawer’s counts did not move: see “Keyed as cash, but the drawer did not move”.` : '');
       case 'keyed-no-cash': return `The counts held ${stillRuns(x.spans || []).join('; ')}. Yet ASSD has cash keyed in between: `
         + `${(x.spans || []).flatMap((p) => p.lines).map((l) => `ASSD ${l.seq} ${signed(l.amount)}`).join(', ')}, ${signed(x.amount)} in all.`
-        + ` By the drawer’s own counts that money ${x.amount > 0 ? 'never came in' : 'never went out'}: stock put right through the till, or counts copied from the last one. Say which.`;
+        + ` By the drawer’s own counts that money ${x.amount > 0 ? 'never came in' : 'never went out'}, so ASSD shows ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} cash than the drawer had (${flowText(flowOf(x))}): stock put right through the till, or counts copied from the last one. Say which.`
+        + ' It is already part of this shift’s drawer difference: reconcile it with differences on other shifts, not with that one.';
       case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
       case 'movement-matched': return `${x.reason === 'duplicate'
         ? `ASSD ${x.seq} (${money(x.amount)}) was matched as a duplicate of ASSD ${x.pair} and is left out of the drawer.`
@@ -2613,8 +2614,17 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     // A slip of the finger: ASSD has more (or less) than the terminal took.
     if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
     if (x.kind === 'movement-twice') return a;
+    // Cash keyed as taken while the drawer did not move: ASSD shows money that never came in.
+    if (x.kind === 'keyed-no-cash') return -x.amount;
     return null;
   }
+  /**
+   * The net of exceptions reconciled together. Cash keyed while the drawer did
+   * not move is already inside its own shift's drawer difference: with that
+   * ticked too it adds nothing, or the same money would count twice.
+   */
+  const netFlows = (chosen) => chosen.map((x) => (x.kind === 'keyed-no-cash'
+    && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot) ? 0 : flowOf(x)));
   const flowText = (f) => (f == null ? '' : f > 0 ? `+${money(f)}` : `−${money(-f)}`);
 
   /** An exception by its key, in words, for the Approvals view. */
@@ -4206,7 +4216,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   function pickedBar() {
     const chosen = [...picked].map((k) => data.exceptions.find((x) => x.key === k) || pickedAs.get(k)).filter(Boolean);
     if (!chosen.length) return null;
-    const flows = chosen.map(flowOf);
+    const flows = netFlows(chosen);
     const known = flows.every((f) => f != null);
     const net = flows.reduce((t, f) => t + (f || 0), 0);
     const note = h('input', { type: 'text', maxlength: '600', placeholder: net === 0 && known ? 'What happened (optional)' : 'What happened (needed: they do not net to nothing)' });
