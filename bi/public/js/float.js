@@ -114,10 +114,12 @@ function changeBox(s) {
   const c = s.change;
   const said = c.admin === 'accept' ? `The office accepted ${ghs(c.now)}.` : c.admin === 'keep' ? `The office kept the receipt’s ${ghs(c.was)}.`
     : !c.asksHolder ? 'The office will decide which amount counts.'
-      : c.holder === 'accept' ? `You accepted ${ghs(c.now)}.` : c.holder === 'dispute' ? 'You said it is not right: the office will decide.' : '';
+      : c.holder === 'accept' ? `You accepted ${ghs(c.now)}${c.holderNote ? `: “${c.holderNote}”` : ''}.` : c.holder === 'dispute' ? 'You said it is not right: the office will decide.' : '';
   return `<div class="memo ask"><b>The PO was changed in Odoo to ${esc(ghs(c.now))}</b> (the receipt said ${esc(ghs(c.was))}).
     ${said ? `<span>${esc(said)}</span>` : `<span>Is the new amount right?</span>
-    <span class="askbtns"><button type="button" class="btn pri" data-amount="accept" data-id="${s.id}">Yes, ${esc(ghs(c.now))}</button><button type="button" class="btn" data-amount="dispute" data-id="${s.id}">No, it is not right</button></span>`}</div>`;
+    <span class="askbtns"><button type="button" class="btn pri" data-yes="${s.id}">Yes, ${esc(ghs(c.now))}</button><button type="button" class="btn" data-amount="dispute" data-id="${s.id}">No, it is not right</button></span>
+    <span class="askwhy" hidden><label>Why did the amount change?<input maxlength="300" placeholder="e.g. The repairer added a part after the receipt"></label>
+      <button type="button" class="btn pri" data-amount="accept" data-id="${s.id}">Accept ${esc(ghs(c.now))}</button></span>`}</div>`;
 }
 
 function listHtml() {
@@ -175,11 +177,22 @@ function paint() {
 }
 
 page.addEventListener('click', async (e) => {
+  // Yes: first, why it changed.
+  const yes = e.target.closest('[data-yes]');
+  if (yes) {
+    const box = yes.closest('.memo');
+    box.querySelector('.askbtns').hidden = true;
+    box.querySelector('.askwhy').hidden = false;
+    box.querySelector('.askwhy input').focus();
+    return;
+  }
   const a = e.target.closest('[data-amount]');
   if (a) {
+    const why = a.closest('.memo')?.querySelector('.askwhy input');
+    if (a.dataset.amount === 'accept' && !(why?.value || '').trim()) { why?.focus(); return; }
     a.disabled = true;
     try {
-      await call('amount', { id: Number(a.dataset.id), answer: a.dataset.amount });
+      await call('amount', { id: Number(a.dataset.id), answer: a.dataset.amount, note: a.dataset.amount === 'accept' ? why.value : '' });
       said = [{ text: a.dataset.amount === 'accept' ? 'Accepted: the new amount counts.' : 'Sent: the office will decide.' }];
       await load();
     } catch (err) { said = [{ err: true, text: err.message }]; paint(); }

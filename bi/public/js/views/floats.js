@@ -130,7 +130,7 @@ export async function renderFloats(root) {
     function changeBox(r) {
       const c = r.change;
       const theirs = !c.asksHolder ? `changed more than 30 days after ${p.name} sent it: yours to decide`
-        : { accept: `${p.name} accepted it`, dispute: `${p.name} says it is not right` }[c.holder] || `${p.name} has not answered yet`;
+        : { accept: `${p.name} accepted it${c.holderNote ? `: “${c.holderNote}”` : ''}`, dispute: `${p.name} says it is not right` }[c.holder] || `${p.name} has not answered yet`;
       const answer = (value) => async () => {
         try { await api('/floats/amount', { method: 'POST', body: { id: r.id, answer: value } }); paint(banner('good', value === 'accept' ? `${r.ref}: ${money(c.now)} counts.` : value === 'keep' ? `${r.ref}: the receipt’s ${money(c.was)} counts.` : `${r.ref}: your answer is taken off.`)); } catch (err) { paint(banner('problem', err.message)); }
       };
