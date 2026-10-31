@@ -91,7 +91,7 @@ if they were given those (see `docs/till.md`).
 A shift opens on one screen:
 
 - **The header**: who, the slot and day, the ASSD sessions inside it, its
-  status, **‹ ›** to the shift before and after, and **⋯** for the
+  status, **🔒 Checked · locked** once it is checked, **‹ ›** to the shift before and after, and **⋯** for the
   reconciliation report, moving the shift, and its notes and history. Whose
   shift it was, when ASSD and HIVE name different people, sits under it.
 - **Four numbers**: what was taken (cash and card), the drawer, card and
@@ -148,7 +148,10 @@ the shift on the wrong day first often puts the other back by itself.
 
 ### What is still to sort out
 
-Each shift's page lists what is still to sort out on it (see **One shift**:
+A day's page lists every shift's differences as one checklist, **To sort out
+on 6 Oct**, whose shift each is, open ones first, each answered where it
+opens, the rules' own explanations folded into one line. Each shift's page
+lists what is still to sort out on it (see **One shift**:
 To sort out, ticked as it is answered, the check as the last step). The Day,
 Week and Month views show where each shift stands by its colour, and a 🔒 on
 those checked, so locked: on the week's tiles and the day's cards (🔒

@@ -956,9 +956,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         l && (l.assd || l.system != null) ? h('p.sh-sub', l.system == null
           ? `Laundry in ASSD: ${money(l.assd)}. The laundry system has nothing for this day in Insight yet.`
           : `Laundry: ${money(l.assd)} in ASSD, ${money(l.system)} in the laundry system${l.assd === l.system ? ', they agree.' : '.'}`) : null),
-      exs.length ? h('section.card',
-        h('div.sh-cardhead', h('h2', `What does not agree on ${shortDay(d.day)}`)),
-        h('div.sh-exgrid', exs.map(exceptionCard))) : null,
+      dayChecklist(d, exs),
       // Ticked to reconcile together: the bar to do it, as on a shift and in the Inbox.
       pickedBar());
   }
@@ -989,6 +987,19 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         toAnswer ? h('span.sh-chip.short', `${toAnswer} to answer`) : null),
       h('span.sh-ck', { dataset: { k: `${s.day}|${s.slot}` } }),
       h('span.sh-open', 'Open the shift →'));
+  }
+
+  /** The day's differences, every shift's, as one checklist: open first, each answered where it opens. */
+  function dayChecklist(d, exs) {
+    const xs = exs.filter((x) => seesEx(x));
+    const items = xs.filter((x) => x.severity !== 'info').map(itemOf);
+    const list = diffChecklist(xs, { who: true });
+    if (!list) return null;
+    const done = items.filter((i) => i.done).length;
+    return h('section.card.sh-todopane',
+      h('div.sh-cardhead', h('h2', `To sort out on ${shortDay(d.day)}`), items.length ? h(`span.sh-chip.${done === items.length ? 'ok' : 'none'}`, `${done} of ${items.length} answered`) : null),
+      items.length ? h('div.sh-outbar', h('i', { style: `width:${(done / items.length) * 100}%` })) : null,
+      list);
   }
 
   // ------------------------------------------------------------- month --
@@ -1206,6 +1217,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
               s.sessions ? h('span.sh-chip.none', { title: 'ASSD hand-overs inside this shift, in order. Their counts, sales and movements add up as one shift.' },
                 `${s.sessions.length} ASSD sessions: ${s.sessions.map((x) => nameOf(x.user)).join(' → ')}`) : null))),
         h(`span.sh-status.${tone(s)}`, { good: '✓ All agrees', warn: '! Have a look', bad: '! Needs an answer', open: 'Journal ends here' }[tone(s)]),
+        lockChip(s),
         shiftMenu(s),
         h('button.sh-arrow', { type: 'button', disabled: i >= shifts.length - 1 && !later, 'aria-label': i < shifts.length - 1 ? 'Next shift' : 'First shift of the next day', title: i < shifts.length - 1 ? 'Next shift' : 'First shift of the next day', onclick: () => (i < shifts.length - 1 ? go('shift', shifts[i + 1].id) : across(1)) }, '›')));
     // Without the amounts, the drawer's story is nothing but blanks: the
@@ -2688,6 +2700,19 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   const opened = new Set();
   let shTab = null;
 
+  /** Beside the status: 🔒 when the shift is checked, so locked. */
+  function lockChip(s) {
+    const el = h('span');
+    till.checks().then((map) => {
+      const st = map.get(`${s.day}|${s.slot}`);
+      if (st === 'ok' || st === 'changed') {
+        mount(el, h(`span.sh-chip.${st === 'ok' ? 'ok' : 'over'}.sh-lockchip`, { title: 'Checked, so locked: nothing on it can be changed until the check is undone (below, in To sort out).' },
+          st === 'ok' ? '🔒 Checked · locked' : '🔒 Locked · changed since checked'));
+      }
+    }).catch(() => {});
+    return el;
+  }
+
   /** ⋯ beside the status: the reconciliation report, moving the shift, its history. */
   function shiftMenu(s) {
     const pop = h('div.sh-pop', { hidden: true },
@@ -2737,19 +2762,38 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    */
   function todoPane(s, checked) {
     const all = exceptionsOf(s).filter((x) => seesEx(x));
-    const shown = all.filter((x) => x.severity !== 'info');
-    const rules = all.filter((x) => x.severity === 'info');
     const items = todoOf(s);
     const byKey = new Map(items.map((i) => [i.key, i]));
     const done = items.filter((i) => i.done).length;
     // The first open one starts open, so its answers are there at once.
     const first = items.find((i) => !i.done && !i.waiting);
     if (first && ![...opened].some((k) => byKey.has(k))) opened.add(first.key);
+    const total = items.length + 1;
+    const list = diffChecklist(all);
+    return h('section.card.sh-todopane',
+      h('div.sh-cardhead', h('h2', 'To sort out'), h(`span.sh-chip.${done === items.length ? 'ok' : 'none'}`, `${done} of ${items.length} answered`)),
+      h('div.sh-outbar', h('i', { style: `width:${total > 1 ? (done / items.length) * 100 : 100}%` })),
+      seenTwice(s).map(seenTwiceCard),
+      list || h('p.small.muted', 'Nothing on this shift needs an answer.'),
+      h('div.sh-checkstep', checked),
+      pickedBar());
+  }
+  /**
+   * Differences as a checklist: open first, then waiting for an admin, then
+   * answered; each line opens on its card, answered there. Those the rules
+   * explained fold into one line. `who` adds whose shift each is (a day's).
+   */
+  function diffChecklist(xs, { who = false } = {}) {
+    const shown = xs.filter((x) => x.severity !== 'info');
+    const rules = xs.filter((x) => x.severity === 'info');
+    if (!shown.length && !rules.length) return null;
     const card = (x) => { const c = exceptionCard(x); c.id = `ex-${x.key}`; c.append(taskBox(x), notesBox(x)); fillNoteCounts(c); return c; };
+    const whose = (x) => (who && (x.user || x.slot) ? `${x.user ? nameOf(x.user) : ''}${x.slot ? `${x.user ? ', ' : ''}${SLOT[x.slot].label.toLowerCase()}` : ''} · ` : '');
     const row = (x, i) => {
       const box = h('div');
       const isOpen = opened.has(x.key);
       const wrap = h(`div.sh-item${i.done ? '.done' : i.waiting ? '.wait' : '.open'}${isOpen ? '.expanded' : ''}`);
+      const more = h('small.sh-more2', isOpen ? 'Close ▴' : i.done ? 'Open ▾' : 'Answer ▾');
       const head = h('button.sh-itemrow', { type: 'button', 'aria-expanded': String(isOpen), onclick: () => {
         if (opened.has(x.key)) opened.delete(x.key); else opened.add(x.key);
         wrap.classList.toggle('expanded');
@@ -2758,31 +2802,21 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         mount(more, opened.has(x.key) ? 'Close ▴' : i.done ? 'Open ▾' : 'Answer ▾');
       } },
       h('span.box', i.done ? '✓' : i.waiting ? '…' : ''),
-      h('span.t', h('b', (KIND[x.kind] || [x.kind])[0]), h('small', i.sub || describeShort(x))),
-      h('span.amt.num', x.amount == null ? '' : flowText(flowOf(x)) || money(Math.abs(x.amount))));
-      const more = h('small.sh-more2', isOpen ? 'Close ▴' : i.done ? 'Open ▾' : 'Answer ▾');
-      head.querySelector('.amt').append(more);
+      h('span.t', h('b', (KIND[x.kind] || [x.kind])[0]), h('small', whose(x), i.sub || describeShort(x))),
+      h('span.amt.num', x.amount == null ? '' : flowText(flowOf(x)) || money(Math.abs(x.amount)), more));
       if (isOpen) mount(box, card(x));
       wrap.append(head, box);
       return wrap;
     };
     const order = (i) => (i.done ? 2 : i.waiting ? 1 : 0);
-    const list = shown.map((x) => [x, byKey.get(x.key)]).filter(([, i]) => i).sort((a, b) => order(a[1]) - order(b[1]));
-    const total = items.length + 1;
+    const list = shown.map((x) => [x, itemOf(x)]).sort((a, b) => order(a[1]) - order(b[1]));
     const rulesBox = h('div.sh-rulesbox');
     let rulesOpen = false;
     const drawRules = () => mount(rulesBox,
       h('button.sh-link.sh-rulesbtn', { type: 'button', onclick: () => { rulesOpen = !rulesOpen; drawRules(); } }, `✓ ${rules.length} matched or explained by the rules ${rulesOpen ? '▾' : '▸'}`),
       rulesOpen ? h('div.sh-ruleslist', rules.map((x) => row(x, { done: true, sub: describeShort(x) }))) : null);
     if (rules.length) drawRules();
-    return h('section.card.sh-todopane',
-      h('div.sh-cardhead', h('h2', 'To sort out'), h(`span.sh-chip.${done === items.length ? 'ok' : 'none'}`, `${done} of ${items.length} answered`)),
-      h('div.sh-outbar', h('i', { style: `width:${total > 1 ? (done / items.length) * 100 : 100}%` })),
-      seenTwice(s).map(seenTwiceCard),
-      list.length ? h('div.sh-items', list.map(([x, i]) => row(x, i))) : h('p.small.muted', 'Nothing on this shift needs an answer.'),
-      rules.length ? rulesBox : null,
-      h('div.sh-checkstep', checked),
-      pickedBar());
+    return h('div', list.length ? h('div.sh-items', list.map(([x, i]) => row(x, i))) : null, rules.length ? rulesBox : null);
   }
   /** One line for a difference the rules explained. */
   const describeShort = (x) => { const d = String(describe(x) || ''); return d.length > 110 ? `${d.slice(0, 108)}…` : d; };
@@ -2934,18 +2968,18 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    * itself, ticked once an admin marks the shift checked.
    */
   function todoOf(s) {
-    return exceptionsOf(s).filter((x) => x.severity !== 'info' && seesEx(x)).map((x) => {
-      const done = Boolean(x.answer) || Boolean(x.link && !x.proposed);
-      return {
-        key: x.key, done, waiting: !done && Boolean(x.proposed), bad: x.severity === 'critical',
-        text: `${(KIND[x.kind] || [x.kind])[0]}${x.amount != null && !data.redacted ? ` · ${money(Math.abs(x.amount))}` : ''}`,
-        sub: x.answer ? `${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by})` : ''}`
-          : x.link ? 'Reconciled with others' : x.proposed ? 'Answered, waiting for an admin' : null,
-      };
-    });
+    return exceptionsOf(s).filter((x) => x.severity !== 'info' && seesEx(x)).map(itemOf);
   }
-
-
+  /** A difference as a line of a checklist: done, waiting for an admin, or open, and how it was settled. */
+  function itemOf(x) {
+    const done = Boolean(x.answer) || Boolean(x.link && !x.proposed);
+    return {
+      key: x.key, done, waiting: !done && Boolean(x.proposed), bad: x.severity === 'critical',
+      text: `${(KIND[x.kind] || [x.kind])[0]}${x.amount != null && !data.redacted ? ` · ${money(Math.abs(x.amount))}` : ''}`,
+      sub: x.answer ? `${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''}${x.answer.by ? ` (${x.answer.by})` : ''}`
+        : x.link ? 'Reconciled with others' : x.proposed ? 'Answered, waiting for an admin' : null,
+    };
+  }
 
   /**
    * A payment ASSD does not show is on the shift its time falls in. One taken
