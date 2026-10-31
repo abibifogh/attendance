@@ -283,6 +283,22 @@ export async function linkChecks(env, body) {
   };
 }
 
+/**
+ * Which shifts between `from` and `to` are checked, by whom and when, read
+ * straight from the checks. A checked shift is locked, so this is all the
+ * padlocks and the check card need to show at once; whether anything changed
+ * since comes later, with the full overview.
+ */
+export async function checkList(env, query, account) {
+  const access = await accessOf(env, account);
+  if (!access.reports && !access.answers && !access.check && roleOf(account) !== 'admin') throw forbidden('Closing reports have not been shared with you.');
+  const to = /^\d{4}-\d\d-\d\d$/.test(query?.to || '') ? query.to : today();
+  const from = /^\d{4}-\d\d-\d\d$/.test(query?.from || '') ? query.from : addDays(to, -6);
+  if (daysBetween(from, to).length > 62) throw badRequest('Two months at a time at most.');
+  const rows = await all(env.DB, 'SELECT day, slot, by_name, at FROM shift_check WHERE day BETWEEN ?1 AND ?2', from, to).catch(() => []);
+  return { checks: rows.map((r) => ({ day: r.day, slot: r.slot, by: r.by_name, at: r.at })) };
+}
+
 /** Where one shift stands: checked by whom, and whether anything changed since. */
 function checkOf(checks, issues, day, slot) {
   const c = checks.get(`${day}|${slot}`);

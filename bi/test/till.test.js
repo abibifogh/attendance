@@ -858,6 +858,10 @@ test('a shift is “not checked yet” on its person’s list until somebody che
     // The overview says so, with what was noted.
     let row = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'afternoon');
     assert.deepEqual([row.check.by, row.check.changed, row.notes[0].text], ['Test Owner', false, 'A guest was given change twice']);
+    // The quick list of checks says it too, without working the shifts out.
+    assert.deepEqual((await till.checkList(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).checks.map((c) => [c.day, c.slot, c.by]),
+      [['2026-08-01', 'afternoon', 'Test Owner']]);
+    assert.deepEqual((await till.checkList(env, { from: '2026-08-02', to: '2026-08-02' }, OWNER)).checks, [], 'only the days asked for');
 
     // Changed since it was checked (here: the amount it was checked at differs): not checked again.
     await env.DB.prepare(`UPDATE shift_check SET snapshot = ?1`).bind(JSON.stringify({ [kofi.key]: '-1500|' })).run();
