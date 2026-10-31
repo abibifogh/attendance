@@ -27,7 +27,7 @@ export async function renderAssistant(root) {
   const brief = h('p.as-brief-text', plainBrief(data));
   const briefBy = h('small.as-by');
   const list = h('div.as-list');
-  const tabs = h('div.seg', { role: 'tablist', 'aria-label': 'What needs you' });
+  const tabs = h('div.seg.as-lights', { role: 'tablist', 'aria-label': 'What needs you' });
   const name = (state.me?.account?.name || '').split(' ')[0];
   const hour = new Date().getHours();
 
@@ -59,7 +59,7 @@ export async function renderAssistant(root) {
 
   function paintTabs() {
     mount(tabs, TABS.map(([k, label]) => h('button', {
-      type: 'button', role: 'tab', 'aria-selected': String(tab === k),
+      type: 'button', role: 'tab', 'aria-selected': String(tab === k), dataset: { k },
       onclick: () => { tab = k; try { sessionStorage.setItem('insight-assistant-tab', k); } catch { /* private mode */ } paintTabs(); paintList(); },
     }, label, h('span.n', String(data.counts[k] || 0)))));
   }

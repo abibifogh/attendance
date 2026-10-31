@@ -30,6 +30,7 @@ import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
+import { watchFigures } from './fit.js';
 import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS, ANDROID_STEPS } from './install.js';
 
 registerWorker();
@@ -53,7 +54,7 @@ export const state = {
  */
 const SECTIONS = [
   { id: 'assistant', label: 'Assistant', icon: 'spark' },
-  { id: 'desk', label: 'Front desk', icon: 'desk' },
+  { id: 'desk', label: 'Front desk', short: 'Desk', icon: 'desk' },
   { id: 'buying', label: 'Buying', icon: 'cart' },
   { id: 'reports', label: 'Reports', icon: 'chart' },
   { id: 'settings', label: 'Settings', icon: 'gear' },
@@ -128,6 +129,9 @@ const ICONS = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
+  safe: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8V7M12 17v-1.8M15.2 12H17M7 12h1.8"/>',
+  wallet: '<path d="M20 12V8H6a2 2 0 010-4h12v4"/><path d="M4 6v12a2 2 0 002 2h14v-4"/><path d="M18 12a2 2 0 000 4h4v-4z"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/>',
 };
 export const icon = (name) => h('span.ic', { html: `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>` });
 
@@ -221,7 +225,8 @@ async function renderApp() {
   const view = h('div.pg-body');
   const head = h('div.pg-head');
   const picker = rangePicker();
-  const side = h('nav.side-nav', { 'aria-label': 'Main menu' });
+  const side = h('nav.rail-nav', { 'aria-label': 'Main menu' });
+  const title = h('h1.top-title');
   const bottom = h('nav.bottom-nav', { 'aria-label': 'Main menu' });
   const counts = h('span.cnt');
   let currentRoute = null;
@@ -238,18 +243,12 @@ async function renderApp() {
 
   function drawNav() {
     const here = currentRoute;
-    mount(side, sections.map((s) => {
-      const on = here?.section === s.id;
-      const pages = pagesOf(s);
-      return h('div.side-sec',
-        h('button.side-b', { type: 'button', 'aria-current': on ? 'page' : null, onclick: () => go(s.routes[0].path) },
-          icon(s.icon), h('span', s.label), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null),
-        on && pages.length > 1 ? h('div.side-sub', pages.map((p) => h('button', {
-          type: 'button', 'aria-current': here.page === p.page ? 'page' : null, onclick: () => go(p.routes[0].path),
-        }, p.page))) : null);
-    }));
+    // The rail: one pill per section, black for where you are, with what waits on it.
+    mount(side, sections.map((s) => h('button.rail-b', {
+      type: 'button', 'aria-current': here?.section === s.id ? 'page' : null, title: s.label, onclick: () => go(s.routes[0].path),
+    }, icon(s.icon), h('span', s.short || s.label), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null)));
     mount(bottom, sections.map((s) => h('button', { type: 'button', 'aria-current': here?.section === s.id ? 'page' : null, onclick: () => go(s.routes[0].path) },
-      icon(s.icon), h('span', s.label.split(' ')[0]), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null)));
+      icon(s.icon), h('span', s.short || s.label.split(' ')[0]), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null)));
   }
 
   /** Over the page: on a phone the section's pages; the page's own title, unless it says it itself; and its tabs. */
@@ -257,14 +256,16 @@ async function renderApp() {
     const s = sections.find((x) => x.id === route.section);
     const pages = s ? pagesOf(s) : [];
     const tabs = pages.find((p) => p.page === route.page)?.routes || [route];
+    // The page's name, large, in the bar at the top; a page that greets or titles itself says it itself.
+    title.textContent = route.own ? '' : route.page;
+    title.hidden = Boolean(route.own);
     mount(head,
-      pages.length > 1 ? h('div.seg.pg-pages', { role: 'tablist', 'aria-label': s.label }, pages.map((p) => h('button', {
+      pages.length > 1 ? h('div.subnav', { role: 'tablist', 'aria-label': s.label }, pages.map((p) => h('button', {
         type: 'button', role: 'tab', 'aria-selected': String(p.page === route.page), onclick: () => go(p.routes[0].path),
-      }, p.page))) : null,
-      route.own && tabs.length < 2 ? null : h('div.pg-title', route.own ? null : h('h1', route.page),
-        tabs.length > 1 ? h('div.seg', { role: 'tablist', 'aria-label': route.page }, tabs.map((r) => h('button', {
-          type: 'button', role: 'tab', 'aria-selected': String(r.path === route.path), onclick: () => go(r.path),
-        }, r.label))) : null));
+      }, p.page, p.routes.some((r) => r.count) ? h('span.cnt.cnt-assistant', counts.textContent) : null))) : null,
+      tabs.length > 1 ? h('div.seg.pg-tabs', { role: 'tablist', 'aria-label': route.page }, tabs.map((r) => h('button', {
+        type: 'button', role: 'tab', 'aria-selected': String(r.path === route.path), onclick: () => go(r.path),
+      }, r.label, r.count ? h('span.cnt.cnt-assistant', counts.textContent) : null))) : null);
   }
 
   const isAdmin = (account.till?.role || (account.isOwner ? 'admin' : null)) === 'admin';
@@ -278,7 +279,7 @@ async function renderApp() {
     h('button', { type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); } }, 'Sign out'));
   const meBtn = (cls) => h(`button.${cls}`, { type: 'button', 'aria-label': 'Your account', onclick: (e) => { e.stopPropagation(); e.currentTarget.parentElement.append(me); toggle(me, e.currentTarget); } },
     h('span.av', (account.name || '?').trim().charAt(0).toUpperCase()),
-    cls === 'side-me' ? h('span.side-who', h('b', account.name || 'Account'), h('small', roleName(account))) : null);
+    cls === 'me-pill' ? h('span.me-who-s', h('b', account.name || 'Account'), h('small', roleName(account))) : null);
 
   function toggle(pop, btn) {
     const open = pop.hidden;
@@ -304,6 +305,22 @@ async function renderApp() {
     ].filter(Boolean),
     suppliers: shown.some((r) => r.path === 'suppliers') ? () => go('suppliers') : null,
   });
+  // The + button: what people do most, from anywhere.
+  const quick = [
+    isAdmin ? ['plus', 'New purchase order', () => openNewPo()] : null,
+    shown.some((r) => r.path === 'safe') ? ['safe', 'Count the safe', () => go('safe')] : null,
+    shown.some((r) => r.path === 'floats') ? ['wallet', 'Give money (floats)', () => go('floats')] : null,
+    shown.some((r) => r.path === 'files') ? ['upload', 'Load shift files', () => go('files')] : null,
+    ['search', 'Find anything', () => palette()],
+  ].filter(Boolean);
+  const fabMenu = h('div.fab-menu', { hidden: true }, quick.map(([i, label, act]) => h('button.btn', { type: 'button', onclick: () => { fabMenu.hidden = true; fab.setAttribute('aria-expanded', 'false'); act(); } }, icon(i), h('span', label))));
+  const fab = h('button.fab', { type: 'button', 'aria-label': 'Quick actions', 'aria-expanded': 'false', onclick: (e) => {
+    e.stopPropagation();
+    fabMenu.hidden = !fabMenu.hidden;
+    fab.setAttribute('aria-expanded', String(!fabMenu.hidden));
+  } }, icon('plus'));
+  document.addEventListener('click', (e) => { if (!fabMenu.hidden && !fabMenu.contains(e.target)) { fabMenu.hidden = true; fab.setAttribute('aria-expanded', 'false'); } });
+
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palette(); }
     if (e.key === 'Escape') closePops();
@@ -311,23 +328,26 @@ async function renderApp() {
 
   mount(root,
     h('div.shell',
-      h('aside.side',
-        h('div.side-brand', markGlyph(), h('span', h('b', boot.group.name), h('small', 'Insight'))),
+      h('aside.rail',
+        h('button.rail-logo', { type: 'button', title: `${boot.group.name} · Insight`, 'aria-label': `${boot.group.name} Insight, home`, onclick: () => go(shown[0].path) }, markGlyph()),
         side,
         h('span.grow'),
-        h('div.side-foot', meBtn('side-me'))),
+        h('button.rail-b', { type: 'button', title: 'Light or dark', onclick: toggleTheme }, icon('moon'), h('span', 'Theme'))),
       h('div.shell-main',
         account.viewedBy ? viewAsBar(account) : null,
         h('header.top',
-          h('button.search', { type: 'button', onclick: palette }, icon('search'), h('span', 'Search Insight…'), h('kbd', 'Ctrl K')),
+          title,
           h('span.spacer'),
+          h('button.search', { type: 'button', onclick: palette }, icon('search'), h('span', 'Search Insight'), h('kbd', 'Ctrl K')),
           picker,
-          isAdmin ? h('button.chip-b.po-new', { type: 'button', 'aria-label': 'Create a purchase order', onclick: () => openNewPo() }, icon('plus'), h('span', 'New PO')) : null,
           h('div.pop-at', appsBtn, apps),
-          h('div.pop-at.top-me', meBtn('icon-b'), me)),
+          h('div.pop-at', meBtn('me-pill'), me)),
         h('main', head, view))),
-    bottom);
+    bottom,
+    quick.length > 1 ? [fabMenu, fab] : null);
 
+  // Big figures shrink to fit their tiles, whatever the page and whenever they arrive.
+  watchFigures(root);
   state.reload = () => go(current());
   // A part of Shifts that moved to another (a shift opened from To sort out):
   // the address and the menu follow without drawing the page again.

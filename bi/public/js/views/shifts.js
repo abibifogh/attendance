@@ -775,7 +775,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
   function kpis() {
     const t = data.totals;
     const open = waiting().length;
-    const tile = (go_, colour, label, value, note, extra = null, valueColour = null) => h('button.sh-kpi', { type: 'button', onclick: () => go(go_) },
+    const tile = (go_, colour, label, value, note, extra = null, valueColour = null) => h('button.sh-kpi', { type: 'button', style: `--k:${colour}`, onclick: () => go(go_) },
       h('span.l', h('i', { style: `background:${colour}` }), label),
       h('span.v.num', { style: valueColour ? `color:${valueColour}` : '' }, value),
       extra,
