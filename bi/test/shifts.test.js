@@ -644,13 +644,17 @@ test('expenses with no PO are flagged from the first closing report on, and link
   await routes.linkPos(env, { day: '2026-08-01', slot: 'morning', add: '4123' }, OWNER);
   assert.deepEqual(await flagged(), [], 'a linked PO takes it off');
 
-  // Read from Odoo: the PO's total against the GH₵50 of expenses.
   const gaps = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.filter((x) => x.kind === 'expense-po-gap');
+  // Linked, but Odoo has not given it back: not counted, and said so.
+  const [unread] = await gaps();
+  assert.deepEqual([unread.amount, unread.poTotal, unread.pos, unread.unread], [5000, 0, [], ['P04123']]);
+
+  // Read from Odoo: the PO's total against the GH₵50 of expenses.
   const odoo = (total) => env.DB.prepare("UPDATE shift_expense SET odoo = ?1 WHERE day = '2026-08-01' AND slot = 'morning'")
     .bind(JSON.stringify({ orders: [{ name: 'P04123', total, state: 'purchase' }], unknown: [] })).run();
   await odoo(4000);
   const [gap] = await gaps();
-  assert.deepEqual([gap.amount, gap.expenses, gap.poTotal, gap.pos], [1000, 5000, 4000, ['P04123']]);
+  assert.deepEqual([gap.amount, gap.expenses, gap.poTotal, gap.pos, gap.unread], [1000, 5000, 4000, ['P04123'], []]);
   await odoo(5000);
   assert.deepEqual(await gaps(), [], 'the PO matches the expenses');
 });
