@@ -86,13 +86,34 @@ shift, a small note at the end of the line says which; open it for what to do.
 A supervisor sees only the tabs and kinds an admin gave them, and amounts only
 if they were given those (see `docs/till.md`).
 
+### Stepping through shifts
+
+On a shift, **‹** and **›** beside its name open the shift before and after.
+Past the first or last one on screen they carry on into the day before or
+after (a week or month at a time in those views), as far as the journal
+goes: from the last shift of 1 October, **›** opens the first of 2 October.
+
+### What is still to sort out
+
+Every shift has a checklist under its title, **To sort out on this shift**:
+each difference on it, ticked once it is answered, reconciled with others or
+explained, one answered by a supervisor marked as waiting for an admin, and
+last **Marked checked by an admin**. It counts what is done ("3 of 5 done");
+tap a line to go to its card. Over the days (Day, Week, Month), **Still to
+sort out** puts the shifts with a difference still open side by side, latest
+first, each as its checklist, ticking itself as answers come in; tap a shift
+to open it.
+
 ### Exceptions that are one story
 
 Two or more exceptions are often the same money seen twice: GH₵ 203 by MoMo
 that reached the bank on the 2nd and was keyed in ASSD on the 4th shows up
 once as money ASSD does not show and once as a payment that never arrived.
-Tick each of them (**Reconcile with others**) and press **Reconcile
-together**; the bar shows what the ticked ones net to, and a note is required
+Tick each of them (**Reconcile with others**), on a shift, on a day or in
+the Inbox, and press **Reconcile together** in the bar that comes up at the
+bottom; the bar shows what the ticked ones net to (an amount that pulls the
+other way, such as laundry the laundry system took that ASSD does not show,
+is shown with a −), and a note is required
 when they do not net to nothing. Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same

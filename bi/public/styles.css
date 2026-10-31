@@ -1817,7 +1817,7 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 .fl-head .sp { flex: 1; }
 .fl-acts { display: flex; flex-wrap: wrap; gap: .4rem; }
 .fl-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem; margin: 0 0 1rem; }
-.fl-tile { border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem; background: var(--surface); }
+.fl-tile { border: 1px solid var(--border); border-radius: 14px; padding: .75rem .95rem; background: var(--surface); box-shadow: var(--shadow, none); }
 .fl-tile small { display: block; color: var(--ink-2); font-size: .8rem; }
 .fl-tile b { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
 .fl-tile b.bad { color: var(--sh-bad-ink); }
@@ -1838,6 +1838,56 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 .fl-two { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .fl-dlg-acts { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
 @media (max-width: 760px) { .fl-tiles { grid-template-columns: 1fr 1fr; } .fl-two { grid-template-columns: 1fr; } }
+/* Floats: everybody as cards beside the person open. */
+.fl-intro { margin: -.2rem 0 1rem; }
+.fl-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 1rem; align-items: start; }
+.fl-people { display: grid; gap: .55rem; }
+.fl-pcard { display: grid; gap: .45rem; text-align: left; width: 100%; font: inherit; color: inherit; background: var(--surface); border: 2px solid transparent; border-radius: 14px; padding: .75rem .9rem; box-shadow: var(--shadow, 0 1px 2px rgba(0,0,0,.06)); cursor: pointer; }
+.fl-pcard:hover { border-color: var(--border); }
+.fl-pcard.on { border-color: var(--accent, #4f46e5); }
+.fl-pcard .fl-bar { max-width: none; margin: 0; }
+.fl-prow { display: flex; align-items: center; gap: .65rem; }
+.fl-prow .sp { flex: 1; }
+.fl-pname { min-width: 0; } .fl-pname small { display: block; color: var(--muted); font-size: .8rem; }
+.fl-pheld { text-align: right; white-space: nowrap; } .fl-pheld b { font-variant-numeric: tabular-nums; } .fl-pheld small { display: block; color: var(--muted); font-size: .72rem; }
+.fl-av { width: 34px; height: 34px; border-radius: 99px; display: inline-grid; place-items: center; color: #fff; font-weight: 800; font-size: .9rem; flex: none; }
+.fl-av.big { width: 46px; height: 46px; font-size: 1.15rem; }
+.fl-detail { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow, 0 1px 2px rgba(0,0,0,.06)); border: 1px solid var(--border); padding: 1rem; display: grid; gap: .8rem; min-width: 0; }
+.fl-detail:empty { display: none; }
+.fl-back { justify-self: start; display: none; }
+.fl-dhead { display: flex; align-items: center; gap: .75rem; }
+.fl-dhead h2 { margin: 0; font-size: 1.25rem; }
+.fl-dhead p { margin: .1rem 0 0; }
+.fl-d4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+.fl-d4 div { background: var(--surface-2); border-radius: 12px; padding: .5rem .65rem; min-width: 0; }
+.fl-d4 small { display: block; font-size: .74rem; color: var(--muted); }
+.fl-d4 b { font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fl-d4 .end { background: var(--ink); color: var(--surface); } .fl-d4 .end small { color: inherit; opacity: .75; }
+.fl-linkbox { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; background: var(--surface-2); border-radius: 12px; padding: .5rem .65rem; font-size: .9rem; }
+.fl-linkbox code { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .82rem; }
+.fl-linkbox .btn { padding: .3rem .65rem; }
+.fl-linkbox small { flex-basis: 100%; }
+.fl-list { display: grid; gap: .55rem; }
+.fl-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: .35rem .7rem; align-items: start; border: 1px solid var(--border); border-radius: 14px; padding: .7rem; }
+.fl-item b { display: block; overflow-wrap: anywhere; }
+.fl-item small { display: block; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.fl-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); font-size: 1.05rem; object-fit: cover; }
+.fl-ico.in { background: #e7f7f3; color: #15803d; } .fl-ico.out { background: #eef0ff; color: #4f46e5; } .fl-ico.no { background: #fdecec; }
+.fl-amt { font-weight: 800; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.fl-amt.in { color: #15803d; } .fl-amt.off { color: var(--muted); text-decoration: line-through; }
+.fl-memo { grid-column: 2 / 4; background: var(--surface-2); border-left: 3px solid var(--accent, #4f46e5); border-radius: 0 10px 10px 0; padding: .35rem .6rem; font-size: .88rem; }
+.fl-memo.why { background: #fdecec; border-color: #b91c1c; color: #b91c1c; }
+.fl-memo.blank { background: none; border-left-color: var(--border); }
+.fl-memo.fl-mnote { display: block; } .fl-memo.fl-mnote .sh-link { font-size: .8rem; }
+.fl-iacts { grid-column: 2 / 4; display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.fl-iacts .btn { padding: .25rem .6rem; font-size: .82rem; }
+@media (max-width: 899px) {
+  .fl-split { grid-template-columns: minmax(0, 1fr); }
+  .fl-split.picked .fl-people, .fl-split.picked ~ * { display: none; }
+  .fl-split:not(.picked) .fl-detail { display: none; }
+  .fl-back { display: inline-block; }
+  .fl-d4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* Brief: findings somebody put down, folded under the list. */
 details.bf-down > summary { cursor: pointer; list-style: revert; }
@@ -2396,3 +2446,26 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .np-ending { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .np-ending small { color: var(--muted); }
 .np-slug { width: 9rem; border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 5px 8px; font: inherit; }
+
+/* Shifts: what is still to sort out, as checklists that tick themselves. */
+.sh-todos { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+.sh-todo { display: grid; grid-template-columns: 1.35rem minmax(0, 1fr); gap: .55rem; align-items: start; padding: .4rem 0; border-top: 1px solid var(--border); }
+.sh-todo:first-child { border-top: 0; }
+.sh-todo .box { width: 1.35rem; height: 1.35rem; border-radius: 6px; border: 2px solid var(--muted); display: grid; place-items: center; font-size: .8rem; font-weight: 800; margin-top: .05rem; }
+.sh-todo.bad .box { border-color: var(--sh-bad); }
+.sh-todo.wait .box { border-color: var(--sh-warn); color: var(--sh-warn); }
+.sh-todo.done .box { background: var(--sh-good); border-color: var(--sh-good); color: #fff; }
+.sh-todo.done .t > span, .sh-todo.done .t > .sh-link { color: var(--muted); text-decoration: line-through; }
+.sh-todo .t { min-width: 0; }
+.sh-todo .t small { display: block; color: var(--ink-2); font-size: .8rem; }
+.sh-todo .t .sh-link { text-align: left; padding: 0; }
+.sh-todo .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sh-todocard .sh-cardhead { align-items: flex-start; }
+.sh-outgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: .75rem; margin-bottom: .6rem; }
+.sh-outshift { border: 1px solid var(--border); border-radius: 14px; padding: .65rem .75rem; display: grid; gap: .45rem; align-content: start; }
+.sh-outhead { display: flex; align-items: center; gap: .55rem; width: 100%; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.sh-outhead > span:nth-child(2) { flex: 1; min-width: 0; }
+.sh-outhead small { display: block; color: var(--muted); font-size: .78rem; }
+.sh-outbar { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.sh-outbar i { display: block; height: 100%; background: var(--sh-good); }
+.sh-flash { outline: 3px solid var(--accent, #4f46e5); outline-offset: 3px; transition: outline-color .3s; }
