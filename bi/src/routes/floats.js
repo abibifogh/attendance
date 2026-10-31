@@ -341,7 +341,7 @@ export async function linkView(env, query, { fetchImpl } = {}) {
     })),
     sent: receipts.slice(0, 40).map((r) => ({
       ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: r.amount ?? null, vendor: r.vendor_name || r.vendor_text || null,
-      description: r.description || r.hint || null, status: r.status, reason: r.reason || null,
+      description: r.description || r.hint || null, status: r.status, reason: r.reason || null, decidedAt: r.decided_at || null,
       unread: !r.po_name && r.amount == null,
     })),
   };
@@ -377,7 +377,7 @@ export async function linkStatement(env, query) {
 
 async function statementOf(env, p, query) {
   const to = DAY.test(String(query?.to || '')) ? query.to : todayIn('UTC');
-  const from = DAY.test(String(query?.from || '')) ? query.from : `${to.slice(0, 7)}-01`;
+  let from = DAY.test(String(query?.from || '')) ? query.from : `${to.slice(0, 7)}-01`;
   if (from > to) throw badRequest('The start is after the end.');
   const moves = await all(env.DB, 'SELECT * FROM float_move WHERE person_id = ?1 ORDER BY day, id', p.id);
   const receipts = (await receiptsOf(env, [p.id])).reverse();
@@ -386,16 +386,22 @@ async function statementOf(env, p, query) {
       day: m.day, what: m.kind === 'given' ? `Given${m.source ? ` from ${(SOURCES[m.source] || m.source).toLowerCase()}` : ''}${m.by_name ? ` by ${m.by_name}` : ''}`
         : 'Given back',
       note: m.note || '',
+      title: m.kind === 'given' ? 'Given' : 'Given back',
+      detail: m.kind === 'given' ? [m.source ? `from ${(SOURCES[m.source] || m.source).replace(/^The /, 'the ')}` : '', m.by_name ? `by ${m.by_name}` : ''].filter(Boolean).join(' ')
+        : m.source ? `into ${(SOURCES[m.source] || m.source).replace(/^The /, 'the ')}` : '',
       ref: '', po: '', status: '', change: m.kind === 'given' ? m.amount : -m.amount,
     })),
     ...receipts.map((r) => ({
       day: r.day || r.at.slice(0, 10),
       what: `Receipt: ${r.vendor_name || r.vendor_text || 'not read'}${r.description ? `, ${r.description}` : ''}`,
       note: r.hint || '',
+      title: r.vendor_name || r.vendor_text || 'Receipt, not read', detail: r.description || '', state: r.status,
       ref: r.ref, po: r.po_name || '', status: { checking: 'Being checked', accepted: 'Accepted', refused: `Refused${r.reason ? `: ${r.reason}` : ''}` }[r.status],
       change: -spentBy(r),
     })),
   ].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+  // "start": from the first day anything was given or sent.
+  if (query?.from === 'start') from = lines[0]?.day && lines[0].day < to ? lines[0].day : to;
   const opening = lines.filter((l) => l.day < from).reduce((t, l) => t + l.change, 0);
   const shown = lines.filter((l) => l.day >= from && l.day <= to);
   let held = opening;
@@ -405,6 +411,10 @@ async function statementOf(env, p, query) {
     name: p.name, code: p.code, from, to, opening, closing: held,
     given: sum((l) => l.change > 0), spent: sum((l) => l.ref && l.change < 0), back: sum((l) => !l.ref && l.change < 0), lines: shown,
   };
+  // Just the totals: what their page shows before they open the statement.
+  if (query?.format === 'json') {
+    return { from, to, opening: s.opening, given: s.given, spent: s.spent, back: s.back, closing: s.closing, lines: shown.length };
+  }
   const file = `Float statement ${p.code} ${from} to ${to}`;
   if (query?.format === 'csv') {
     const cedis = (minor) => (minor / 100).toFixed(2);
@@ -416,6 +426,7 @@ async function statementOf(env, p, query) {
       ['', 'Held at the end', '', '', '', '', cedis(s.given), cedis(s.spent + s.back), cedis(held)],
     ]);
   }
+  s.csv = `?${new URLSearchParams({ ...Object.fromEntries(Object.entries(query || {}).filter(([k]) => ['t', 's'].includes(k))), from, to, format: 'csv' })}`;
   return new Response(statementPage(s, file), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
@@ -423,32 +434,58 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const longDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 function statementPage(s, title) {
-  const row = (l) => `<tr><td>${esc(longDay(l.day))}</td><td>${esc(l.what)}${l.status ? `<div class="st">${esc(l.status)}</div>` : ''}</td><td class="note">${esc(l.note)}</td><td class="ref">${esc(l.ref)}</td><td>${esc(l.po)}</td>
-    <td class="n">${l.change > 0 ? esc(ghs(l.change)) : ''}</td><td class="n">${l.change < 0 ? esc(ghs(-l.change)) : ''}</td><td class="n"><b>${esc(ghs(l.held))}</b></td></tr>`;
+  const amount = (minor) => (Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const monthOf = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const shortDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const statusOf = (l) => (l.state === 'accepted' ? `✓ Accepted${l.po ? ` · PO ${l.po}` : ''}`
+    : l.state === 'refused' ? `✕ ${l.status} (does not count)`
+      : l.state ? `Being checked${l.po ? ` · PO ${l.po}` : ''}` : '');
+  let month = '';
+  const rows = s.lines.map((l) => {
+    const head = monthOf(l.day) !== month ? `<tr class="month"><td colspan="6">${esc((month = monthOf(l.day)))}</td></tr>` : '';
+    const out = l.change < 0 ? amount(l.change) : l.state === 'refused' ? '<span class="none">—</span>' : '';
+    return `${head}<tr><td>${esc(shortDay(l.day))}</td>
+      <td><b>${esc(l.title)}</b>${l.detail ? ` · ${esc(l.detail)}` : ''}${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}${statusOf(l) ? `<div class="st ${l.state || ''}">${esc(statusOf(l))}</div>` : ''}</td>
+      <td class="ref">${esc(l.ref)}</td><td class="n">${l.change > 0 ? amount(l.change) : ''}</td><td class="n">${out}</td><td class="n"><b>${esc(amount(l.held))}</b>${l.held < 0 ? ' over' : ''}</td></tr>`;
+  }).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>
-body{font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:0;background:#fff}
-main{max-width:900px;margin:0 auto;padding:28px 20px}
-h1{font-size:22px;margin:0}.sub{color:#555;margin:.2rem 0 1rem}
-.sum{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 16px}
-.sum div{border:1px solid #ddd;border-radius:8px;padding:8px 10px}.sum small{display:block;color:#555}.sum b{font-size:16px}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e5e5;vertical-align:top}
-th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.03em}.n{text-align:right;white-space:nowrap}
-.ref{font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}.note{color:#333;font-style:italic;max-width:220px}.st{color:#666;font-size:12px}
-.bar{display:flex;gap:8px;margin-bottom:16px}.bar button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #bbb;background:#f5f5f5;cursor:pointer}
-.sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}.sign div{border-top:1px solid #999;padding-top:6px;color:#555;font-size:12px}
-@media print{.bar{display:none}main{padding:0}}
+:root{--ink:#14161a;--ink-2:#4b515c;--muted:#8a909b;--line:#e3e6eb;--soft:#f1f2f6;--accent:#4f46e5}
+*{box-sizing:border-box}
+body{font:14px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink);margin:0;background:#f4f5f8;-webkit-font-smoothing:antialiased}
+main{max-width:900px;margin:0 auto;padding:20px 16px 40px}
+.bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.bar button,.bar a{font:inherit;font-weight:700;padding:10px 16px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;text-decoration:none}
+.bar button{background:var(--accent);border-color:var(--accent);color:#fff}
+.paper{background:#fff;border-radius:16px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 4px 14px rgba(16,24,40,.06);padding:28px}
+.ph{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:14px}
+h1{font-size:24px;margin:0;letter-spacing:-.01em}.ph p{margin:2px 0 0;color:var(--ink-2)}
+.brand{text-align:right;font-size:13px;color:var(--muted)}.brand b{display:block;color:var(--ink);font-size:15px}
+.mono,.ref{font:12px ui-monospace,Menlo,monospace;color:var(--ink-2);white-space:nowrap}
+.sum{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:18px 0}
+.sum div{border:1px solid var(--line);border-radius:12px;padding:10px 12px}.sum small{display:block;color:var(--muted);font-size:12px}.sum b{font-size:17px;font-variant-numeric:tabular-nums}
+.sum .end{background:var(--ink);border-color:var(--ink);color:#fff}.sum .end small{color:#c9ccd4}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr.month td{background:var(--soft);font-weight:700;font-size:13px;color:var(--ink-2)}
+.note{font-style:italic;color:var(--ink-2);font-size:13px}.st{color:var(--muted);font-size:12px}.st.accepted{color:#15803d}.st.refused{color:#b91c1c}.none{color:var(--muted)}
+.foot{color:var(--muted);font-size:12px;margin-top:10px}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:44px}.sign div{border-top:1px solid #999;padding-top:6px;color:var(--muted);font-size:12px}
+@media (max-width:700px){.sum{grid-template-columns:repeat(2,minmax(0,1fr))}.paper{padding:18px}}
+@media print{body{background:#fff}.bar{display:none}main{padding:0}.paper{box-shadow:none;padding:0}}
 </style></head><body><main>
-<div class="bar"><button onclick="print()">Print or save as PDF</button></div>
-<h1>Float statement · ${esc(s.name)}</h1>
-<p class="sub">Reference FLT/${esc(s.code)} · ${esc(longDay(s.from))} to ${esc(longDay(s.to))}</p>
-<div class="sum"><div><small>Held at the start</small><b>${esc(ghs(s.opening))}</b></div><div><small>Given</small><b>${esc(ghs(s.given))}</b></div>
-<div><small>Spent (receipts)</small><b>${esc(ghs(s.spent))}</b></div><div><small>Given back</small><b>${esc(ghs(s.back))}</b></div><div><small>Held at the end</small><b>${esc(ghs(s.closing))}</b></div></div>
-<table><thead><tr><th>Date</th><th>What</th><th>Note</th><th>Reference</th><th>PO</th><th class="n">In</th><th class="n">Out</th><th class="n">Still with them</th></tr></thead><tbody>
-<tr><td></td><td>Held at the start</td><td></td><td></td><td></td><td></td><td></td><td class="n"><b>${esc(ghs(s.opening))}</b></td></tr>
-${s.lines.map(row).join('\n') || '<tr><td colspan="8">Nothing in these dates.</td></tr>'}
-</tbody></table>
-<p class="st">A refused receipt does not count against them. One being checked counts until it is refused.</p>
+<div class="bar"><button onclick="print()">Print or save as PDF</button><a href="${esc(s.csv || '')}">Spreadsheet</a></div>
+<div class="paper">
+<div class="ph"><div><h1>Float statement</h1><p>${esc(s.name)} · <span class="mono">FLT/${esc(s.code)}</span></p><p>${esc(longDay(s.from))} to ${esc(longDay(s.to))}</p></div>
+<div class="brand"><b>Insight</b>Printed ${esc(longDay(todayIn('UTC')))}</div></div>
+<div class="sum"><div><small>At the start</small><b>GH₵${esc(amount(s.opening))}</b></div><div><small>Given</small><b>GH₵${esc(amount(s.given))}</b></div>
+<div><small>Spent (receipts)</small><b>GH₵${esc(amount(s.spent))}</b></div><div><small>Given back</small><b>GH₵${esc(amount(s.back))}</b></div><div class="end"><small>Still with them</small><b>${esc(ghs(s.closing))}</b></div></div>
+<div class="wrap"><table><thead><tr><th>Date</th><th>What</th><th>Reference</th><th class="n">In</th><th class="n">Out</th><th class="n">Balance</th></tr></thead><tbody>
+${rows || '<tr><td colspan="6">Nothing in these dates.</td></tr>'}
+</tbody></table></div>
+<p class="foot">Amounts in GH₵. A refused receipt does not count against them; one being checked counts until it is refused.</p>
 <div class="sign"><div>Received by ${esc(s.name)}</div><div>Checked by</div></div>
-</main></body></html>`;
+</div></main></body></html>`;
 }

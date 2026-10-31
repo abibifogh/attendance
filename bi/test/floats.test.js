@@ -138,10 +138,17 @@ test('a statement for a period: held at the start, every line, held at the end, 
   const res = await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' });
   assert.match(res.headers.get('Content-Type'), /text\/html/);
   const html = await res.text();
-  assert.match(html, /Float statement · Ama Test/);
+  assert.match(html, /<h1>Float statement<\/h1><p>Ama Test · <span class="mono">FLT\/AMA<\/span>/);
   assert.match(html, /Print or save as PDF/);
-  assert.match(html, /<th>Note<\/th>/);
-  assert.match(html, /<td class="note">For the generator repair<\/td>/);
+  assert.match(html, /<tr class="month"><td colspan="6">October 2026<\/td><\/tr>/, 'grouped by month');
+  assert.match(html, /<b>Given<\/b> · from the safe by Test Owner<div class="note">For the generator repair<\/div>/);
+  assert.match(html, /<b>A Hardware Shop<\/b> · Padlock<div class="st checking">Being checked · PO P02531<\/div>/);
+  assert.match(html, /href="\?from=2026-10-01&amp;to=2026-10-31&amp;format=csv"/, 'its spreadsheet, for the same dates');
+
+  // Just the totals, for their page; and from the very start.
+  assert.deepEqual(await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31', format: 'json' }),
+    { from: '2026-10-01', to: '2026-10-31', opening: 50000, given: 30000, spent: 12000, back: 8000, closing: 60000, lines: 3 });
+  assert.equal((await floats.statement(env, personId, { from: 'start', to: '2026-10-31', format: 'json' })).from, '2026-09-28');
   await assert.rejects(floats.statement(env, personId, { from: '2026-11-01', to: '2026-10-01' }), /start is after the end/);
 });
 
@@ -208,7 +215,7 @@ test('a note on every amount given: when it is given, or added and changed later
   assert.match(csv, /2026-10-09,Given from somewhere else by Test Owner,Extra for the plumber,/);
   assert.match(csv, /2026-10-11,Given from somewhere else by Test Owner,"Asked for by Ama Test, for the gate lock",/);
   const html = await (await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' })).text();
-  assert.match(html, /<td class="note">Asked for by Ama Test, for the gate lock<\/td>/);
+  assert.match(html, /<div class="note">Asked for by Ama Test, for the gate lock<\/div>/);
 
   // They see the same on their own link: each amount with its note, and their statement.
   const { token } = (await floats.detail(env, personId)).person;
