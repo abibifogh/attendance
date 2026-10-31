@@ -86,13 +86,87 @@ shift, a small note at the end of the line says which; open it for what to do.
 A supervisor sees only the tabs and kinds an admin gave them, and amounts only
 if they were given those (see `docs/till.md`).
 
+### One shift
+
+A shift opens on one screen:
+
+- **The header**: who, the slot and day, the ASSD sessions inside it, its
+  status, **‹ ›** to the shift before and after, and **⋯** for the
+  reconciliation report, moving the shift, and its notes and history. Whose
+  shift it was, when ASSD and HIVE name different people, sits under it.
+- **Four numbers**: what was taken (cash and card), the drawer, card and
+  MoMo found, and what is left to sort out. Each opens its detail.
+- **To sort out**, on the left: every difference on the shift, open ones
+  first. An open one opens on its card: answer it there, with its other
+  answers, Reconcile with others, To-do and Notes and history. An answered one
+  says how, and opens on its card (with Undo). Those the rules explained fold
+  into one line, each opening on its card. **Possibly the same money** sits
+  at the top; the check (**Mark this shift checked**) is the last step.
+- **The details**, on the right, one tab at a time, a red dot on a tab with
+  something open:
+  - **Drawer**: the drawer from hand-over to the end, with its working, the
+    recount and the opening count.
+  - **Payments**: how guests paid, the card and MoMo checks with which
+    payment matched which line, and the payments on the clock.
+  - **Cash out & expenses**: each cash movement (Correct), the expenses
+    against Odoo and the expense form, and the shift's POs.
+  - **Stock**: water, padlocks and whatever else the desk counts.
+  - **Closing report**: what staff signed in HIVE beside ASSD, or that there
+    is none.
+  - **History**: the notes and events of every difference on the shift, and
+    of the shift itself, newest first.
+
+Without access to the amounts, the numbers say how it stands without them,
+and the tabs are the closing report and the history.
+
+### Stepping through shifts
+
+On a shift, **‹** and **›** beside its name open the shift before and after.
+Past the first or last one on screen they carry on into the day before or
+after (a week or month at a time in those views), as far as the journal
+goes: from the last shift of 1 October, **›** opens the first of 2 October.
+
+### A shift on the wrong day or slot
+
+Insight places each shift from the date ASSD prints on its opening line and
+the times of its card and MoMo payments. A night shift whose opening ASSD
+dated the next morning can land on that morning. An admin opens it and
+presses **Wrong day or slot? Move this shift**, chooses where it belongs (up
+to two days either way; for a morning, the night before is offered first)
+and says why. It stays there whatever the journal says; its counts, answers,
+notes, to-dos and check go with it. The shift then says where it was moved
+from, by whom and why, with **Put it back**, which returns it and what came
+with it. Its closing report in HIVE moves on its own card. Locked days
+refuse both.
+
+A shift made of two ASSD sessions ("2 ASSD sessions: one → other", often
+because the slot before was taken by a shift on the wrong day) can have one
+of them moved on its own (**What to move: Only …’s session**). The first is
+offered the slot before, the last the slot after. Nothing on the shift is
+carried with a single session, and Put it back carries nothing back. Moving
+the shift on the wrong day first often puts the other back by itself.
+
+### What is still to sort out
+
+Every shift has a checklist under its title, **To sort out on this shift**:
+each difference on it, ticked once it is answered, reconciled with others or
+explained, one answered by a supervisor marked as waiting for an admin, and
+last **Marked checked by an admin**. It counts what is done ("3 of 5 done");
+tap a line to go to its card. Over the days (Day, Week, Month), **Still to
+sort out** puts the shifts with a difference still open side by side, latest
+first, each as its checklist, ticking itself as answers come in; tap a shift
+to open it.
+
 ### Exceptions that are one story
 
 Two or more exceptions are often the same money seen twice: GH₵ 203 by MoMo
 that reached the bank on the 2nd and was keyed in ASSD on the 4th shows up
 once as money ASSD does not show and once as a payment that never arrived.
-Tick each of them (**Reconcile with others**) and press **Reconcile
-together**; the bar shows what the ticked ones net to, and a note is required
+Tick each of them (**Reconcile with others**), on a shift, on a day or in
+the Inbox, and press **Reconcile together** in the bar that comes up at the
+bottom; the bar shows what the ticked ones net to (an amount that pulls the
+other way, such as laundry the laundry system took that ASSD does not show,
+is shown with a −), and a note is required
 when they do not net to nothing. Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same

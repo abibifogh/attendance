@@ -124,7 +124,7 @@ const SHARE = -1.5;
  * person who signed it is the person on this login, and whether the drawer
  * they counted is what this session closed on.
  */
-export function placeShifts(shifts, events, { signed = null } = {}) {
+export function placeShifts(shifts, events, { signed = null, pinned = null } = {}) {
   // The journal alone first. Only where it cannot be placed one session to a
   // slot (a session has to share one, or a marker is days out) are the HIVE
   // reports asked, and their answer is taken only for each run of sessions
@@ -132,9 +132,9 @@ export function placeShifts(shifts, events, { signed = null } = {}) {
   // where the journal alone puts it. A report filed on the wrong shift must
   // not drag a journal that fits on its own, or "filed on the wrong shift"
   // could never be seen.
-  const alone = place(shifts, events, null);
+  const alone = place(shifts, events, null, pinned);
   if (!signed || !alone.trouble.length) return alone.places;
-  const asked = place(shifts, events, signed).places;
+  const asked = place(shifts, events, signed, pinned).places;
   const out = alone.places.map((p) => p.slot);
   for (let i = 0; i < out.length;) {
     if (asked[i].slot === alone.places[i].slot) { i += 1; continue; }
@@ -147,7 +147,7 @@ export function placeShifts(shifts, events, { signed = null } = {}) {
   return out.map((t, i) => ({ slot: t, last: out[i + 1] === t + 2 ? t + 1 : t }));
 }
 
-function place(shifts, events, signed) {
+function place(shifts, events, signed, pinned = null) {
   if (!shifts.length) return { places: [], trouble: [] };
   const trouble = [];
   const timed = events.filter((e) => e.minute != null);
@@ -158,6 +158,8 @@ function place(shifts, events, signed) {
   }
 
   const options = shifts.map((shift) => {
+    // Put on its day and slot by an admin: there, whatever the rest says.
+    if (pinned?.has(shift.startSeq)) return [{ t: pinned.get(shift.startSeq), score: 0 }];
     const d = dayNumber(shift.markerDate);
     // A payment that is the only one of its amount within a day of the ASSD
     // line is strong evidence of where the shift sat.
@@ -288,7 +290,7 @@ export function reconcile(shifts, events, declines = [], options = {}) {
   const dated = evs.filter((e) => e.minute == null);
 
   // Placed already (sessions sharing a slot made one), or placed here.
-  const places = options.places || placeShifts(shifts, evs, { signed: options.signed });
+  const places = options.places || placeShifts(shifts, evs, { signed: options.signed, pinned: options.pinned });
   const out = shifts.map((shift, i) => {
     const { slot, last } = places[i];
     const { start, end } = hoursOf(slot, last);

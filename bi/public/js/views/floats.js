@@ -19,6 +19,8 @@ const chip = (cls, text) => h(`span.sh-chip.${cls}`, text);
 const STATUS = { checking: ['none', 'Being checked'], accepted: ['ok', '✓ Accepted'], refused: ['short', '✕ Refused'] };
 const linkOf = (token) => `${location.origin}/float.html?t=${encodeURIComponent(token)}`;
 const shortOf = (slug) => `${location.origin}/float/${slug}`;
+const COLOURS = ['#4f46e5', '#0e9f8a', '#b45309', '#be185d', '#2a78d6', '#7c3aed'];
+const avatar = (name, i, big = false) => h(`span.fl-av${big ? '.big' : ''}`, { style: `background:${COLOURS[Math.max(0, i) % COLOURS.length]}` }, String(name || '?').trim().charAt(0).toUpperCase());
 
 let shown = null; // the person open, or null for everybody
 
@@ -31,97 +33,122 @@ export async function renderFloats(root) {
 
   async function paint(message = null) {
     said.el = message;
-    if (shown) return person(shown);
     let data;
     try { data = await api('/floats'); } catch (err) { mount(view, banner('problem', err.message)); return; }
     const t = data.tiles;
-    const bar = (p) => (p.given ? h('div.fl-bar',
-      h('i', { style: `width:${Math.min(100, (p.spent / p.given) * 100)}%;background:var(--series-1)` }),
-      h('i', { style: `width:${Math.min(100, (p.back / p.given) * 100)}%;background:var(--series-3)` })) : null);
+    // On a wide screen somebody is always open beside the list: whoever needs looking at first.
+    const wide = window.matchMedia?.('(min-width: 900px)').matches;
+    if (shown && !data.people.some((p) => p.id === shown)) shown = null;
+    if (!shown && wide && data.people.length) shown = (data.people.find((p) => p.toLookAt || p.quiet) || data.people[0]).id;
+    const detail = h('div.fl-detail');
     mount(view,
-      h('section.card',
-        h('div.fl-head', h('h1', 'Floats'), h('span.sp'), h('button.btn.primary', { type: 'button', onclick: () => giveDialog(null, data) }, '＋ Give money')),
-        h('p.small.muted', 'Money given to people to spend. Each receipt they send from their own link becomes a draft PO in Odoo, marked with their reference, and comes off what they hold.')),
+      h('div.fl-head', h('h1', 'Floats'), h('span.sp'), h('button.btn.primary', { type: 'button', onclick: () => giveDialog(null, data) }, '＋ Give money')),
+      h('p.small.muted.fl-intro', 'Money given to people to spend. Each receipt they send from their own link becomes a draft PO in Odoo, marked with their reference, and comes off what they hold.'),
       said.el,
       h('div.fl-tiles',
-        tile('With people now', money(t.held)), tile('Spent this month (receipts)', money(t.spentThisMonth)),
-        tile('Receipts to look at', String(t.toLookAt)), tile('Held over 14 days, nothing sent', String(t.quiet), t.quiet ? 'bad' : '')),
-      h('section.card', data.people.length ? [
-        h('div.table-wrap', h('table',
-          h('thead', h('tr', ['Person', 'Reference', 'Given', 'Receipts', 'Given back', 'Still with them', 'Last receipt', ''].map((c, i) => h(i >= 2 && i <= 5 ? 'th.num' : 'th', c)))),
-          h('tbody', data.people.map((p) => h('tr.fl-row', { onclick: () => { shown = p.id; paint(); } },
-            h('td', h('b', p.name), p.note ? h('div.fl-note', p.note) : null, bar(p), p.active ? null : h('div.fl-note', 'Link switched off')),
-            h('td', h('span.fl-ref', `FLT/${p.code}`)),
-            h('td.num', money(p.given)), h('td.num', p.receipts ? `${money(p.spent)} · ${p.receipts}` : '—'), h('td.num', p.back ? money(p.back) : '—'),
-            h('td.num', h('b', money(p.held))), h('td', dayText(p.lastReceipt)),
-            h('td', p.toLookAt ? chip('over', `${p.toLookAt} to look at`) : p.quiet ? chip('short', `${p.quiet} days, nothing sent`) : p.held === 0 && p.given ? chip('ok', '✓ Settled') : null)))))),
-        h('p.fl-note', h('span', { style: 'color:var(--series-1)' }, '■'), ' spent with receipts   ', h('span', { style: 'color:var(--series-3)' }, '■'), ' given back   ░ still with them'),
-      ] : h('p', 'Nobody holds a float yet. ', h('button.sh-link', { type: 'button', onclick: () => giveDialog(null, data) }, 'Give money'), ' to start.')));
+        tile('With people now', money(t.held)), tile('Spent this month', money(t.spentThisMonth)),
+        tile('Receipts to look at', String(t.toLookAt), t.toLookAt ? 'bad' : ''), tile('Over 14 days, nothing sent', String(t.quiet), t.quiet ? 'bad' : '')),
+      data.people.length
+        ? h(`div.fl-split${shown ? '.picked' : ''}`, h('div.fl-people', data.people.map((p, i) => personCard(p, i))), detail)
+        : h('section.card', h('p', 'Nobody holds a float yet. ', h('button.sh-link', { type: 'button', onclick: () => giveDialog(null, data) }, 'Give money'), ' to start.')));
+    if (shown) await person(shown, detail, data.people.findIndex((p) => p.id === shown));
+  }
+
+  function personCard(p, i) {
+    const flag = p.toLookAt ? chip('over', `${p.toLookAt} to look at`) : p.quiet ? chip('short', `${p.quiet} days, nothing sent`)
+      : p.held === 0 && p.given ? chip('ok', '✓ Settled') : !p.active ? chip('none', 'Link switched off') : null;
+    return h(`button.fl-pcard${shown === p.id ? '.on' : ''}`, { type: 'button', onclick: () => { shown = p.id; paint(); } },
+      h('div.fl-prow', avatar(p.name, i), h('div.fl-pname', h('b', p.name), p.note ? h('small', p.note) : null), h('span.sp'),
+        h('div.fl-pheld', h('b', money(p.held)), h('small', 'with them'))),
+      bar(p), flag ? h('div', flag) : null);
+  }
+
+  function bar(p) {
+    return h('div.fl-bar',
+      h('i', { style: `width:${p.given ? Math.min(100, (p.spent / p.given) * 100) : 0}%;background:var(--accent, #4f46e5)` }),
+      h('i', { style: `width:${p.given ? Math.min(100, (p.back / p.given) * 100) : 0}%;background:var(--series-3)` }));
   }
 
   function tile(label, value, tone = '') {
     return h('div.fl-tile', h('small', label), h(`b${tone ? `.${tone}` : ''}`, value));
   }
 
-  /** One person: totals, what to do, everything newest first. */
-  async function person(id) {
+  /** One person, beside the list: totals, what to do, their link, everything newest first. */
+  async function person(id, box, index) {
     let d;
-    try { d = await api(`/floats/${id}`); } catch (err) { shown = null; mount(view, banner('problem', err.message)); return; }
+    try { d = await api(`/floats/${id}`); } catch (err) { mount(box, banner('problem', err.message)); return; }
     const p = d.person;
-    const back = () => { shown = null; paint(); };
+    const link = p.slug ? shortOf(p.slug) : (p.token ? linkOf(p.token) : '');
+    const copied = h('small.muted');
     const lines = [
-      ...d.receipts.map((r) => ({ sort: `${r.at}`, r })),
-      ...d.moves.map((m) => ({ sort: `${m.day} 99`, m })),
+      ...d.receipts.map((r) => ({ sort: `${r.day} 1 ${r.at}`, r })),
+      ...d.moves.map((m) => ({ sort: `${m.day} 0 ${String(m.id).padStart(9, '0')}`, m })),
     ].sort((a, b) => (a.sort < b.sort ? 1 : -1));
-    mount(view,
-      h('section.card',
-        h('div.fl-head',
-          h('div', h('button.sh-link', { type: 'button', onclick: back }, '‹ All floats'),
-            h('h1', p.name, ' ', h('span.fl-ref', `FLT/${p.code}`)),
-            h('p.small.muted', [p.note, p.active ? 'sends receipts from their own link' : 'link switched off'].filter(Boolean).join(' · '))),
-          h('span.sp'),
-          h('div.fl-acts',
-            h('button.btn.primary', { type: 'button', onclick: () => giveDialog(p, d) }, '＋ Give more'),
-            h('button.btn', { type: 'button', onclick: () => backDialog(p, d) }, 'Given back…'),
-            h('button.btn', { type: 'button', onclick: () => addFor(p) }, '📷 Add a receipt for them'),
-            h('button.btn', { type: 'button', onclick: () => linkDialog(p) }, '🔗 Their link'),
-            h('button.btn', { type: 'button', onclick: () => statementDialog(p) }, '⬇ Statement')))),
-      said.el,
-      h('div.fl-tiles',
-        tile('Given', money(d.given)), tile(`Receipts (${d.receipts.filter((r) => r.status !== 'refused').length})`, money(d.spent)),
-        tile('Given back', money(d.back)), tile('Still with them', money(d.held))),
-      h('section.card',
-        h('h2', 'Everything, newest first'),
-        lines.length ? h('div.table-wrap', h('table',
-          h('thead', h('tr', h('th', 'Day'), h('th', 'What'), h('th.num', 'In / out'), h('th', 'PO in Odoo'), h('th', 'Reference on the PO'), h('th', ''))),
-          h('tbody', lines.map(({ r, m }) => (r ? receiptRow(r) : moveRow(m))))))
-          : h('p.muted', 'Nothing yet.')));
+    mount(box,
+      h('button.sh-link.fl-back', { type: 'button', onclick: () => { shown = null; paint(); } }, '‹ Everybody'),
+      h('div.fl-dhead', avatar(p.name, index, true),
+        h('div', h('h2', p.name, ' ', h('span.fl-ref', `FLT/${p.code}`)),
+          h('p.small.muted', [p.note, p.active ? 'sends receipts from their own link' : 'link switched off'].filter(Boolean).join(' · ')))),
+      h('div.fl-d4',
+        h('div', h('small', 'Given'), h('b', money(d.given))),
+        h('div', h('small', `Spent · ${d.receipts.filter((r) => r.status !== 'refused').length} receipts`), h('b', money(d.spent))),
+        h('div', h('small', 'Given back'), h('b', money(d.back))),
+        h('div.end', h('small', 'With them'), h('b', money(d.held)))),
+      h('div.fl-acts',
+        h('button.btn.primary', { type: 'button', onclick: () => giveDialog(p, d) }, '＋ Give more'),
+        h('button.btn', { type: 'button', onclick: () => backDialog(p, d) }, 'Given back…'),
+        h('button.btn', { type: 'button', onclick: () => addFor(p) }, '📷 Add a receipt'),
+        h('button.btn', { type: 'button', onclick: () => statementDialog(p) }, '⬇ Statement')),
+      h('div.fl-linkbox', '🔗 ', h('code', link.replace(/^https?:\/\//, '')),
+        h('button.btn', { type: 'button', onclick: () => navigator.clipboard?.writeText(link).then(() => { copied.textContent = 'Copied: send it by SMS or WhatsApp.'; }).catch(() => {}) }, 'Copy'),
+        h('button.btn', { type: 'button', onclick: () => linkDialog(p) }, 'Change…'), copied),
+      lines.length ? h('div.fl-list', lines.map(({ r, m }) => (r ? receiptItem(r) : moveItem(m)))) : h('p.muted', 'Nothing yet.'));
 
-    function receiptRow(r) {
+    function receiptItem(r) {
       const [cls, words] = STATUS[r.status] || ['none', r.status];
-      const label = r.vendor ? [h('b', r.vendor), r.description ? ` · ${r.description}` : ''] : h('b', 'Not read yet');
-      const notes = [r.hint ? `“${r.hint}”` : null, r.problem, r.status === 'refused' && r.reason ? `Refused: ${r.reason}${r.decidedBy && r.decidedBy !== 'Odoo' ? ` (${r.decidedBy})` : ''}` : null].filter(Boolean);
-      const act = h('span.fl-row-acts');
-      if (!r.po) {
-        act.append(h('button.btn', { type: 'button', onclick: () => fillIn(r) }, 'Fill it in'));
-      }
-      if (r.status === 'refused') act.append(h('button.btn', { type: 'button', onclick: () => decide(r, false) }, 'Not refused after all'));
+      const refused = r.status === 'refused';
+      const act = h('div.fl-iacts');
+      if (r.po?.url) act.append(h('a.btn', { href: r.po.url, target: '_blank', rel: 'noopener' }, `Open ${r.po.name} in Odoo`));
+      else if (r.po) act.append(h('span.fl-note', r.po.name));
+      if (!r.po) act.append(h('button.btn', { type: 'button', onclick: () => fillIn(r) }, 'Fill it in'));
+      if (refused) act.append(h('button.btn', { type: 'button', onclick: () => decide(r, false) }, 'Not refused after all'));
       else if (r.status === 'checking') act.append(h('button.btn', { type: 'button', onclick: () => decide(r, true) }, 'Refuse…'));
-      return h('tr',
-        h('td', dayText(r.day)),
-        h('td', r.thumb ? h('img.fl-thumb', { src: r.thumb, alt: '' }) : null, '📄 Receipt · ', label, notes.length ? h('div.fl-note', notes.join(' · ')) : null),
-        h('td.num', r.amount != null ? `−${money(r.amount)}` : '—'),
-        h('td', r.po ? [r.po.url ? h('a', { href: r.po.url, target: '_blank', rel: 'noopener' }, r.po.name) : r.po.name, ' '] : h('span.fl-note', 'No PO yet'), ' ', chip(cls, words), r.toLookAt ? [' ', chip('over', 'Look at it')] : null),
-        h('td', h('span.fl-ref', r.ref)),
-        h('td', act));
+      act.append(h('button.btn', { type: 'button', onclick: () => seeReceipt(r) }, 'See the receipt'));
+      return h('div.fl-item',
+        r.thumb ? h('img.fl-ico', { src: r.thumb, alt: '' }) : h(`div.fl-ico${refused ? '.no' : ''}`, '🧾'),
+        h('div', h('b', r.vendor || 'Not read yet'), h('small', [dayText(r.day), r.description, r.ref].filter(Boolean).join(' · ')),
+          h('div', chip(cls, words), r.toLookAt ? [' ', chip('over', 'Look at it')] : null)),
+        h(`div.fl-amt${refused ? '.off' : ''}`, r.amount != null ? `−${money(r.amount)}` : '—'),
+        r.hint ? h('div.fl-memo', `“${r.hint}”`) : null,
+        r.problem ? h('div.fl-memo', r.problem) : null,
+        refused && r.reason ? h('div.fl-memo.why', `Why: ${r.reason}${r.decidedBy && r.decidedBy !== 'Odoo' ? ` (${r.decidedBy})` : ''}`) : null,
+        r.change ? changeBox(r) : null,
+        act);
     }
 
-    /** The note on money given or given back: shown, and added or changed in place. It goes on their statement. */
+    /** Its PO changed in Odoo to another total: what the person said, and the admin's answer, which stands. */
+    function changeBox(r) {
+      const c = r.change;
+      const theirs = !c.asksHolder ? `changed more than 30 days after ${p.name} sent it: yours to decide`
+        : { accept: `${p.name} accepted it${c.holderNote ? `: “${c.holderNote}”` : ''}`, dispute: `${p.name} says it is not right` }[c.holder] || `${p.name} has not answered yet`;
+      const answer = (value) => async () => {
+        try { await api('/floats/amount', { method: 'POST', body: { id: r.id, answer: value } }); paint(banner('good', value === 'accept' ? `${r.ref}: ${money(c.now)} counts.` : value === 'keep' ? `${r.ref}: the receipt’s ${money(c.was)} counts.` : `${r.ref}: your answer is taken off.`)); } catch (err) { paint(banner('problem', err.message)); }
+      };
+      return h('div.fl-memo.ask',
+        h('b', `PO changed in Odoo: ${money(c.was)} → ${money(c.now)}`), ` · ${theirs}. `,
+        c.admin ? [h('span', c.admin === 'accept' ? `${money(c.now)} counts` : `The receipt’s ${money(c.was)} counts`, c.adminBy ? ` (${c.adminBy})` : '', '. '), h('button.sh-link', { type: 'button', onclick: answer('') }, 'Change')]
+          : h('span.fl-askbtns', h('button.btn.primary', { type: 'button', onclick: answer('accept') }, `Accept ${money(c.now)}`), h('button.btn', { type: 'button', onclick: answer('keep') }, `Keep ${money(c.was)}`)));
+    }
+
+    /** The note on money given or given back: shown, and added or changed in place. It goes on their page and statement. */
     function noteBox(m) {
-      const box = h('div.fl-mnote');
-      const show = () => mount(box,
-        m.note ? h('div.fl-note', '📝 ', m.note, m.noteBy ? h('span.fl-noteby', ` · ${m.noteBy}`) : null) : null,
-        h('button.sh-link', { type: 'button', onclick: edit }, m.note ? 'Change the note' : '＋ Add a note'));
+      const box = h('div.fl-memo.fl-mnote');
+      const show = () => {
+        box.classList.toggle('blank', !m.note);
+        mount(box,
+          m.note ? [m.note, m.noteBy ? h('span.fl-noteby', ` · ${m.noteBy}`) : null, ' '] : null,
+          h('button.sh-link', { type: 'button', onclick: edit }, m.note ? 'change' : '＋ Add a note'));
+      };
       const edit = () => {
         const input = h('input', { value: m.note || '', maxlength: 300, placeholder: 'What this money was for, who asked, anything to remember' });
         const save = h('button.btn', { type: 'button', onclick: async () => {
@@ -138,16 +165,32 @@ export async function renderFloats(root) {
       return box;
     }
 
-    function moveRow(m) {
-      return h('tr',
-        h('td', dayText(m.day)),
-        h('td', m.kind === 'given' ? `💵 Given${m.by ? ` by ${m.by}` : ''}${m.sourceText ? ` · ${m.sourceText.toLowerCase()}` : ''}` : '↩ Given back', noteBox(m)),
-        h('td.num', `${m.kind === 'given' ? '+' : '−'}${money(m.amount)}`),
-        h('td.fl-note', { colspan: 2 }, 'Not a PO: money handed over'),
-        h('td', h('button.sh-link', { type: 'button', onclick: async () => {
-          if (!confirm(`Take this out: ${m.kind === 'given' ? 'given' : 'given back'} ${money(m.amount)} on ${dayText(m.day)}?`)) return;
+    function moveItem(m) {
+      const given = m.kind === 'given';
+      return h('div.fl-item',
+        h(`div.fl-ico.${given ? 'in' : 'out'}`, given ? '↓' : '↑'),
+        h('div', h('b', given ? 'Given' : 'Given back'),
+          h('small', [dayText(m.day), m.sourceText ? `${given ? 'from' : 'into'} ${m.sourceText.charAt(0).toLowerCase()}${m.sourceText.slice(1)}` : null, given && m.by ? `by ${m.by}` : null].filter(Boolean).join(' · '))),
+        h(`div.fl-amt${given ? '.in' : ''}`, `${given ? '+' : '−'}${money(m.amount)}`),
+        noteBox(m),
+        h('div.fl-iacts', h('button.sh-link', { type: 'button', onclick: async () => {
+          if (!confirm(`Take this out: ${given ? 'given' : 'given back'} ${money(m.amount)} on ${dayText(m.day)}?`)) return;
           await api('/floats/undo', { method: 'POST', body: { id: m.id } }); paint(banner('good', 'Taken out.'));
         } }, 'Take out')));
+    }
+
+    async function seeReceipt(r) {
+      const w = window.open('', '_blank');
+      try {
+        const f = await api(`/receipts/${r.receiptId}/file`);
+        if (!w) return;
+        w.document.title = r.ref;
+        w.document.body.style.margin = '0';
+        const el = w.document.createElement(String(f.file).startsWith('data:application/pdf') ? 'iframe' : 'img');
+        el.src = f.file;
+        el.style.cssText = 'width:100%;max-width:900px;display:block;margin:0 auto;border:0;' + (el.tagName === 'IFRAME' ? 'height:100vh' : '');
+        w.document.body.append(el);
+      } catch (err) { w?.close(); paint(banner('problem', err.message)); }
     }
 
     async function decide(r, refuse) {
@@ -246,6 +289,7 @@ export async function renderFloats(root) {
         const out = await api('/floats/link', { method: 'POST', body: { personId: p.id, slug: ending.value } });
         p.token = out.token; p.slug = out.slug; ending.value = out.slug; box.value = shortOf(out.slug);
         said.textContent = 'Changed: send them the new link. The old one no longer works.';
+        paint();
       } catch (e) { said.textContent = e.message; }
       change.disabled = false;
     } }, 'Change the link');

@@ -138,10 +138,17 @@ test('a statement for a period: held at the start, every line, held at the end, 
   const res = await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' });
   assert.match(res.headers.get('Content-Type'), /text\/html/);
   const html = await res.text();
-  assert.match(html, /Float statement · Ama Test/);
+  assert.match(html, /<h1>Float statement<\/h1><p>Ama Test · <span class="mono">FLT\/AMA<\/span>/);
   assert.match(html, /Print or save as PDF/);
-  assert.match(html, /<th>Note<\/th>/);
-  assert.match(html, /<td class="note">For the generator repair<\/td>/);
+  assert.match(html, /<tr class="month"><td colspan="6">October 2026<\/td><\/tr>/, 'grouped by month');
+  assert.match(html, /<b>Given<\/b> · from the safe by Test Owner<div class="note">For the generator repair<\/div>/);
+  assert.match(html, /<b>A Hardware Shop<\/b> · Padlock<div class="st checking">Being checked · PO P02531<\/div>/);
+  assert.match(html, /href="\?from=2026-10-01&amp;to=2026-10-31&amp;format=csv"/, 'its spreadsheet, for the same dates');
+
+  // Just the totals, for their page; and from the very start.
+  assert.deepEqual(await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31', format: 'json' }),
+    { from: '2026-10-01', to: '2026-10-31', opening: 50000, given: 30000, spent: 12000, back: 8000, closing: 60000, lines: 3 });
+  assert.equal((await floats.statement(env, personId, { from: 'start', to: '2026-10-31', format: 'json' })).from, '2026-09-28');
   await assert.rejects(floats.statement(env, personId, { from: '2026-11-01', to: '2026-10-01' }), /start is after the end/);
 });
 
@@ -208,5 +215,57 @@ test('a note on every amount given: when it is given, or added and changed later
   assert.match(csv, /2026-10-09,Given from somewhere else by Test Owner,Extra for the plumber,/);
   assert.match(csv, /2026-10-11,Given from somewhere else by Test Owner,"Asked for by Ama Test, for the gate lock",/);
   const html = await (await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' })).text();
-  assert.match(html, /<td class="note">Asked for by Ama Test, for the gate lock<\/td>/);
+  assert.match(html, /<div class="note">Asked for by Ama Test, for the gate lock<\/div>/);
+
+  // They see the same on their own link: each amount with its note, and their statement.
+  const { token } = (await floats.detail(env, personId)).person;
+  const mine = await floats.linkView(env, { t: token });
+  assert.deepEqual(mine.moves.map((m) => [m.day, m.amount, m.note]), [['2026-10-11', 10000, 'Asked for by Ama Test, for the gate lock'], ['2026-10-09', 15000, 'Extra for the plumber'], ['2026-10-05', 20000, null]]);
+  const theirs = await (await floats.linkStatement(env, { t: token, from: '2026-10-01', to: '2026-10-31', format: 'csv' })).text();
+  assert.equal(theirs, csv, 'the same statement the office downloads');
+  await assert.rejects(floats.linkStatement(env, { t: 'not-their-link', from: '2026-10-01', to: '2026-10-31' }), /no longer in use/);
+});
+
+test('a PO changed to another total in Odoo: they and an admin are asked, and the new amount counts once accepted', async () => {
+  const { env, pos } = await setUp();
+  const out = await floats.give(env, { name: 'Kofi Test', amount: '1000', day: '2026-10-12' }, OWNER);
+  await floats.linkSend(env, { t: out.token, file: jpg('diesel') });
+  // Confirmed in Odoo at 350 where the receipt said 300.
+  Object.assign(pos[0], { state: 'purchase', amount_total: 350 });
+  let view = await floats.linkView(env, { t: out.token });
+  const r = view.sent[0];
+  assert.deepEqual([r.status, r.amount, r.change.was, r.change.now, r.change.holder], ['accepted', 30000, 30000, 35000, null], 'the receipt’s amount counts until it is accepted');
+  assert.equal(view.held, 70000);
+  assert.equal((await floats.list(env)).people[0].toLookAt, 1, 'an admin is asked');
+
+  await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'maybe' }), /Accept the new amount/);
+  await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept' }), /Say why the amount changed/);
+  await floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept', note: 'The shop added a filter after the receipt' });
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].amount, view.held, view.sent[0].change.holderNote], [35000, 65000, 'The shop added a filter after the receipt'], 'accepted by them, with why: the new amount counts');
+
+  // An admin's answer stands over theirs.
+  await floats.decideAmount(env, { id: r.id, answer: 'keep' }, OWNER);
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].amount, view.sent[0].change.admin, view.held], [30000, 'keep', 70000]);
+  assert.equal((await floats.list(env)).people[0].toLookAt, 0);
+
+  // Changed again in Odoo: asked again.
+  pos[0].amount_total = 320;
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].change.now, view.sent[0].change.holder, view.sent[0].change.admin], [32000, null, null]);
+  // Put back to the receipt's amount: nothing to ask.
+  pos[0].amount_total = 300;
+  view = await floats.linkView(env, { t: out.token });
+  assert.equal(view.sent[0].change, null);
+
+  // Changed more than 30 days after it was sent: only an admin is asked, and their answer would not count.
+  await env.DB.prepare("UPDATE float_receipt SET at = '2026-01-05 09:00:00'").run();
+  pos[0].amount_total = 330;
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].change.now, view.sent[0].change.asksHolder], [33000, false]);
+  await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept' }), /office decides/);
+  assert.equal((await floats.list(env)).people[0].toLookAt, 1, 'the admin is asked');
+  await floats.decideAmount(env, { id: r.id, answer: 'accept' }, OWNER);
+  assert.equal((await floats.linkView(env, { t: out.token })).sent[0].amount, 33000);
 });

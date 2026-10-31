@@ -26,6 +26,8 @@ const SOURCES = { safe: 'The safe', bank: 'The bank (MoMo or transfer)', drawer:
 const TYPES = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
 const FILE_MAX = 14_000_000;
 const QUIET_DAYS = 14;
+/** A PO changed in Odoo within this many days of the receipt being sent asks the person too; after, only an admin. */
+const ASK_HOLDER_DAYS = 30;
 const CONFIRMED = new Set(['purchase', 'done']);
 
 const newToken = () => {
@@ -100,14 +102,26 @@ async function receiptsOf(env, personIds) {
  * cancelled (refused). Never throws: Odoo not answering leaves them as they are.
  */
 async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
-  const waiting = rows.filter((r) => r.status === 'checking' && r.po_name);
+  // Being checked: accepted or refused by its PO. Any not refused: its PO's total, if changed in Odoo.
+  const waiting = rows.filter((r) => r.status !== 'refused' && r.po_name);
   if (!waiting.length) return;
   try {
     const s = await odooSource(env);
     if (!s) return;
     const { orders } = await purchaseOrders({ ...s, names: waiting.map((r) => r.po_name), ...(fetchImpl ? { fetchImpl } : {}) });
     const state = new Map(orders.map((o) => [o.name.toUpperCase(), o.state]));
+    const totals = new Map(orders.map((o) => [o.name.toUpperCase(), o.total]));
     for (const r of waiting) {
+      // The PO's total changed in Odoo: kept, and the person and an admin asked. Changed back: nothing to ask.
+      const total = totals.get(String(r.po_name).toUpperCase());
+      const changed = total != null && r.amount != null && total !== Number(r.amount) ? total : null;
+      if (total != null && changed !== (r.po_total ?? null)) {
+        const seen = changed == null ? null : now();
+        Object.assign(r, { po_total: changed, po_changed_at: seen, holder_answer: null, holder_at: null, holder_note: null, admin_answer: null, admin_by: null, admin_at: null });
+        // eslint-disable-next-line no-await-in-loop
+        await run(env.DB, 'UPDATE float_receipt SET po_total = ?2, po_changed_at = ?3, holder_answer = NULL, holder_at = NULL, holder_note = NULL, admin_answer = NULL, admin_by = NULL, admin_at = NULL WHERE id = ?1', r.id, changed, seen);
+      }
+      if (r.status !== 'checking') continue;
       const st = state.get(String(r.po_name).toUpperCase());
       if (CONFIRMED.has(st)) Object.assign(r, { status: 'accepted', decided_by: 'Odoo', decided_at: now() });
       else if (st === 'cancel') Object.assign(r, { status: 'refused', reason: `${r.po_name} was cancelled in Odoo.`, decided_by: 'Odoo', decided_at: now() });
@@ -118,8 +132,25 @@ async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
   } catch (err) { console.error('Floats: Odoo', err); }
 }
 
+/**
+ * The amount a receipt counts for: the receipt's own, or its PO's new total
+ * in Odoo once accepted (by an admin, or by the person when no admin has
+ * said otherwise).
+ */
+const amountOf = (r) => (r.po_total != null && (r.admin_answer === 'accept' || (!r.admin_answer && asksHolder(r) && r.holder_answer === 'accept')) ? r.po_total : r.amount);
+/** Changed within 30 days of the receipt being sent: the person is asked too. */
+function asksHolder(r) {
+  const sent = Date.parse(`${String(r.at || '').replace(' ', 'T').slice(0, 19)}Z`);
+  const seen = r.po_changed_at ? Date.parse(`${String(r.po_changed_at).replace(' ', 'T').slice(0, 19)}Z`) : Date.now();
+  return Number.isFinite(sent) && seen - sent <= ASK_HOLDER_DAYS * 86_400_000;
+}
 /** What a receipt counts for: its amount unless refused (none read yet counts nothing). */
-const spentBy = (r) => (r.status === 'refused' ? 0 : Number(r.amount) || 0);
+const spentBy = (r) => (r.status === 'refused' ? 0 : Number(amountOf(r)) || 0);
+/** A PO changed in Odoo to another total, and what was said to it. */
+const changeOf = (r) => (r.po_total != null && r.status !== 'refused' ? {
+  was: r.amount, now: r.po_total, counts: amountOf(r), asksHolder: asksHolder(r),
+  holder: r.holder_answer || null, holderNote: r.holder_note || null, admin: r.admin_answer || null, adminBy: r.admin_by || null,
+} : null);
 
 function totals(moves, receipts) {
   const given = moves.filter((m) => m.kind === 'given').reduce((t, m) => t + m.amount, 0);
@@ -129,11 +160,12 @@ function totals(moves, receipts) {
 }
 
 /** Something to look at: not read, read with something to check, or no PO. */
-const toLookAt = (r) => r.status === 'checking' && (!r.po_name || ['check', 'unread', 'failed'].includes(r.read_status));
+const toLookAt = (r) => (r.status === 'checking' && (!r.po_name || ['check', 'unread', 'failed'].includes(r.read_status)))
+  || (changeOf(r) && !r.admin_answer);
 
 function receiptView(r) {
   return {
-    id: r.id, receiptId: r.receipt_id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: r.amount ?? null,
+    id: r.id, receiptId: r.receipt_id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: amountOf(r) ?? null, change: changeOf(r),
     vendor: r.vendor_name || r.vendor_text || null, description: r.description || null, hint: r.hint || null,
     status: r.status, reason: r.reason || null, decidedBy: r.decided_by || null,
     read: r.read_status, problem: r.problem || null, thumb: r.thumb || null,
@@ -335,9 +367,13 @@ export async function linkView(env, query, { fetchImpl } = {}) {
   await settleFromOdoo(env, receipts, { fetchImpl });
   return {
     name: p.name, ref: `FLT/${p.code}`, ...totals(moves, receipts),
+    // The money given them (and given back), newest first, each with its note.
+    moves: moves.slice().sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : b.id - a.id)).slice(0, 40).map((m) => ({
+      kind: m.kind, amount: m.amount, day: m.day, source: SOURCES[m.source] || null, note: m.note || null, by: m.by_name || null,
+    })),
     sent: receipts.slice(0, 40).map((r) => ({
-      ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: r.amount ?? null, vendor: r.vendor_name || r.vendor_text || null,
-      description: r.description || r.hint || null, status: r.status, reason: r.reason || null,
+      id: r.id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: amountOf(r) ?? null, change: changeOf(r), vendor: r.vendor_name || r.vendor_text || null,
+      description: r.description || r.hint || null, status: r.status, reason: r.reason || null, decidedAt: r.decided_at || null,
       unread: !r.po_name && r.amount == null,
     })),
   };
@@ -355,6 +391,31 @@ export async function linkSend(env, body, { fetchImpl } = {}) {
   };
 }
 
+/** The person holding the float, on their link: the PO's new total is right, or it is not. */
+export async function linkAmount(env, body) {
+  const p = await byToken(env, body?.t, body?.s);
+  const r = await first(env.DB, 'SELECT * FROM float_receipt WHERE id = ?1 AND person_id = ?2', Number(body?.id), p.id);
+  if (!r || r.po_total == null) throw badRequest('That receipt has no new amount to answer.');
+  if (!asksHolder(r)) throw badRequest('It was changed more than 30 days after you sent it: the office decides this one.');
+  const answer = { accept: 'accept', dispute: 'dispute' }[body?.answer];
+  if (!answer) throw badRequest('Accept the new amount, or say it is not right.');
+  // Accepting it, they say why it changed.
+  const note = str(body?.note, 'Why it changed', { max: 300 }) || null;
+  if (answer === 'accept' && (!note || note.length < 3)) throw badRequest('Say why the amount changed.');
+  await run(env.DB, 'UPDATE float_receipt SET holder_answer = ?2, holder_at = ?3, holder_note = ?4 WHERE id = ?1', r.id, answer, now(), note);
+  return { ok: true, answer };
+}
+
+/** An admin: the PO's new total counts, or the receipt's own amount stays. Empty takes the answer off. */
+export async function decideAmount(env, body, account) {
+  const r = await first(env.DB, 'SELECT * FROM float_receipt WHERE id = ?1', Number(body?.id));
+  if (!r || r.po_total == null) throw badRequest('That receipt has no new amount to answer.');
+  const answer = { accept: 'accept', keep: 'keep', '': null }[body?.answer ?? ''];
+  if (answer === undefined) throw badRequest('Accept the new amount, or keep the receipt’s.');
+  await run(env.DB, 'UPDATE float_receipt SET admin_answer = ?2, admin_by = ?3, admin_at = ?4 WHERE id = ?1', r.id, answer, answer ? who(account) : null, answer ? now() : null);
+  return { ok: true, answer };
+}
+
 // ------------------------------------------------------------ statement --
 
 /**
@@ -363,9 +424,17 @@ export async function linkSend(env, body, { fetchImpl } = {}) {
  * As a spreadsheet (CSV) or a page to print or save as PDF.
  */
 export async function statement(env, id, query) {
-  const p = await person(env, id);
+  return statementOf(env, await person(env, id), query);
+}
+
+/** Their own statement, from their link. */
+export async function linkStatement(env, query) {
+  return statementOf(env, await byToken(env, query?.t, query?.s), query);
+}
+
+async function statementOf(env, p, query) {
   const to = DAY.test(String(query?.to || '')) ? query.to : todayIn('UTC');
-  const from = DAY.test(String(query?.from || '')) ? query.from : `${to.slice(0, 7)}-01`;
+  let from = DAY.test(String(query?.from || '')) ? query.from : `${to.slice(0, 7)}-01`;
   if (from > to) throw badRequest('The start is after the end.');
   const moves = await all(env.DB, 'SELECT * FROM float_move WHERE person_id = ?1 ORDER BY day, id', p.id);
   const receipts = (await receiptsOf(env, [p.id])).reverse();
@@ -374,16 +443,22 @@ export async function statement(env, id, query) {
       day: m.day, what: m.kind === 'given' ? `Given${m.source ? ` from ${(SOURCES[m.source] || m.source).toLowerCase()}` : ''}${m.by_name ? ` by ${m.by_name}` : ''}`
         : 'Given back',
       note: m.note || '',
+      title: m.kind === 'given' ? 'Given' : 'Given back',
+      detail: m.kind === 'given' ? [m.source ? `from ${(SOURCES[m.source] || m.source).replace(/^The /, 'the ')}` : '', m.by_name ? `by ${m.by_name}` : ''].filter(Boolean).join(' ')
+        : m.source ? `into ${(SOURCES[m.source] || m.source).replace(/^The /, 'the ')}` : '',
       ref: '', po: '', status: '', change: m.kind === 'given' ? m.amount : -m.amount,
     })),
     ...receipts.map((r) => ({
       day: r.day || r.at.slice(0, 10),
       what: `Receipt: ${r.vendor_name || r.vendor_text || 'not read'}${r.description ? `, ${r.description}` : ''}`,
       note: r.hint || '',
+      title: r.vendor_name || r.vendor_text || 'Receipt, not read', detail: r.description || '', state: r.status,
       ref: r.ref, po: r.po_name || '', status: { checking: 'Being checked', accepted: 'Accepted', refused: `Refused${r.reason ? `: ${r.reason}` : ''}` }[r.status],
       change: -spentBy(r),
     })),
   ].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+  // "start": from the first day anything was given or sent.
+  if (query?.from === 'start') from = lines[0]?.day && lines[0].day < to ? lines[0].day : to;
   const opening = lines.filter((l) => l.day < from).reduce((t, l) => t + l.change, 0);
   const shown = lines.filter((l) => l.day >= from && l.day <= to);
   let held = opening;
@@ -393,6 +468,10 @@ export async function statement(env, id, query) {
     name: p.name, code: p.code, from, to, opening, closing: held,
     given: sum((l) => l.change > 0), spent: sum((l) => l.ref && l.change < 0), back: sum((l) => !l.ref && l.change < 0), lines: shown,
   };
+  // Just the totals: what their page shows before they open the statement.
+  if (query?.format === 'json') {
+    return { from, to, opening: s.opening, given: s.given, spent: s.spent, back: s.back, closing: s.closing, lines: shown.length };
+  }
   const file = `Float statement ${p.code} ${from} to ${to}`;
   if (query?.format === 'csv') {
     const cedis = (minor) => (minor / 100).toFixed(2);
@@ -404,6 +483,7 @@ export async function statement(env, id, query) {
       ['', 'Held at the end', '', '', '', '', cedis(s.given), cedis(s.spent + s.back), cedis(held)],
     ]);
   }
+  s.csv = `?${new URLSearchParams({ ...Object.fromEntries(Object.entries(query || {}).filter(([k]) => ['t', 's'].includes(k))), from, to, format: 'csv' })}`;
   return new Response(statementPage(s, file), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
@@ -411,32 +491,58 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const longDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 function statementPage(s, title) {
-  const row = (l) => `<tr><td>${esc(longDay(l.day))}</td><td>${esc(l.what)}${l.status ? `<div class="st">${esc(l.status)}</div>` : ''}</td><td class="note">${esc(l.note)}</td><td class="ref">${esc(l.ref)}</td><td>${esc(l.po)}</td>
-    <td class="n">${l.change > 0 ? esc(ghs(l.change)) : ''}</td><td class="n">${l.change < 0 ? esc(ghs(-l.change)) : ''}</td><td class="n"><b>${esc(ghs(l.held))}</b></td></tr>`;
+  const amount = (minor) => (Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const monthOf = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const shortDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const statusOf = (l) => (l.state === 'accepted' ? `✓ Accepted${l.po ? ` · PO ${l.po}` : ''}`
+    : l.state === 'refused' ? `✕ ${l.status} (does not count)`
+      : l.state ? `Being checked${l.po ? ` · PO ${l.po}` : ''}` : '');
+  let month = '';
+  const rows = s.lines.map((l) => {
+    const head = monthOf(l.day) !== month ? `<tr class="month"><td colspan="6">${esc((month = monthOf(l.day)))}</td></tr>` : '';
+    const out = l.change < 0 ? amount(l.change) : l.state === 'refused' ? '<span class="none">—</span>' : '';
+    return `${head}<tr><td>${esc(shortDay(l.day))}</td>
+      <td><b>${esc(l.title)}</b>${l.detail ? ` · ${esc(l.detail)}` : ''}${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}${statusOf(l) ? `<div class="st ${l.state || ''}">${esc(statusOf(l))}</div>` : ''}</td>
+      <td class="ref">${esc(l.ref)}</td><td class="n">${l.change > 0 ? amount(l.change) : ''}</td><td class="n">${out}</td><td class="n"><b>${esc(amount(l.held))}</b>${l.held < 0 ? ' over' : ''}</td></tr>`;
+  }).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>
-body{font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:0;background:#fff}
-main{max-width:900px;margin:0 auto;padding:28px 20px}
-h1{font-size:22px;margin:0}.sub{color:#555;margin:.2rem 0 1rem}
-.sum{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 16px}
-.sum div{border:1px solid #ddd;border-radius:8px;padding:8px 10px}.sum small{display:block;color:#555}.sum b{font-size:16px}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e5e5;vertical-align:top}
-th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.03em}.n{text-align:right;white-space:nowrap}
-.ref{font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}.note{color:#333;font-style:italic;max-width:220px}.st{color:#666;font-size:12px}
-.bar{display:flex;gap:8px;margin-bottom:16px}.bar button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #bbb;background:#f5f5f5;cursor:pointer}
-.sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}.sign div{border-top:1px solid #999;padding-top:6px;color:#555;font-size:12px}
-@media print{.bar{display:none}main{padding:0}}
+:root{--ink:#14161a;--ink-2:#4b515c;--muted:#8a909b;--line:#e3e6eb;--soft:#f1f2f6;--accent:#4f46e5}
+*{box-sizing:border-box}
+body{font:14px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink);margin:0;background:#f4f5f8;-webkit-font-smoothing:antialiased}
+main{max-width:900px;margin:0 auto;padding:20px 16px 40px}
+.bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.bar button,.bar a{font:inherit;font-weight:700;padding:10px 16px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;text-decoration:none}
+.bar button{background:var(--accent);border-color:var(--accent);color:#fff}
+.paper{background:#fff;border-radius:16px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 4px 14px rgba(16,24,40,.06);padding:28px}
+.ph{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:14px}
+h1{font-size:24px;margin:0;letter-spacing:-.01em}.ph p{margin:2px 0 0;color:var(--ink-2)}
+.brand{text-align:right;font-size:13px;color:var(--muted)}.brand b{display:block;color:var(--ink);font-size:15px}
+.mono,.ref{font:12px ui-monospace,Menlo,monospace;color:var(--ink-2);white-space:nowrap}
+.sum{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:18px 0}
+.sum div{border:1px solid var(--line);border-radius:12px;padding:10px 12px}.sum small{display:block;color:var(--muted);font-size:12px}.sum b{font-size:17px;font-variant-numeric:tabular-nums}
+.sum .end{background:var(--ink);border-color:var(--ink);color:#fff}.sum .end small{color:#c9ccd4}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr.month td{background:var(--soft);font-weight:700;font-size:13px;color:var(--ink-2)}
+.note{font-style:italic;color:var(--ink-2);font-size:13px}.st{color:var(--muted);font-size:12px}.st.accepted{color:#15803d}.st.refused{color:#b91c1c}.none{color:var(--muted)}
+.foot{color:var(--muted);font-size:12px;margin-top:10px}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:44px}.sign div{border-top:1px solid #999;padding-top:6px;color:var(--muted);font-size:12px}
+@media (max-width:700px){.sum{grid-template-columns:repeat(2,minmax(0,1fr))}.paper{padding:18px}}
+@media print{body{background:#fff}.bar{display:none}main{padding:0}.paper{box-shadow:none;padding:0}}
 </style></head><body><main>
-<div class="bar"><button onclick="print()">Print or save as PDF</button></div>
-<h1>Float statement · ${esc(s.name)}</h1>
-<p class="sub">Reference FLT/${esc(s.code)} · ${esc(longDay(s.from))} to ${esc(longDay(s.to))}</p>
-<div class="sum"><div><small>Held at the start</small><b>${esc(ghs(s.opening))}</b></div><div><small>Given</small><b>${esc(ghs(s.given))}</b></div>
-<div><small>Spent (receipts)</small><b>${esc(ghs(s.spent))}</b></div><div><small>Given back</small><b>${esc(ghs(s.back))}</b></div><div><small>Held at the end</small><b>${esc(ghs(s.closing))}</b></div></div>
-<table><thead><tr><th>Date</th><th>What</th><th>Note</th><th>Reference</th><th>PO</th><th class="n">In</th><th class="n">Out</th><th class="n">Still with them</th></tr></thead><tbody>
-<tr><td></td><td>Held at the start</td><td></td><td></td><td></td><td></td><td></td><td class="n"><b>${esc(ghs(s.opening))}</b></td></tr>
-${s.lines.map(row).join('\n') || '<tr><td colspan="8">Nothing in these dates.</td></tr>'}
-</tbody></table>
-<p class="st">A refused receipt does not count against them. One being checked counts until it is refused.</p>
+<div class="bar"><button onclick="print()">Print or save as PDF</button><a href="${esc(s.csv || '')}">Spreadsheet</a></div>
+<div class="paper">
+<div class="ph"><div><h1>Float statement</h1><p>${esc(s.name)} · <span class="mono">FLT/${esc(s.code)}</span></p><p>${esc(longDay(s.from))} to ${esc(longDay(s.to))}</p></div>
+<div class="brand"><b>Insight</b>Printed ${esc(longDay(todayIn('UTC')))}</div></div>
+<div class="sum"><div><small>At the start</small><b>GH₵${esc(amount(s.opening))}</b></div><div><small>Given</small><b>GH₵${esc(amount(s.given))}</b></div>
+<div><small>Spent (receipts)</small><b>GH₵${esc(amount(s.spent))}</b></div><div><small>Given back</small><b>GH₵${esc(amount(s.back))}</b></div><div class="end"><small>Still with them</small><b>${esc(ghs(s.closing))}</b></div></div>
+<div class="wrap"><table><thead><tr><th>Date</th><th>What</th><th>Reference</th><th class="n">In</th><th class="n">Out</th><th class="n">Balance</th></tr></thead><tbody>
+${rows || '<tr><td colspan="6">Nothing in these dates.</td></tr>'}
+</tbody></table></div>
+<p class="foot">Amounts in GH₵. A refused receipt does not count against them; one being checked counts until it is refused.</p>
 <div class="sign"><div>Received by ${esc(s.name)}</div><div>Checked by</div></div>
-</main></body></html>`;
+</div></main></body></html>`;
 }

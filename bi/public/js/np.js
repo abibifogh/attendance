@@ -37,8 +37,14 @@ const isIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 // Offered whenever it is not the app already: where the browser makes no offer of its own, the steps.
 const canInstall = () => !installed();
 const ANDROID_STEPS = 'Tap Chrome’s menu (the three dots ⋮ at the top right), then “Add to Home screen” or “Install app”.';
+// Put on the phone as a plain shortcut that opens the page in Chrome: an installed app would not
+// even start on an old desk phone ("Nice Place keeps stopping"). Only the link with ?app makes the app.
+const plain = !/[?&]app(=|&|$)/.test(location.search);
+const SHORTCUT_STEPS = 'Tap Chrome’s menu (the three dots ⋮ at the top right), then “Add to Home screen”, then “Add”. Nice Place opens in Chrome from it.';
 async function install() {
-  if (!offer) return isIphone() ? 'iphone' : 'android';
+  if (isIphone()) return 'iphone';
+  if (plain) return 'shortcut';
+  if (!offer) return 'android';
   offer.prompt();
   const choice = await offer.userChoice;
   offer = null;
@@ -67,11 +73,11 @@ const token = short ? '' : (() => {
 /** What the server is shown to know the link: its ending, or its code. */
 const key = short ? { s: short } : { t: token };
 const keyQuery = short ? `s=${encodeURIComponent(short)}` : `t=${encodeURIComponent(token)}`;
-if (short || token) {
+if ((short || token) && !plain) {
   // So it can be put on the phone as the Nice Place app, opening on this link.
   document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: `/api/np/manifest?${keyQuery}` }));
 }
-registerWorker();
+if (!plain) registerWorker();
 const SHIFT = { day: 'DAY SHIFT', night: 'NIGHT SHIFT' };
 const COLOURS = ['#0e7490', '#7c3aed', '#b45309', '#15803d', '#be185d', '#1d4ed8'];
 
@@ -155,6 +161,7 @@ function installBox() {
     const out = await install();
     if (out === 'iphone') put(said, IPHONE_STEPS);
     else if (out === 'android') put(said, ANDROID_STEPS);
+    else if (out === 'shortcut') put(said, SHORTCUT_STEPS);
     else if (out === 'accepted') put(said, '✓ Done. Find Nice Place on the phone’s home screen.');
   });
   return el('div', { class: 'install' }, el('b', {}, 'Make it an app'), said, go);

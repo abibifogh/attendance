@@ -236,6 +236,7 @@ const ROUTES = [
   ['POST', '/api/shifts/tasks/:id', 'shifts', (env, ctx) => tasks.change(env, ctx.params.id, ctx.body, ctx.account, { origin: ctx.url.origin })],
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
+  ['POST', '/api/shifts/place', 'shifts', adminOnly((env, ctx) => shiftRoutes.placeShift(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
   ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
   // Refunds owed to guests who paid more by card or MoMo than ASSD shows.
@@ -350,9 +351,12 @@ const ROUTES = [
   ['POST', '/api/floats/decide', 'insight', adminOnly((env, ctx) => floats.decide(env, ctx.body, ctx.account))],
   ['POST', '/api/floats/link', 'insight', adminOnly((env, ctx) => floats.setLink(env, ctx.body))],
   ['POST', '/api/floats/add', 'insight', adminOnly((env, ctx) => floats.adminAdd(env, ctx.body, ctx.account))],
+  ['POST', '/api/floats/amount', 'insight', adminOnly((env, ctx) => floats.decideAmount(env, ctx.body, ctx.account))],
   // Their own link: no sign-in, the token in it is the only key, and it opens one person's float.
   ['GET', '/api/float/me', 'public', (env, ctx) => floats.linkView(env, ctx.query)],
   ['POST', '/api/float/send', 'public', (env, ctx) => floats.linkSend(env, ctx.body)],
+  ['POST', '/api/float/amount', 'public', (env, ctx) => floats.linkAmount(env, ctx.body)],
+  ['GET', '/api/float/statement', 'public', (env, ctx) => floats.linkStatement(env, ctx.query)],
   // Receipts made into draft POs: several chosen at once, or emailed in (the email handler below).
   ['GET', '/api/receipts', 'insight', adminOnly((env) => receipts.list(env))],
   ['GET', '/api/receipts/choices', 'insight', adminOnly((env) => receipts.settingsChoices(env))],
