@@ -709,9 +709,9 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       if (detail) return shiftView(v);
       // Chosen dates: side by side up to ten days, as a calendar beyond.
       const out = ({ day: dayView, week, month: monthView, table: tableView, dates: spanOf(dates) <= 10 ? week : monthView })[mode](v);
-      // What is still to sort out, shift by shift, over the views of the days.
-      const todo = () => { const c = section === 'shifts' ? outstandingCard() : null; if (c) v.prepend(c); fillChecks(v); };
-      if (out?.then) out.then(todo, failed); else todo();
+      // Checked, so locked: the padlocks, once the checks are read. What is still to sort out is on each shift.
+      const marks = () => fillChecks(v);
+      if (out?.then) out.then(marks, failed); else marks();
     } catch (err) { failed(err); }
     return undefined;
   }
@@ -1078,8 +1078,12 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    */
   const tableOpts = { layout: store.get('tablelayout', 'days'), show: 'all', person: '' };
   async function tableView(v) {
-    const names = await till.names().catch(() => new Map());
+    const [names, checks] = await Promise.all([till.names().catch(() => new Map()), till.checks().catch(() => new Map())]);
     const who = (l) => names.get(`${l.day}|${l.slot}`)?.name || nameOf(l.user);
+    // Checked shifts are locked: said on each row.
+    const checkOf = (l) => checks.get(`${l.day}|${l.slot}`) || 'wait';
+    const isLocked = (l) => ['ok', 'changed'].includes(checkOf(l));
+    const lockMark = (l) => (isLocked(l) ? h('span.sh-tlock', { title: checkOf(l) === 'changed' ? 'Checked and locked; changed since it was checked' : 'Checked and locked' }, '🔒') : null);
     const days = monthLines(shifts, data.exceptions, period.from, period.to);
     const all = days.flatMap((d) => d.slots.filter(Boolean));
     const hide = Boolean(data.redacted);
@@ -1118,7 +1122,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (tableOpts.layout === 'days') {
       const shown = days.filter((d) => d.slots.some(passes));
       const cells = (l) => (!l ? [h('td.sh-tsl', h('span.muted', '—')), h('td.n')]
-        : [h(`td.sh-tsl${passes(l) ? '' : '.faint'}`, opener(l), h('div.sh-tcell', h('b', who(l)), chip(l))),
+        : [h(`td.sh-tsl${passes(l) ? '' : '.faint'}`, opener(l), h('div.sh-tcell', h('b', who(l), lockMark(l)), chip(l))),
           h(`td.n${tone_(l.net)}${passes(l) ? '' : '.faint'}`, fig(l.net))]);
       body = h('table.sh-mtable',
         h('thead',
@@ -1137,16 +1141,18 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       const rows = all.filter(passes);
       body = rows.length ? h('table.sh-mtable',
         h('thead', h('tr', h('th', 'Day'), h('th', 'Shift'), h('th', 'Who'), hide ? null : DIFF_COLUMNS.map(([, l]) => h('th.n', l)), hide ? null : h('th.n', 'Net'),
-          h('th.n', 'Open'), h('th.n', 'Waiting'), h('th.n', 'Answered'), h('th', 'Status'))),
+          h('th.n', 'Open'), h('th.n', 'Waiting'), h('th.n', 'Answered'), h('th', 'Status'), h('th', 'Checked'))),
         h('tbody', rows.map((l, i) => h(`tr.sh-trow${rows[i + 1]?.day !== l.day ? '.wk' : ''}`, opener(l),
           h('td', rows[i - 1]?.day === l.day ? '' : h('b', dayText(l.day, { weekday: 'short', day: 'numeric' }))), h('td', SLOT[l.slot].label), h('td', who(l)),
           hide ? null : DIFF_COLUMNS.map(([k]) => h(`td.n${tone_(l.kinds[k])}`, l.hidden ? '' : fig(l.kinds[k]))),
           hide ? null : h(`td.n${tone_(l.net)}`, h('b', fig(l.net))),
-          h('td.n', l.open || '·'), h('td.n', l.waiting || '·'), h('td.n', l.answered || '·'), h('td', chip(l))))),
+          h('td.n', l.open || '·'), h('td.n', l.waiting || '·'), h('td.n', l.answered || '·'), h('td', chip(l)),
+          h('td', { title: isLocked(l) ? 'Locked: undo the check on the shift to change it' : '' }, { ok: '🔒 Checked', changed: '🔒 Changed since checked', wait: h('span.muted', 'Not checked') }[checkOf(l)])))),
         h('tfoot', h('tr', h('td', { colspan: '3' }, `${period.label} · ${rows.length} shift${rows.length === 1 ? '' : 's'}`),
           hide ? null : DIFF_COLUMNS.map(([k]) => { const t = sum(rows, (l) => l.kinds[k]); return h(`td.n${tone_(t)}`, total(t)); }),
           hide ? null : (() => { const t = sum(rows, (l) => l.net); return h(`td.n${tone_(t)}`, total(t)); })(),
-          h('td.n', String(sum(rows, (l) => l.open))), h('td.n', String(sum(rows, (l) => l.waiting))), h('td.n', String(sum(rows, (l) => l.answered))), h('td'))))
+          h('td.n', String(sum(rows, (l) => l.open))), h('td.n', String(sum(rows, (l) => l.waiting))), h('td.n', String(sum(rows, (l) => l.answered))), h('td'),
+          h('td', `🔒 ${rows.filter(isLocked).length} of ${rows.length}`))))
         : h('p.sh-sub', 'No shifts like that this month.');
     }
 
@@ -2939,41 +2945,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     });
   }
 
-  /** One line of a checklist: a box, ticked or not, what it is, and how it was settled. */
-  const todoLine = (i, onclick) => h(`li.sh-todo${i.done ? '.done' : i.waiting ? '.wait' : i.bad ? '.bad' : ''}`,
-    h('span.box', { 'aria-hidden': 'true' }, i.done ? '✓' : i.waiting ? '…' : ''),
-    h('span.t', onclick ? h('button.sh-link', { type: 'button', onclick }, i.text) : h('span', i.text), i.sub ? h('small', i.sub) : null),
-    h('span.sr', i.done ? 'done' : i.waiting ? 'waiting' : 'to do'));
-  const checkLine = (st) => ({ done: st === 'ok', waiting: false, text: 'Marked checked by an admin',
-    sub: st === 'ok' ? null : st === 'changed' ? 'Changed since it was checked: check it again' : 'Not checked yet' });
 
-  /** Over the days: every shift with something still to sort out, each as its checklist. */
-  function outstandingCard() {
-    const rows = shifts.map((s) => ({ s, items: todoOf(s) })).filter((r) => r.items.some((i) => !i.done));
-    if (!rows.length) return null;
-    const open = rows.reduce((n, r) => n + r.items.filter((i) => !i.done && !i.waiting).length, 0);
-    const shown = h('div.sh-outgrid');
-    let all = false;
-    const draw = (checks) => mount(shown, (all ? rows : rows.slice(-6)).slice().reverse().map(({ s, items }) => {
-      const st = checks?.get(`${s.day}|${s.slot}`);
-      const list = [...items, ...(st ? [checkLine(st)] : [])];
-      const done = list.filter((i) => i.done).length;
-      return h('div.sh-outshift',
-        h('button.sh-outhead', { type: 'button', onclick: () => go('shift', s.id) },
-          avatar(s.user), h('span', h('b', nameOf(s.user)), h('small', `${SLOT[s.slot].label} · ${dayText(s.day)}`)),
-          h('span.sh-chip.none', `${done} of ${list.length}`), h('span.sh-open', '›')),
-        h('div.sh-outbar', h('i', { style: `width:${(done / list.length) * 100}%` })),
-        h('ul.sh-todos', list.map((i) => todoLine(i))));
-    }));
-    let checks = null;
-    const more = rows.length > 6 ? h('button.btn', { type: 'button', onclick: () => { all = !all; more.textContent = all ? 'Show the latest 6' : `Show all ${rows.length}`; draw(checks); } }, `Show all ${rows.length}`) : null;
-    draw();
-    till.checks().then((map) => { checks = map; draw(map); }).catch(() => {});
-    return h('section.card.sh-outcard',
-      h('div.sh-cardhead', h('div', h('h2', `Still to sort out · ${rows.length} shift${rows.length === 1 ? '' : 's'}`),
-        h('p.sh-sub', `${open} difference${open === 1 ? '' : 's'} to answer in these days. Each shift’s list ticks itself as they are answered; tap a shift to open it.`))),
-      shown, more);
-  }
 
   /**
    * A payment ASSD does not show is on the shift its time falls in. One taken
