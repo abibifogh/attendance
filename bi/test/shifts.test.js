@@ -1210,3 +1210,19 @@ test('a whole shift moved to the day and slot it belongs to: its answers come wi
   assert.equal(out.days.find((d) => d.day === '2026-08-01').shifts.find((s) => s.user === 'ALPHA').slot, 'morning', 'put back');
   assert.equal(out.exceptions.find((x) => x.key === 'drawer:2026-08-01:morning')?.answer?.answer, 'Explained', 'and its answer with it');
 });
+
+test('one ASSD session taken out of a shift it was joined to: moved alone, the shift’s answers stay', async () => {
+  const env = await loaded();
+  let out = await routes.shifts(env, { from: '2026-07-31', to: '2026-08-02' }, OWNER);
+  const bravo = out.days.find((d) => d.day === '2026-08-01').shifts.find((s) => s.user === 'BRAVO');
+  await env.DB.prepare("INSERT INTO shift_answer (key, answer, by_name, at) VALUES ('drawer:2026-08-01:afternoon', 'Explained', 'Test Owner', '2026-08-02 09:00:00')").run();
+  // Bravo's session put on the morning on its own: the rest of the journal fits around it, and nothing is carried.
+  await routes.placeShift(env, { startSeqs: [bravo.startSeq], carry: false, day: '2026-08-01', slot: 'morning', fromDay: '2026-08-01', fromSlot: 'afternoon', why: 'Started in the morning' }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT key FROM shift_answer').first()).key, 'drawer:2026-08-01:afternoon', 'the answer stays where it was');
+  out = await routes.shifts(env, { from: '2026-07-31', to: '2026-08-02' }, OWNER);
+  assert.equal(out.days.find((d) => d.day === '2026-08-01').shifts.find((s) => s.slot === 'morning').user, 'BRAVO', 'on the morning');
+  await routes.placeShift(env, { startSeqs: [bravo.startSeq], back: true }, OWNER);
+  assert.equal((await env.DB.prepare('SELECT key FROM shift_answer').first()).key, 'drawer:2026-08-01:afternoon', 'put back, nothing carried');
+  out = await routes.shifts(env, { from: '2026-07-31', to: '2026-08-02' }, OWNER);
+  assert.equal(out.days.find((d) => d.day === '2026-08-01').shifts.find((s) => s.user === 'BRAVO').slot, 'afternoon', 'where the journal puts it');
+});

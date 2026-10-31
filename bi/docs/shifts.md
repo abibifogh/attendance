@@ -86,6 +86,39 @@ shift, a small note at the end of the line says which; open it for what to do.
 A supervisor sees only the tabs and kinds an admin gave them, and amounts only
 if they were given those (see `docs/till.md`).
 
+### One shift
+
+A shift opens on one screen:
+
+- **The header**: who, the slot and day, the ASSD sessions inside it, its
+  status, **‹ ›** to the shift before and after, and **⋯** for the
+  reconciliation report, moving the shift, and its notes and history. Whose
+  shift it was, when ASSD and HIVE name different people, sits under it.
+- **Four numbers**: what was taken (cash and card), the drawer, card and
+  MoMo found, and what is left to sort out. Each opens its detail.
+- **To sort out**, on the left: every difference on the shift, open ones
+  first. An open one opens on its card: answer it there, with its other
+  answers, Reconcile with others, To-do and Notes and history. An answered one
+  says how, and opens on its card (with Undo). Those the rules explained fold
+  into one line, each opening on its card. **Possibly the same money** sits
+  at the top; the check (**Mark this shift checked**) is the last step.
+- **The details**, on the right, one tab at a time, a red dot on a tab with
+  something open:
+  - **Drawer**: the drawer from hand-over to the end, with its working, the
+    recount and the opening count.
+  - **Payments**: how guests paid, the card and MoMo checks with which
+    payment matched which line, and the payments on the clock.
+  - **Cash out & expenses**: each cash movement (Correct), the expenses
+    against Odoo and the expense form, and the shift's POs.
+  - **Stock**: water, padlocks and whatever else the desk counts.
+  - **Closing report**: what staff signed in HIVE beside ASSD, or that there
+    is none.
+  - **History**: the notes and events of every difference on the shift, and
+    of the shift itself, newest first.
+
+Without access to the amounts, the numbers say how it stands without them,
+and the tabs are the closing report and the history.
+
 ### Stepping through shifts
 
 On a shift, **‹** and **›** beside its name open the shift before and after.
@@ -105,6 +138,13 @@ notes, to-dos and check go with it. The shift then says where it was moved
 from, by whom and why, with **Put it back**, which returns it and what came
 with it. Its closing report in HIVE moves on its own card. Locked days
 refuse both.
+
+A shift made of two ASSD sessions ("2 ASSD sessions: one → other", often
+because the slot before was taken by a shift on the wrong day) can have one
+of them moved on its own (**What to move: Only …’s session**). The first is
+offered the slot before, the last the slot after. Nothing on the shift is
+carried with a single session, and Put it back carries nothing back. Moving
+the shift on the wrong day first often puts the other back by itself.
 
 ### What is still to sort out
 
