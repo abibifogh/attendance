@@ -3343,7 +3343,13 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         said)
       : x.link ? h('div.sh-done',
         h('span', `✓ Reconciled together with ${others.length} other${others.length === 1 ? '' : 's'}: `,
-          others.map((k) => data.exceptions.find((o) => o.key === k)).map((o, i) => (o ? label(o) : 'one outside these days')).join('; '),
+          // Each one a link: it opens on its shift, on its card, wherever it is.
+          others.map((k, i) => {
+            const o = data.exceptions.find((e) => e.key === k);
+            const go = h('button.sh-link', { type: 'button', title: 'Open it on its shift', onclick: () => { opened.add(k); openWhere(k, go); } },
+              o ? `${label(o)}${o.amount != null ? `, ${flowText(flowOf(o)) || money(Math.abs(o.amount))}` : ''}` : describeKey(k));
+            return [i ? '; ' : '', go];
+          }),
           x.link.note ? ` · ${x.link.note}` : '', ` (${x.link.by})`),
         may('bank', 2) || may('moves', 2) ? h('button.sh-link', {
           type: 'button',

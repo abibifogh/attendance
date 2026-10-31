@@ -95,3 +95,22 @@ test('through the front door: an admin locks; nobody changes a locked day, admin
   const open = await call(1, 'POST', '/api/shifts/answer', { key: 'drawer:2026-08-03:morning', answer: 'Explained' });
   assert.notEqual(open.status, 423, 'the day after is open');
 });
+
+test('a checked shift is locked on its own: by its day and slot, a key naming it, or one of its ASSD lines; unchecked, it opens', async () => {
+  const { db } = freshDb('migrations');
+  const env = { DB: db };
+  const open = (body, ids) => lock.assertShiftsOpen(env, body, { ids });
+  await open({ day: '2026-10-01', slot: 'morning' });
+  await run(db, "INSERT INTO shift_check (day, slot, by_name, at, snapshot, start_seq, end_seq) VALUES ('2026-10-01', 'morning', 'Ola Owner', 'now', '{}', 216000, 216040)");
+  await assert.rejects(open({ day: '2026-10-01', slot: 'morning' }), /morning shift of Thu, 1 Oct 2026 is checked \(Ola Owner\), so it is locked/);
+  await assert.rejects(open({ key: 'drawer:2026-10-01:morning', answer: 'Explained' }), /checked/);
+  await assert.rejects(open({ keys: ['laundry:2026-10-01:afternoon', 'laundry:2026-10-01:morning'] }), /checked/, 'one of those reconciled together');
+  await assert.rejects(open({ key: 'unlabelled:216020' }), /checked/, 'one of its ASSD lines');
+  await assert.rejects(open({ fromDay: '2026-10-01', fromSlot: 'morning', day: '2026-09-30', slot: 'night' }), /checked/, 'moving it');
+  // The same day's other shifts, and lines outside it, stay open.
+  await open({ day: '2026-10-01', slot: 'afternoon' });
+  await open({ key: 'drawer:2026-10-01:afternoon' });
+  await open({ key: 'unlabelled:216053' });
+  await run(db, "DELETE FROM shift_check");
+  await open({ day: '2026-10-01', slot: 'morning' });
+});

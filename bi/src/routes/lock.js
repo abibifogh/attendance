@@ -1,4 +1,4 @@
-import { first, getSettings, setSetting } from '../lib/db.js';
+import { all, first, getSettings, setSetting } from '../lib/db.js';
 import { HttpError, badRequest, str } from '../lib/http.js';
 import { addDays, isDay, todayIn } from '../lib/dates.js';
 
@@ -108,6 +108,51 @@ export async function daysOf(env, body, { dayOfKey, ids = {} } = {}) {
     if (row?.day) days.add(row.day);
   }
   return [...days];
+}
+
+/**
+ * A checked shift is locked on its own: the shifts the request touches, by
+ * day and slot (named, or in a key such as drawer:2026-10-01:morning), by an
+ * ASSD line (within a checked shift's lines) or by a payment's time. Refused
+ * while any of them is checked; unchecking opens it again.
+ */
+export async function assertShiftsOpen(env, body, { whereIs = null, ids = {} } = {}) {
+  const checks = await all(env.DB, 'SELECT day, slot, by_name, at, start_seq, end_seq FROM shift_check').catch(() => []);
+  if (!checks.length) return;
+  const b = body || {};
+  const places = new Set();
+  const seqs = new Set();
+  const SLOT = /^(morning|afternoon|night)$/;
+  for (const [d, s] of [['day', 'slot'], ['toDay', 'toSlot'], ['fromDay', 'fromSlot']]) if (isDay(b[d]) && SLOT.test(String(b[s]))) places.add(`${b[d]}|${b[s]}`);
+  for (const it of Array.isArray(b.items) ? b.items : []) if (isDay(it?.day) && SLOT.test(String(it?.slot))) places.add(`${it.day}|${it.slot}`);
+  const keys = [];
+  for (const it of Array.isArray(b.items) ? b.items : []) if (it?.key) keys.push(String(it.key));
+  if (b.key) keys.push(String(b.key));
+  if (Array.isArray(b.keys)) keys.push(...b.keys.map(String));
+  if (typeof b.answer === 'string' && b.answer.includes(':')) keys.push(b.answer);
+  const linkId = ids.link ? b[ids.link] : null;
+  if (linkId != null) {
+    const row = await first(env.DB, 'SELECT keys FROM shift_link WHERE id = ?1', Number(linkId)).catch(() => null);
+    try { keys.push(...JSON.parse(row?.keys || '[]').map(String)); } catch { /* none */ }
+  }
+  if (b.seq != null && Number.isFinite(Number(b.seq))) seqs.add(Number(b.seq));
+  for (const k of keys) {
+    if (k.startsWith('notpair:')) { keys.push(...k.slice(8).split('|')); continue; }
+    const named = /(\d{4}-\d{2}-\d{2}):(morning|afternoon|night)\b/.exec(k);
+    if (named) { places.add(`${named[1]}|${named[2]}`); continue; }
+    const seq = /:(\d{5,})(?::|$)/.exec(k);
+    if (seq) { seqs.add(Number(seq[1])); continue; }
+    if (whereIs && /(?:^|:)(t|b):[^:]+$/.test(k)) {
+      // eslint-disable-next-line no-await-in-loop
+      const w = await whereIs(env, { key: k }).catch(() => null);
+      if (w?.day && w?.slot) places.add(`${w.day}|${w.slot}`);
+    }
+  }
+  const hit = checks.find((c) => places.has(`${c.day}|${c.slot}`)
+    || (c.start_seq != null && c.end_seq != null && [...seqs].some((q) => q >= c.start_seq && q <= c.end_seq)));
+  if (hit) {
+    throw new HttpError(423, `The ${hit.slot} shift of ${sayDay(hit.day)} is checked${hit.by_name ? ` (${hit.by_name})` : ''}, so it is locked. Uncheck it first to change anything on it.`);
+  }
 }
 
 /** Refuse if any day the request touches is locked. */
