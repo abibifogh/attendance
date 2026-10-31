@@ -858,6 +858,16 @@ test('a keying slip nets as what ASSD has over what the terminal took', () => {
   assert.equal(till.flowOf({ kind: 'not-recorded', amount: 1000 }) + till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -1000);
 });
 
+test('cash keyed while the drawer did not move is minus, and counts once beside its own drawer', () => {
+  const still = { kind: 'keyed-no-cash', amount: 28000, day: '2026-10-13', slot: 'afternoon' };
+  assert.equal(till.flowOf(still), -28000, 'ASSD shows 280 the drawer never had');
+  assert.equal(till.flowOf({ ...still, amount: -5000 }), 5000, 'keyed as paid out, never left');
+  const over = { kind: 'drawer-over', amount: 28000, day: '2026-10-14', slot: 'morning' };
+  assert.deepEqual(till.netFlows([still, over]), [-28000, 28000], 'another shift’s 280 over nets it');
+  const own = { kind: 'drawer-short', amount: -30000, day: '2026-10-13', slot: 'afternoon' };
+  assert.deepEqual(till.netFlows([still, own, over]), [0, -30000, 28000], 'inside its own drawer’s short already');
+});
+
 test('admins are told an answer waits once a quarter of an hour, with what it is and how many wait in all', async () => {
   const { env } = await setUp();
   await env.DB.prepare("INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval) VALUES (3, 'Test Owner', 1, 1, 1, 1, 1, 1)").run();
