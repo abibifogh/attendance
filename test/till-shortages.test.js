@@ -230,13 +230,16 @@ test('a till shortage decided in the last week of a month comes off that month, 
   // Another company's closed payroll does not move it.
   raw.exec("UPDATE att_staff SET company_id = (SELECT MAX(id) FROM company WHERE main = 0) WHERE id = 1;");
   assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-10');
-  // Advances closed off by hand for the month: the next one.
+  // Advances confirmed for the month on the Advances page: the payroll is
+  // still a draft, so it still comes off October.
   raw.prepare("INSERT INTO hr_advance_month (month, closed_by) VALUES ('2026-10', 'Pat Pay')").run();
-  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-11');
+  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-10');
 });
 
 test('till shortages already pushed to the next month come back to the open one', () => {
   const { raw, files } = setup({ stopBefore: '0142' });
+  // October confirmed on the Advances page; its payroll still a draft.
+  raw.prepare("INSERT INTO hr_advance_month (month, closed_by) VALUES ('2026-10', 'Pat Pay')").run();
   const add = (id, takenOn, start, purpose = 'till') => raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month, purpose)
     VALUES (?, 1, 20, 1, 20, 'GHS', 'Till', 'approved', ?, ?, ?)`).run(id, takenOn, start, purpose);
   add(1, '2026-10-30', '2026-11');
