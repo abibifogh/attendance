@@ -432,6 +432,7 @@ export const api = {
   payrollScheme: (body) => request('/api/payroll/schemes', { method: 'POST', body }),
   payrollRemoveScheme: (id) => request(`/api/payroll/schemes/${id}`, { method: 'DELETE' }),
   payrollScores: (body) => request('/api/payroll/scores', { method: 'POST', body: withCompany(body) }),
+  payrollFromMaintenance: (body) => request('/api/payroll/from-maintenance', { method: 'POST', body: withCompany(body) }),
   payrollPenalty: (body) => request('/api/payroll/penalties', { method: 'POST', body: withCompany(body) }),
   payrollRemovePenalty: (id) => request(`/api/payroll/penalties/${id}`, { method: 'DELETE' }),
   payrollSeverance: (body) => request('/api/payroll/severance', { method: 'POST', body: withCompany(body) }),
