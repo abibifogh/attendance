@@ -209,4 +209,12 @@ test('a note on every amount given: when it is given, or added and changed later
   assert.match(csv, /2026-10-11,Given from somewhere else by Test Owner,"Asked for by Ama Test, for the gate lock",/);
   const html = await (await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31' })).text();
   assert.match(html, /<td class="note">Asked for by Ama Test, for the gate lock<\/td>/);
+
+  // They see the same on their own link: each amount with its note, and their statement.
+  const { token } = (await floats.detail(env, personId)).person;
+  const mine = await floats.linkView(env, { t: token });
+  assert.deepEqual(mine.moves.map((m) => [m.day, m.amount, m.note]), [['2026-10-11', 10000, 'Asked for by Ama Test, for the gate lock'], ['2026-10-09', 15000, 'Extra for the plumber'], ['2026-10-05', 20000, null]]);
+  const theirs = await (await floats.linkStatement(env, { t: token, from: '2026-10-01', to: '2026-10-31', format: 'csv' })).text();
+  assert.equal(theirs, csv, 'the same statement the office downloads');
+  await assert.rejects(floats.linkStatement(env, { t: 'not-their-link', from: '2026-10-01', to: '2026-10-31' }), /no longer in use/);
 });
