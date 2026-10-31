@@ -2109,6 +2109,35 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    * once and paired with the movements by amount. Each linked one can be
    * unlinked.
    */
+  /**
+   * POs linked here that Odoo has not given back: not counted until it does.
+   * Odoo may not have been reachable, or may not know the number as typed.
+   */
+  function unreadBox(s, exp, linked) {
+    const read = new Set((exp.odoo?.orders || []).map((o) => String(o.name).toUpperCase()));
+    const missing = linked.filter((n) => !read.has(n.toUpperCase()));
+    if (!missing.length) return null;
+    const unknown = new Set((exp.odoo?.unknown || []).map((n) => String(n).toUpperCase()));
+    const notKnown = missing.filter((n) => unknown.has(n.toUpperCase()));
+    const said = h('span.small');
+    return h('div.sh-pounread',
+      h('p.small', h('b', `Not counted yet: ${missing.join(', ')}. `),
+        notKnown.length ? `Odoo does not know ${notKnown.join(', ')} as typed: check the number in Odoo, unlink it and link the right one. ` : '',
+        notKnown.length < missing.length ? `${notKnown.length ? `${missing.filter((n) => !notKnown.includes(n)).join(', ')}: ` : ''}Odoo has not given ${missing.length - notKnown.length === 1 ? 'its total' : 'their totals'} back${exp.pulledAt ? ` (last read ${exp.pulledAt.slice(0, 16)})` : ''}, perhaps because it could not be reached. ` : '',
+        `${missing.length === 1 ? 'Its total counts' : 'Their totals count'} against the expenses once Odoo gives ${missing.length === 1 ? 'it' : 'them'} back.`),
+      admin ? h('div.sh-fixrow', h('button.btn', {
+        type: 'button',
+        onclick: async (e) => {
+          e.target.disabled = true;
+          said.textContent = 'Reading Odoo…';
+          try {
+            const out = await api('/shifts/expense/pull', { method: 'POST', body: { day: s.day, slot: s.slot } });
+            await load(banner(out.unknown?.length ? 'warning' : 'good', out.unknown?.length ? `Read from Odoo. It does not know ${out.unknown.join(', ')}.` : 'Read from Odoo again.'));
+          } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+        },
+      }, 'Read Odoo again'), said) : null);
+  }
+
   function poLinker(s) {
     if (!canFix) return null;
     const exp = s.expense || {};
@@ -2129,6 +2158,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       h('b', 'Link POs to these expenses'),
       linked.length ? h('div.sh-polinked', linked.map((po) => h('span.sh-chip.none', po,
         h('button.sh-link', { type: 'button', 'aria-label': `Unlink ${po}`, title: 'Unlink', onclick: (e) => send({ remove: po }, e.target) }, '×')))) : null,
+      unreadBox(s, exp, linked),
       h('div.sh-fixrow', typed, h('button.btn', { type: 'button', onclick: (e) => send({ add: typed.value }, e.target) }, 'Link'), said),
       h('small.muted', 'For expenses no closing report gave a PO for. Each is matched to the expense payments by amount.'));
   }
@@ -2480,7 +2510,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       }
       case 'receipts-swapped': return `${money(x.amount)} of receipts went out of the drawer with no cash movement, and cash was put in for them: the notes went up by as much. Here they are not cash; they stay expenses of the shift they were spent on, below.`;
       case 'expense-no-po': return `${money(x.amount)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''} with no PO: none on the closing report in HIVE and none linked here. Link the PO, or answer why there is none.`;
-      case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but the POs (${(x.pos || []).join(', ')}) come to ${money(x.poTotal)} in Odoo: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say. Link the missing PO, unlink a wrong one, or answer why.`;
+      case 'expense-po-gap': return `${money(x.expenses)} left the drawer as expenses${x.seqs?.length ? ` (ASSD ${x.seqs.join(', ')})` : ''}, but ${(x.pos || []).length ? `the POs (${x.pos.join(', ')}) come to ${money(x.poTotal)} in Odoo` : 'no PO has been read from Odoo'}: ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} was paid than the POs say.`
+        + `${x.unread?.length ? ` ${x.unread.join(', ')} ${x.unread.length === 1 ? 'is' : 'are'} linked, but not read from Odoo, so not counted: read Odoo again below.` : ' Link the missing PO, unlink a wrong one, or answer why.'}`;
       case 'movement-unlabelled': return `${money(x.amount)} ${x.part ? `of the ${money(x.whole)} moved out` : 'moved out of the drawer'} (ASSD ${x.seq}) and no count says whether it went to the safe or on expenses.`
         + `${x.pending ? ` ${x.pending.by} has proposed: ${x.pending.kind}. Waiting for an admin.` : ' Say which.'}`;
       case 'laundry-mismatch': return `ASSD has ${money(x.assd)} of laundry on this shift; the laundry system took ${money(x.system)} in the same hours`

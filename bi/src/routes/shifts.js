@@ -1402,12 +1402,15 @@ export async function shifts(env, query, account) {
       const fromReport = (reportPos.get(key) || [])
         .filter((o) => !pulled.some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
       const seqs = s.moves.filter((m) => ['expenses', 'split', 'part'].includes(m.kind)).map((m) => m.seq);
+      // Linked here but not read from Odoo (it could not be read, or does
+      // not know them): not counted, and said so, rather than left out quietly.
+      const unread = poList(exp?.po_numbers).filter((n) => ![...pulled, ...(reportPos.get(key) || [])].some((o) => String(o.name).toUpperCase() === String(n).toUpperCase()));
       if (!poList(exp?.po_numbers).length && !pulled.length && !fromReport.length) {
         exceptions.push({
           ...base, key: `nopo:${s.day}:${s.slotName}`, kind: 'expense-no-po', group: 'nopo', severity: 'warning',
           amount: r.expenses, seqs,
         });
-      } else if (pulled.length || fromReport.length) {
+      } else if (pulled.length || fromReport.length || unread.length) {
         // The POs, as Odoo has them, against what left the drawer as
         // expenses. Typed POs not read from Odoo yet are not judged.
         // What the big safe paid of a PO is not the drawer's (the report's own are already less it).
@@ -1416,7 +1419,7 @@ export async function shifts(env, query, account) {
         if (gap !== 0) {
           exceptions.push({
             ...base, key: `pogap:${s.day}:${s.slotName}:${r.expenses}:${poTotal}`, kind: 'expense-po-gap', group: 'nopo', severity: 'warning',
-            amount: gap, expenses: r.expenses, poTotal, seqs, pos: [...pulled, ...fromReport].map((o) => o.name),
+            amount: gap, expenses: r.expenses, poTotal, seqs, pos: [...pulled, ...fromReport].map((o) => o.name), unread,
           });
         }
       }

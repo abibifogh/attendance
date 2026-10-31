@@ -652,8 +652,10 @@ read as all agreeing:
 - **Expenses with no PO**: the drawer paid out expenses and there is no PO at
   all (none on its closing report, none linked in Insight).
 - **PO total does not match the expenses**: the POs, as Odoo has them, add up
-  to more or less than what left the drawer as expenses. POs typed but not
-  read from Odoo yet are not judged.
+  to more or less than what left the drawer as expenses. A PO linked here
+  that Odoo has not given back (it could not be reached, or does not know the
+  number as typed) is not counted: the card says so, names it, and an admin
+  has **Read Odoo again**. Its total counts once Odoo gives it back.
 
 Each card has the PO box: linking the right PO (or unlinking a wrong one)
 takes it off, or answer why. An answer holds while the amounts stay the
