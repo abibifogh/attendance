@@ -53,6 +53,9 @@
     .amt small { font-weight: 500; text-decoration: none; }
     .memo { grid-column: 2 / 4; background: var(--surface-2); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; padding: 6px 10px; font-size: 14px; }
     .memo.why { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+    .memo.ask, .alert.ask { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+    .memo.ask { display: grid; gap: 6px; } .memo.ask b { color: var(--ink); }
+    .askbtns { display: flex; gap: 8px; flex-wrap: wrap; } .askbtns .btn { padding: 8px 12px; font-size: 14px; }
     .chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); margin-top: 4px; }
     .chip.ok { background: var(--good-bg); color: var(--good); } .chip.no { background: var(--bad-bg); color: var(--bad); } .chip.wait { background: var(--warn-bg); color: var(--warn); }
     .card { background: var(--surface); border-radius: 18px; padding: 16px; box-shadow: var(--shadow); }

@@ -225,3 +225,36 @@ test('a note on every amount given: when it is given, or added and changed later
   assert.equal(theirs, csv, 'the same statement the office downloads');
   await assert.rejects(floats.linkStatement(env, { t: 'not-their-link', from: '2026-10-01', to: '2026-10-31' }), /no longer in use/);
 });
+
+test('a PO changed to another total in Odoo: they and an admin are asked, and the new amount counts once accepted', async () => {
+  const { env, pos } = await setUp();
+  const out = await floats.give(env, { name: 'Kofi Test', amount: '1000', day: '2026-10-12' }, OWNER);
+  await floats.linkSend(env, { t: out.token, file: jpg('diesel') });
+  // Confirmed in Odoo at 350 where the receipt said 300.
+  Object.assign(pos[0], { state: 'purchase', amount_total: 350 });
+  let view = await floats.linkView(env, { t: out.token });
+  const r = view.sent[0];
+  assert.deepEqual([r.status, r.amount, r.change.was, r.change.now, r.change.holder], ['accepted', 30000, 30000, 35000, null], 'the receipt’s amount counts until it is accepted');
+  assert.equal(view.held, 70000);
+  assert.equal((await floats.list(env)).people[0].toLookAt, 1, 'an admin is asked');
+
+  await assert.rejects(floats.linkAmount(env, { t: out.token, id: r.id, answer: 'maybe' }), /Accept the new amount/);
+  await floats.linkAmount(env, { t: out.token, id: r.id, answer: 'accept' });
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].amount, view.held], [35000, 65000], 'accepted by them: the new amount counts');
+
+  // An admin's answer stands over theirs.
+  await floats.decideAmount(env, { id: r.id, answer: 'keep' }, OWNER);
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].amount, view.sent[0].change.admin, view.held], [30000, 'keep', 70000]);
+  assert.equal((await floats.list(env)).people[0].toLookAt, 0);
+
+  // Changed again in Odoo: asked again.
+  pos[0].amount_total = 320;
+  view = await floats.linkView(env, { t: out.token });
+  assert.deepEqual([view.sent[0].change.now, view.sent[0].change.holder, view.sent[0].change.admin], [32000, null, null]);
+  // Put back to the receipt's amount: nothing to ask.
+  pos[0].amount_total = 300;
+  view = await floats.linkView(env, { t: out.token });
+  assert.equal(view.sent[0].change, null);
+});

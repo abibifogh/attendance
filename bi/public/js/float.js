@@ -105,7 +105,18 @@ function line(i) {
     <div><b>${esc(s.vendor || 'Receipt')}</b><small>${esc([s.description, s.ref].filter(Boolean).join(' · '))}</small>${chip}</div>
     <div class="amt num ${refused ? 'off' : ''}">${s.amount != null ? `−${esc(ghs(s.amount))}` : '—'}${refused && s.amount != null ? '<small><br>not counted</small>' : ''}</div>
     ${refused && s.reason ? `<div class="memo why">Why: ${esc(s.reason)}</div>` : ''}
-    ${s.unread && s.status === 'checking' ? '<div class="memo">The office will fill it in.</div>' : ''}</div>`;
+    ${s.unread && s.status === 'checking' ? '<div class="memo">The office will fill it in.</div>' : ''}
+    ${s.change ? changeBox(s) : ''}</div>`;
+}
+
+/** Its PO was changed in Odoo to another total: theirs to accept, or to say it is not right. */
+function changeBox(s) {
+  const c = s.change;
+  const said = c.admin === 'accept' ? `The office accepted ${ghs(c.now)}.` : c.admin === 'keep' ? `The office kept the receipt’s ${ghs(c.was)}.`
+    : c.holder === 'accept' ? `You accepted ${ghs(c.now)}.` : c.holder === 'dispute' ? 'You said it is not right: the office will decide.' : '';
+  return `<div class="memo ask"><b>The PO was changed in Odoo to ${esc(ghs(c.now))}</b> (the receipt said ${esc(ghs(c.was))}).
+    ${said ? `<span>${esc(said)}</span>` : `<span>Is the new amount right?</span>
+    <span class="askbtns"><button type="button" class="btn pri" data-amount="accept" data-id="${s.id}">Yes, ${esc(ghs(c.now))}</button><button type="button" class="btn" data-amount="dispute" data-id="${s.id}">No, it is not right</button></span>`}</div>`;
 }
 
 function listHtml() {
@@ -144,6 +155,7 @@ function paint() {
   const given = d.given || 1;
   const recent = new Date(Date.now() - 14 * 86400000).toISOString();
   const refused = d.sent.filter((s) => s.status === 'refused' && (!s.decidedAt || s.decidedAt.replace(' ', 'T') >= recent.slice(0, 19)));
+  const changed = d.sent.filter((s) => s.change && !s.change.holder && !s.change.admin);
   page.innerHTML = `
     <div class="top"><div class="avatar">${esc((d.name || '?').trim().charAt(0).toUpperCase())}</div><div><small>Hello,</small><b>${esc(d.name)}</b></div><span class="ref">${esc(d.ref)}</span></div>
     <div class="hero"><small>Still with you</small><div class="big num">${esc(ghs(d.held))}</div>
@@ -153,6 +165,7 @@ function paint() {
         <div><small><span class="dot" style="background:#5eead4"></span>Back</small><b class="num">${esc(whole(d.back))}</b></div></div></div>
     ${said.map((m) => `<div class="said ${m.err ? 'err' : ''}">${esc(m.text)}</div>`).join('')}
     ${refused.length ? `<div class="alert"><b>${refused.length} receipt${refused.length === 1 ? '' : 's'} refused</b>${refused.map((s) => esc(`${s.description || s.vendor || s.ref}${s.amount != null ? `, ${ghs(s.amount)}` : ''}: ${s.reason || 'refused'}`)).join('<br>')}<br>${refused.length === 1 ? 'It does not count: the money is still with you.' : 'They do not count: the money is still with you.'}</div>` : ''}
+    ${changed.length ? `<div class="alert ask"><b>${changed.length === 1 ? 'A PO was changed in Odoo' : `${changed.length} POs were changed in Odoo`}</b>${changed.map((s) => esc(`${s.vendor || s.ref}: ${ghs(s.change.was)} → ${ghs(s.change.now)}`)).join('<br>')}<br>Is the new amount right? Answer it under Receipts.</div>` : ''}
     <div class="seg" role="tablist">${Object.entries(TABS).map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div class="list">${tab === 'statement' ? statementHtml() : listHtml()}</div>`;
   const from = document.getElementById('from');
@@ -160,7 +173,17 @@ function paint() {
   if (from && to) [from, to].forEach((el) => { el.onchange = () => { dates = [from.value, to.value]; loadTotals(); paint(); }; });
 }
 
-page.addEventListener('click', (e) => {
+page.addEventListener('click', async (e) => {
+  const a = e.target.closest('[data-amount]');
+  if (a) {
+    a.disabled = true;
+    try {
+      await call('amount', { id: Number(a.dataset.id), answer: a.dataset.amount });
+      said = [{ text: a.dataset.amount === 'accept' ? 'Accepted: the new amount counts.' : 'Sent: the office will decide.' }];
+      await load();
+    } catch (err) { said = [{ err: true, text: err.message }]; paint(); }
+    return;
+  }
   const b = e.target.closest('[data-tab],[data-range]');
   if (!b) return;
   if (b.dataset.tab) { tab = b.dataset.tab; if (tab === 'statement' && !totals) loadTotals(); }
