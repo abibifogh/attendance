@@ -1043,6 +1043,12 @@ export async function shifts(env, query, account) {
   }
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
+  // A checked shift is locked, a change named by its ASSD line too: each checked shift's lines, as placed now.
+  const checkedRows = await optional(all(env.DB, 'SELECT day, slot, start_seq, end_seq FROM shift_check WHERE day BETWEEN ?1 AND ?2', from, to));
+  const seqWrites = checkedRows.map((c) => [c, placed.find((s) => s.day === c.day && s.slotName === c.slot)])
+    .filter(([c, s]) => s && (c.start_seq !== s.startSeq || c.end_seq !== s.endSeq))
+    .map(([c, s]) => env.DB.prepare('UPDATE shift_check SET start_seq = ?3, end_seq = ?4 WHERE day = ?1 AND slot = ?2').bind(c.day, c.slot, s.startSeq, s.endSeq));
+  if (seqWrites.length) await env.DB.batch(seqWrites).catch(() => {});
 
   const approvedInRange = terminal.filter((t) => t.approved && t.kind === 'card' && inRange(t.day))
     .map((t) => ({ rrn: t.rrn, at: t.at, amount: t.amount, last4: t.last4, approval: t.approval }));
