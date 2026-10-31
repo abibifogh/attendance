@@ -1878,6 +1878,9 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 .fl-memo { grid-column: 2 / 4; background: var(--surface-2); border-left: 3px solid var(--accent, #4f46e5); border-radius: 0 10px 10px 0; padding: .35rem .6rem; font-size: .88rem; }
 .fl-memo.why { background: #fdecec; border-color: #b91c1c; color: #b91c1c; }
 .fl-memo.blank { background: none; border-left-color: var(--border); }
+.fl-memo.ask { background: #fdf3e3; border-color: #e8a10c; color: #5c3d00; }
+.fl-askbtns { display: inline-flex; gap: .4rem; flex-wrap: wrap; margin-top: .3rem; }
+.fl-askbtns .btn { padding: .25rem .6rem; font-size: .82rem; }
 .fl-memo.fl-mnote { display: block; } .fl-memo.fl-mnote .sh-link { font-size: .8rem; }
 .fl-iacts { grid-column: 2 / 4; display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
 .fl-iacts .btn { padding: .25rem .6rem; font-size: .82rem; }

@@ -69,6 +69,19 @@ could not be read counts nothing until it is filled in (**Fill it in** opens
 the usual ＋ PO form; its PO still gets the reference). The same picture sent
 twice counts once.
 
+### A PO changed in Odoo
+
+When a receipt's PO is changed in Odoo to another total (GH₵2,200 on the
+receipt, GH₵2,250 on the PO), the receipt's own amount still counts, and both
+are asked. On their page the person sees **The PO was changed in Odoo to …**,
+in a box at the top and on the receipt, with **Yes** or **No, it is not
+right**. In Buying › Floats the receipt says what changed and what they said,
+with **Accept** or **Keep** for an admin; until then it counts among the
+receipts to look at. The new total counts once they accept it, unless an
+admin keeps the receipt's amount: an admin's answer stands over theirs, and
+**Change** takes it off. Changed again in Odoo, both are asked again;
+changed back to the receipt's amount, nothing is asked.
+
 ## Notes on money given
 
 Every amount given can carry a note: typed in **Note on this money** when it

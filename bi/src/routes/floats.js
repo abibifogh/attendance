@@ -100,14 +100,25 @@ async function receiptsOf(env, personIds) {
  * cancelled (refused). Never throws: Odoo not answering leaves them as they are.
  */
 async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
-  const waiting = rows.filter((r) => r.status === 'checking' && r.po_name);
+  // Being checked: accepted or refused by its PO. Any not refused: its PO's total, if changed in Odoo.
+  const waiting = rows.filter((r) => r.status !== 'refused' && r.po_name);
   if (!waiting.length) return;
   try {
     const s = await odooSource(env);
     if (!s) return;
     const { orders } = await purchaseOrders({ ...s, names: waiting.map((r) => r.po_name), ...(fetchImpl ? { fetchImpl } : {}) });
     const state = new Map(orders.map((o) => [o.name.toUpperCase(), o.state]));
+    const totals = new Map(orders.map((o) => [o.name.toUpperCase(), o.total]));
     for (const r of waiting) {
+      // The PO's total changed in Odoo: kept, and the person and an admin asked. Changed back: nothing to ask.
+      const total = totals.get(String(r.po_name).toUpperCase());
+      const changed = total != null && r.amount != null && total !== Number(r.amount) ? total : null;
+      if (total != null && changed !== (r.po_total ?? null)) {
+        Object.assign(r, { po_total: changed, holder_answer: null, holder_at: null, admin_answer: null, admin_by: null, admin_at: null });
+        // eslint-disable-next-line no-await-in-loop
+        await run(env.DB, 'UPDATE float_receipt SET po_total = ?2, holder_answer = NULL, holder_at = NULL, admin_answer = NULL, admin_by = NULL, admin_at = NULL WHERE id = ?1', r.id, changed);
+      }
+      if (r.status !== 'checking') continue;
       const st = state.get(String(r.po_name).toUpperCase());
       if (CONFIRMED.has(st)) Object.assign(r, { status: 'accepted', decided_by: 'Odoo', decided_at: now() });
       else if (st === 'cancel') Object.assign(r, { status: 'refused', reason: `${r.po_name} was cancelled in Odoo.`, decided_by: 'Odoo', decided_at: now() });
@@ -118,8 +129,19 @@ async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
   } catch (err) { console.error('Floats: Odoo', err); }
 }
 
+/**
+ * The amount a receipt counts for: the receipt's own, or its PO's new total
+ * in Odoo once accepted (by an admin, or by the person when no admin has
+ * said otherwise).
+ */
+const amountOf = (r) => (r.po_total != null && (r.admin_answer === 'accept' || (!r.admin_answer && r.holder_answer === 'accept')) ? r.po_total : r.amount);
 /** What a receipt counts for: its amount unless refused (none read yet counts nothing). */
-const spentBy = (r) => (r.status === 'refused' ? 0 : Number(r.amount) || 0);
+const spentBy = (r) => (r.status === 'refused' ? 0 : Number(amountOf(r)) || 0);
+/** A PO changed in Odoo to another total, and what was said to it. */
+const changeOf = (r) => (r.po_total != null && r.status !== 'refused' ? {
+  was: r.amount, now: r.po_total, counts: amountOf(r),
+  holder: r.holder_answer || null, admin: r.admin_answer || null, adminBy: r.admin_by || null,
+} : null);
 
 function totals(moves, receipts) {
   const given = moves.filter((m) => m.kind === 'given').reduce((t, m) => t + m.amount, 0);
@@ -129,11 +151,12 @@ function totals(moves, receipts) {
 }
 
 /** Something to look at: not read, read with something to check, or no PO. */
-const toLookAt = (r) => r.status === 'checking' && (!r.po_name || ['check', 'unread', 'failed'].includes(r.read_status));
+const toLookAt = (r) => (r.status === 'checking' && (!r.po_name || ['check', 'unread', 'failed'].includes(r.read_status)))
+  || (changeOf(r) && !r.admin_answer);
 
 function receiptView(r) {
   return {
-    id: r.id, receiptId: r.receipt_id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: r.amount ?? null,
+    id: r.id, receiptId: r.receipt_id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: amountOf(r) ?? null, change: changeOf(r),
     vendor: r.vendor_name || r.vendor_text || null, description: r.description || null, hint: r.hint || null,
     status: r.status, reason: r.reason || null, decidedBy: r.decided_by || null,
     read: r.read_status, problem: r.problem || null, thumb: r.thumb || null,
@@ -340,7 +363,7 @@ export async function linkView(env, query, { fetchImpl } = {}) {
       kind: m.kind, amount: m.amount, day: m.day, source: SOURCES[m.source] || null, note: m.note || null, by: m.by_name || null,
     })),
     sent: receipts.slice(0, 40).map((r) => ({
-      ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: r.amount ?? null, vendor: r.vendor_name || r.vendor_text || null,
+      id: r.id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: amountOf(r) ?? null, change: changeOf(r), vendor: r.vendor_name || r.vendor_text || null,
       description: r.description || r.hint || null, status: r.status, reason: r.reason || null, decidedAt: r.decided_at || null,
       unread: !r.po_name && r.amount == null,
     })),
@@ -357,6 +380,27 @@ export async function linkSend(env, body, { fetchImpl } = {}) {
       : r.amount != null ? `Read: ${r.vendorText || r.vendorName || 'a receipt'}, ${ghs(r.amount)}. It is being checked.`
         : 'Sent. It could not be read, so the office will fill it in.',
   };
+}
+
+/** The person holding the float, on their link: the PO's new total is right, or it is not. */
+export async function linkAmount(env, body) {
+  const p = await byToken(env, body?.t, body?.s);
+  const r = await first(env.DB, 'SELECT * FROM float_receipt WHERE id = ?1 AND person_id = ?2', Number(body?.id), p.id);
+  if (!r || r.po_total == null) throw badRequest('That receipt has no new amount to answer.');
+  const answer = { accept: 'accept', dispute: 'dispute' }[body?.answer];
+  if (!answer) throw badRequest('Accept the new amount, or say it is not right.');
+  await run(env.DB, 'UPDATE float_receipt SET holder_answer = ?2, holder_at = ?3 WHERE id = ?1', r.id, answer, now());
+  return { ok: true, answer };
+}
+
+/** An admin: the PO's new total counts, or the receipt's own amount stays. Empty takes the answer off. */
+export async function decideAmount(env, body, account) {
+  const r = await first(env.DB, 'SELECT * FROM float_receipt WHERE id = ?1', Number(body?.id));
+  if (!r || r.po_total == null) throw badRequest('That receipt has no new amount to answer.');
+  const answer = { accept: 'accept', keep: 'keep', '': null }[body?.answer ?? ''];
+  if (answer === undefined) throw badRequest('Accept the new amount, or keep the receipt’s.');
+  await run(env.DB, 'UPDATE float_receipt SET admin_answer = ?2, admin_by = ?3, admin_at = ?4 WHERE id = ?1', r.id, answer, answer ? who(account) : null, answer ? now() : null);
+  return { ok: true, answer };
 }
 
 // ------------------------------------------------------------ statement --

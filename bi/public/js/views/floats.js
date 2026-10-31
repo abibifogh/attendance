@@ -122,7 +122,21 @@ export async function renderFloats(root) {
         r.hint ? h('div.fl-memo', `“${r.hint}”`) : null,
         r.problem ? h('div.fl-memo', r.problem) : null,
         refused && r.reason ? h('div.fl-memo.why', `Why: ${r.reason}${r.decidedBy && r.decidedBy !== 'Odoo' ? ` (${r.decidedBy})` : ''}`) : null,
+        r.change ? changeBox(r) : null,
         act);
+    }
+
+    /** Its PO changed in Odoo to another total: what the person said, and the admin's answer, which stands. */
+    function changeBox(r) {
+      const c = r.change;
+      const theirs = { accept: `${p.name} accepted it`, dispute: `${p.name} says it is not right` }[c.holder] || `${p.name} has not answered yet`;
+      const answer = (value) => async () => {
+        try { await api('/floats/amount', { method: 'POST', body: { id: r.id, answer: value } }); paint(banner('good', value === 'accept' ? `${r.ref}: ${money(c.now)} counts.` : value === 'keep' ? `${r.ref}: the receipt’s ${money(c.was)} counts.` : `${r.ref}: your answer is taken off.`)); } catch (err) { paint(banner('problem', err.message)); }
+      };
+      return h('div.fl-memo.ask',
+        h('b', `PO changed in Odoo: ${money(c.was)} → ${money(c.now)}`), ` · ${theirs}. `,
+        c.admin ? [h('span', c.admin === 'accept' ? `${money(c.now)} counts` : `The receipt’s ${money(c.was)} counts`, c.adminBy ? ` (${c.adminBy})` : '', '. '), h('button.sh-link', { type: 'button', onclick: answer('') }, 'Change')]
+          : h('span.fl-askbtns', h('button.btn.primary', { type: 'button', onclick: answer('accept') }, `Accept ${money(c.now)}`), h('button.btn', { type: 'button', onclick: answer('keep') }, `Keep ${money(c.was)}`)));
     }
 
     /** The note on money given or given back: shown, and added or changed in place. It goes on their page and statement. */
