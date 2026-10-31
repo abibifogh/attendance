@@ -148,14 +148,12 @@ the shift on the wrong day first often puts the other back by itself.
 
 ### What is still to sort out
 
-Every shift has a checklist under its title, **To sort out on this shift**:
-each difference on it, ticked once it is answered, reconciled with others or
-explained, one answered by a supervisor marked as waiting for an admin, and
-last **Marked checked by an admin**. It counts what is done ("3 of 5 done");
-tap a line to go to its card. Over the days (Day, Week, Month), **Still to
-sort out** puts the shifts with a difference still open side by side, latest
-first, each as its checklist, ticking itself as answers come in; tap a shift
-to open it.
+Each shift's page lists what is still to sort out on it (see **One shift**:
+To sort out, ticked as it is answered, the check as the last step). The Day,
+Week and Month views show where each shift stands by its colour, and a 🔒 on
+those checked, so locked: on the week's tiles and the day's cards (🔒
+Checked), beside the letter on the month's bars, and in the Table (beside the
+name, and a Checked column with how many of the month's shifts are).
 
 ### Exceptions that are one story
 

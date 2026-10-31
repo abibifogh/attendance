@@ -1212,7 +1212,6 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .sh-todo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: .8rem 0; }
 .sh-todo-days { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 .sh-todo-list { display: grid; gap: .7rem; }
-.sh-todo p { margin: .35rem 0; }
 .sh-todo-admin { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .6rem; padding-top: .55rem; border-top: 1px solid var(--border); }
 .sh-todo-dismiss { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
 .sh-todo-dismiss input, .sh-todo-back { width: 12rem; max-width: 100%; }
@@ -2451,24 +2450,6 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .np-slug { width: 9rem; border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 5px 8px; font: inherit; }
 
 /* Shifts: what is still to sort out, as checklists that tick themselves. */
-.sh-todos { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
-.sh-todo { display: grid; grid-template-columns: 1.35rem minmax(0, 1fr); gap: .55rem; align-items: start; padding: .4rem 0; border-top: 1px solid var(--border); }
-.sh-todo:first-child { border-top: 0; }
-.sh-todo .box { width: 1.35rem; height: 1.35rem; border-radius: 6px; border: 2px solid var(--muted); display: grid; place-items: center; font-size: .8rem; font-weight: 800; margin-top: .05rem; }
-.sh-todo.bad .box { border-color: var(--sh-bad); }
-.sh-todo.wait .box { border-color: var(--sh-warn); color: var(--sh-warn); }
-.sh-todo.done .box { background: var(--sh-good); border-color: var(--sh-good); color: #fff; }
-.sh-todo.done .t > span, .sh-todo.done .t > .sh-link { color: var(--muted); text-decoration: line-through; }
-.sh-todo .t { min-width: 0; }
-.sh-todo .t small { display: block; color: var(--ink-2); font-size: .8rem; }
-.sh-todo .t .sh-link { text-align: left; padding: 0; }
-.sh-todo .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.sh-todocard .sh-cardhead { align-items: flex-start; }
-.sh-outgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: .75rem; margin-bottom: .6rem; }
-.sh-outshift { border: 1px solid var(--border); border-radius: 14px; padding: .65rem .75rem; display: grid; gap: .45rem; align-content: start; }
-.sh-outhead { display: flex; align-items: center; gap: .55rem; width: 100%; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
-.sh-outhead > span:nth-child(2) { flex: 1; min-width: 0; }
-.sh-outhead small { display: block; color: var(--muted); font-size: .78rem; }
 .sh-outbar { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .sh-outbar i { display: block; height: 100%; background: var(--sh-good); }
 .sh-flash { outline: 3px solid var(--accent, #4f46e5); outline-offset: 3px; transition: outline-color .3s; }
@@ -2527,3 +2508,8 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-tabh { font-size: 1rem; margin: 1.2rem 0 .2rem; }
 .sh-history .sh-hist li .small { font-size: .78rem; }
 @media (max-width: 960px) { .sh-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* A checked shift is locked: a padlock beside its letter on the month's calendar. */
+.sh-mslot.locked { font-size: .62rem; white-space: nowrap; overflow: hidden; }
+
+.sh-tlock { margin-left: .3rem; font-size: .8em; }
