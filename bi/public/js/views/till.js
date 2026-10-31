@@ -421,7 +421,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     };
     const check = h('button.btn.primary', { type: 'button', onclick: act('/till/check', (out) => (out.open ? `Checked. ${out.open} thing${out.open === 1 ? '' : 's'} on it to sort out, now final${out.told ? '; they have been told' : ''}.` : 'Checked. Nothing on it to sort out.')) },
       r.check?.changed ? '✓ Check again' : '✓ Mark this shift checked');
-    const undo = h('button.btn', { type: 'button', onclick: act('/till/check/undo', () => 'No longer checked: its differences show as not checked yet again.') }, 'Undo');
+    const undo = h('button.btn', { type: 'button', onclick: act('/till/check/undo', () => 'No longer checked: its differences show as not checked yet again.') }, 'Undo the check');
     const notes = (r.notes || []).map((n) => h('div.tl-small', h('strong', `${n.name || 'Staff'}’s note: `), n.text));
     const today = new Date().toISOString().slice(0, 10);
     if (!r.check) {
@@ -437,13 +437,13 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     if (r.check.changed) {
       return h('section.card.ck-bar.changed',
         h('div', h('strong', '! Changed since it was checked'),
-          h('div.tl-small', `Checked by ${r.check.by} on ${when}, but something on it has changed since (a file loaded again, a correction). ${people} sees what changed as not checked yet until it is checked again.`),
+          h('div.tl-small', `Checked by ${r.check.by} on ${when}, but something on it has changed since (a file loaded again). ${people} sees what changed as not checked yet until it is checked again. 🔒 Locked while checked: undo the check to change anything on it.`),
           notes),
         may ? h('div.ck-acts', check, undo, said) : null);
     }
     return h('section.card.ck-bar.ok',
       h('div', h('strong', `✓ Checked by ${r.check.by}, ${when}`),
-        h('div.tl-small', r.issues ? `${people} sees what is on it as checked, to sort out.` : 'No question on it for the staff.'),
+        h('div.tl-small', `${r.issues ? `${people} sees what is on it as checked, to sort out.` : 'No question on it for the staff.'} 🔒 Locked: nothing on it can be answered, corrected or moved until the check is undone.`),
         notes),
       may ? h('div.ck-acts', undo, said) : null);
   }

@@ -509,6 +509,15 @@ code and card, to check each one arrived.
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.
 
+A shift **marked checked** is locked on its own, without moving the date:
+nothing on it can be answered, reconciled, corrected, counted, moved or put
+on a staff account until the check is undone (**Undo the check**, for whoever
+may check shifts). A change is known to be on it by its day and slot, a
+difference's key naming them, or one of its ASSD lines. The other shifts of
+the same day stay open. Shifts checked before this came in are locked the
+same way. Files loaded later still load; a checked shift they change says
+**Changed since it was checked**.
+
 ### A guest who paid more, or less, than ASSD shows
 
 A bill keyed in ASSD as GH₵ 300 by card, and GH₵ 420 taken on the terminal,

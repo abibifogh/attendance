@@ -456,19 +456,24 @@ const ROUTES = [
 const LOCKED = {
   '/api/shifts/count': {}, '/api/shifts/po-safe': {}, '/api/shifts/expense': {}, '/api/shifts/expense/pull': {}, '/api/shifts/expense/link': {},
   '/api/shifts/form-match/apply': {}, '/api/shifts/receipts': {}, '/api/shifts/receipts-read': {}, '/api/shifts/answer': {}, '/api/shifts/answer-many': {},
-  '/api/shifts/payment-home': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
+  '/api/shifts/payment-home': {}, '/api/shifts/place': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
   '/api/till/resolve': {}, '/api/till/reopen': { report: 'reportId' }, '/api/till/move': { report: 'reportId' }, '/api/till/owner': {},
   '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
   '/api/np/review': {}, '/api/np/reread': {}, '/api/np/move': {}, '/api/np/reading': {}, '/api/np/upload': {}, '/api/np/check': {}, '/api/np/answer': {},
 };
 for (const route of ROUTES) {
-  if (route[0] === 'POST' && LOCKED[route[1]]) route[3] = locked(route[3], LOCKED[route[1]]);
+  if (route[0] === 'POST' && LOCKED[route[1]]) route[3] = locked(route[3], LOCKED[route[1]], route[1]);
 }
 
-/** A change to a shift: refused when any day it touches is locked. */
-function locked(handler, ids = {}) {
+/**
+ * A change to a shift: refused when any day it touches is locked, or any
+ * shift it touches is checked (checking and unchecking are how that moves).
+ */
+function locked(handler, ids = {}, path = '') {
+  const checking = path === '/api/till/check' || path === '/api/till/check/undo';
   return async (env, ctx) => {
     await lock.assertOpen(env, await lock.daysOf(env, ctx.body, { dayOfKey: shiftRoutes.dayOfKey, ids }));
+    if (!checking) await lock.assertShiftsOpen(env, ctx.body, { whereIs: shiftRoutes.whereIs, ids });
     return handler(env, ctx);
   };
 }
