@@ -5,7 +5,7 @@ import { getPepper, hashPin, verifyPasswordKey } from '../lib/auth.js';
 import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
-import { firstMonthFor } from '../lib/advances.js';
+import { tillMonthFor } from '../lib/advances.js';
 import { nextOnReception, owedReports, reportKey } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 import { firstName, sayDate, sayHours, sayMonth, sayShortDate } from '../lib/email-design.js';
@@ -957,7 +957,7 @@ export async function linkRecover(ctx) {
   const reason = str(body.reason, 'Reason', { max: 300 }) || 'Till shortage';
   const by = str(body.by, 'By', { max: 120 }) || 'Insight';
   const currency = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'currency'").first().catch(() => null))?.value || 'GHS';
-  const startMonth = firstMonthFor(today);
+  const startMonth = await tillMonthFor(ctx.db, today, user.staff_id);
   const row = await ctx.db.prepare(
     `INSERT INTO hr_advance (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
        asked_by, decided_by, decided_at, decision, purpose, till_key, till_day, till_slot, till_checked_at, till_checked_by)

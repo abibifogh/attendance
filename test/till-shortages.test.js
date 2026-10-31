@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { dueThisMonth, whyNotDue, NOT_DUE } from '../src/lib/advances.js';
+import { dueThisMonth, tillMonthFor, whyNotDue, NOT_DUE } from '../src/lib/advances.js';
 import { shiftOf, syncTillChecks } from '../src/lib/till-checks.js';
 import { advances, closeMonth, tillDecide, tillShortages, tillToDecide } from '../src/routes/advances.js';
 import { myIssues } from '../src/routes/till.js';
@@ -218,4 +218,36 @@ test('a staff member sees a recovered shortage with the pay it comes off', async
   raw.prepare("INSERT INTO hr_advance_entry (advance_id, month, kind, amount, actor) VALUES (9, '2026-11', 'repayment', 25, 'x')").run();
   out = await (await myIssues(ctx)).json();
   assert.equal(out.issues[0].recovered.taken, true);
+});
+
+test('a till shortage decided in the last week of a month comes off that month, unless its payroll is closed', async () => {
+  const { raw, db } = setup();
+  // The open draft: on the 31st, still October.
+  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-10');
+  // October's payroll closed: the next one.
+  raw.prepare("INSERT INTO pay_run (month, status, company_id) VALUES ('2026-10', 'final', 1)").run();
+  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-11');
+  // Another company's closed payroll does not move it.
+  raw.exec("UPDATE att_staff SET company_id = (SELECT MAX(id) FROM company WHERE main = 0) WHERE id = 1;");
+  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-10');
+  // Advances closed off by hand for the month: the next one.
+  raw.prepare("INSERT INTO hr_advance_month (month, closed_by) VALUES ('2026-10', 'Pat Pay')").run();
+  assert.equal(await tillMonthFor(db, '2026-10-31', 1), '2026-11');
+});
+
+test('till shortages already pushed to the next month come back to the open one', () => {
+  const { raw, files } = setup({ stopBefore: '0142' });
+  const add = (id, takenOn, start, purpose = 'till') => raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month, purpose)
+    VALUES (?, 1, 20, 1, 20, 'GHS', 'Till', 'approved', ?, ?, ?)`).run(id, takenOn, start, purpose);
+  add(1, '2026-10-30', '2026-11');
+  add(2, '2026-10-30', '2026-11', 'other');
+  add(3, '2026-09-28', '2026-10');
+  raw.prepare("INSERT INTO pay_run (month, status, company_id) VALUES ('2026-09', 'final', 1)").run();
+  for (const f of files.filter((n) => n >= '0142')) raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  const start = (id) => raw.prepare('SELECT start_month FROM hr_advance WHERE id = ?').get(id).start_month;
+  assert.equal(start(1), '2026-10');
+  // A salary advance keeps the last-week rule.
+  assert.equal(start(2), '2026-11');
+  // September's payroll is closed: it stays on October.
+  assert.equal(start(3), '2026-10');
 });
