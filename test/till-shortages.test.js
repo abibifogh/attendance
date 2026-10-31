@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { dueThisMonth, whyNotDue, NOT_DUE } from '../src/lib/advances.js';
 import { shiftOf, syncTillChecks } from '../src/lib/till-checks.js';
-import { tillShortages } from '../src/routes/advances.js';
+import { advances, closeMonth, tillShortages } from '../src/routes/advances.js';
 
 /**
  * Till shortages: their own line on the payslip, and off pay only while their
@@ -139,4 +139,22 @@ test('the till shortages list: shift, check, who recovered it, and where it stan
   assert.equal(by[3].status, 'deducted');
   assert.deepEqual(by[3].deducted, [{ month: '2026-09', amount: 30 }]);
   assert.deepEqual(data.totals, { coming: 50, held: 20, deducted: 30 });
+});
+
+test('closing off the month on Advances leaves a held till shortage alone, as the payroll does', async () => {
+  const { raw, db } = setup();
+  raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
+  const insert = raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, status, purpose, start_month, taken_on, reason, till_checked_at, currency)
+    VALUES (?, 1, ?, 1, ?, 'approved', 'till', '2026-10', '2026-10-07', 'Till: drawer, 2026-10-06 afternoon', ?, 'GHS')`);
+  insert.run(1, 50, 50, '2026-10-07 09:00:00');
+  insert.run(2, 20, 20, null);
+  const session = { user: { id: 1, name: 'Pay Roll', role: 'admin' }, permissions: ['hr_pay'] };
+  const list = await (await advances({ db, url: new URL('https://x/api/advances?month=2026-10'), session })).json();
+  const due = list.due ?? list.month?.due ?? [];
+  assert.deepEqual(due.map((d) => d.advanceId), [1], 'the held one is not offered');
+
+  const body = { month: '2026-10', rows: [{ advanceId: 1, paid: true }, { advanceId: 2, paid: true }] };
+  await closeMonth({ db, url: new URL('https://x/api/advances/close'), session, request: new Request('https://x/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+  const entries = raw.prepare('SELECT advance_id, amount FROM hr_advance_entry ORDER BY advance_id').all();
+  assert.deepEqual(entries.map((e) => [e.advance_id, e.amount]), [[1, 50]]);
 });

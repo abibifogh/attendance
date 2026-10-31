@@ -12,6 +12,7 @@ import { holdRefresh, replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyFrom, payslipPage, showPayslips } from './payslip.js';
+import { belowZero } from '../pay-checks.js';
 import { returnsSheet } from './pay-returns.js';
 import { readXlsx } from '../xlsx-read.js';
 
@@ -198,7 +199,9 @@ export async function renderAttPayroll(params) {
           h('td.num', line.ssnit.employee ? cash(line.ssnit.employee) : h('span.muted', '—')),
           h('td.num', cash(line.paye.total)),
           h('td.num', line.loanTotal ? cash(line.loanTotal) : h('span.muted', '—')),
-          h('td.num', h('strong', cash(line.net))),
+          h('td.num', line.net < 0
+            ? h('div', h('strong', { style: { color: 'var(--bad)' } }, cash(line.net)), h('small.pill.bad', { style: { display: 'block', marginTop: '.15rem' } }, 'below zero'))
+            : h('strong', cash(line.net))),
           h('td.num', movementCell(line.against, cash)),
           h('td.num.off-phone', costCell(line.employerCost, line.againstCost, cash)))),
           h('tr.pay-total',
@@ -354,6 +357,7 @@ export async function renderAttPayroll(params) {
       : null,
 
     tilesEl,
+    !closed && belowZero(data.lines ?? []).length ? belowZeroAlert(belowZero(data.lines ?? []), cash) : null,
     stepBar,
     ...stepBody,
     stepNav,
@@ -706,6 +710,31 @@ const NOT_DUE = {
   not_on_payroll: 'not on the payroll, so there is nothing for it to come off',
   not_checked: 'a till shortage whose shift is not checked in Insight yet',
 };
+
+/**
+ * Somebody whose deductions come to more than their pay. Said above the
+ * table, where it is seen before anybody closes the month, with what took
+ * each of them there and what to do about it.
+ */
+function belowZeroAlert(under, cash, { closing = false } = {}) {
+  const parts = (p) => [
+    `pay ${cash(p.gross)}`,
+    p.ssnit ? `SSNIT ${cash(p.ssnit)}` : null,
+    p.paye ? `PAYE ${cash(p.paye)}` : null,
+    p.advances ? `advances ${cash(p.advances)}` : null,
+    p.till ? `till shortages ${cash(p.till)}` : null,
+  ].filter(Boolean).join(' · ');
+  return h('div.alert.bad.pay-below-zero', { role: 'alert' },
+    h('span.alert-icon', '⚠️'),
+    h('div',
+      h('div.alert-title', under.length === 1
+        ? `${under[0].name}'s deductions come to more than their pay`
+        : `${under.length} people's deductions come to more than their pay`),
+      h('ul', under.map((p) => h('li', h('strong', `${p.name}: ${cash(p.net)}`), h('span.muted', ` (${parts(p)})`)))),
+      h('div.alert-detail', closing
+        ? 'Closing now writes these payslips with a net below zero. Hold a deduction over a month or change its amount on Money › Advances first.'
+        : 'Their payslip would show a net below zero. Hold a deduction over a month or change its amount on Money › Advances, then come back.')));
+}
 
 function advanceNote(data, cash) {
   const rows = data.advancesNotDue ?? [];
@@ -2435,10 +2464,12 @@ async function editAllowances(person, current, data) {
 
 async function close(month, data, reload, cash) {
   const t = data.totals;
+  const under = belowZero(data.lines);
   const done = await formDialog({
     title: `Close ${niceMonth(month)}`,
-    submitLabel: 'Close it',
+    submitLabel: under.length ? 'Close it anyway' : 'Close it',
     body: h('div',
+      under.length ? belowZeroAlert(under, cash, { closing: true }) : null,
       h('p.muted', { style: { fontSize: '.85rem' } },
         'Every payslip is written down exactly as it stands, and the advance deductions are '
         + 'recorded against the balances they come off. After this nothing here recomputes.'),

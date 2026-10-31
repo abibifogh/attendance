@@ -169,6 +169,9 @@ export async function advances(ctx) {
     if (balance <= 0) continue;
     if (startsOn(advance) > month) continue;
     const already = entries.find((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind));
+    // A till shortage whose shift is not checked comes off nobody's pay, so it
+    // is not offered as taken either: it waits on Till shortages as held.
+    if (advance.purpose === 'till' && !advance.till_checked_at && !already) continue;
     due.push({
       advanceId: advance.id,
       staff: staffById.get(advance.staff_id)?.name ?? 'Somebody',
@@ -1291,6 +1294,8 @@ export async function closeMonth(ctx) {
         WHERE advance_id = ? AND month = ? AND kind IN ('repayment','skipped')`,
     ).bind(id, month).first();
     if (already) continue;                       // answered already; never twice
+    // Held: its shift is not checked, so the payroll took nothing either.
+    if (advance.purpose === 'till' && !advance.till_checked_at && line.paid !== false) continue;
 
     if (line.paid === false) {
       await write(ctx, advance, {

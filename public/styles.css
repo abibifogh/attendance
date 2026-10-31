@@ -8197,3 +8197,4 @@ button.lp-row:disabled { cursor: default; }
 .ts-search { flex: 0 1 260px; min-height: 40px; }
 .ts-note { font-size: .82rem; margin: .7rem 0 0; }
 .ts-pay { display: grid; gap: .2rem; justify-items: start; }
+.pay-below-zero ul { margin: .35rem 0; padding-left: 1.1rem; display: grid; gap: .2rem; font-size: .9rem; }
