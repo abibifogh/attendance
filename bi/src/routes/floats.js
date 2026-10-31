@@ -26,6 +26,8 @@ const SOURCES = { safe: 'The safe', bank: 'The bank (MoMo or transfer)', drawer:
 const TYPES = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
 const FILE_MAX = 14_000_000;
 const QUIET_DAYS = 14;
+/** A PO changed in Odoo within this many days of the receipt being sent asks the person too; after, only an admin. */
+const ASK_HOLDER_DAYS = 30;
 const CONFIRMED = new Set(['purchase', 'done']);
 
 const newToken = () => {
@@ -114,9 +116,10 @@ async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
       const total = totals.get(String(r.po_name).toUpperCase());
       const changed = total != null && r.amount != null && total !== Number(r.amount) ? total : null;
       if (total != null && changed !== (r.po_total ?? null)) {
-        Object.assign(r, { po_total: changed, holder_answer: null, holder_at: null, admin_answer: null, admin_by: null, admin_at: null });
+        const seen = changed == null ? null : now();
+        Object.assign(r, { po_total: changed, po_changed_at: seen, holder_answer: null, holder_at: null, admin_answer: null, admin_by: null, admin_at: null });
         // eslint-disable-next-line no-await-in-loop
-        await run(env.DB, 'UPDATE float_receipt SET po_total = ?2, holder_answer = NULL, holder_at = NULL, admin_answer = NULL, admin_by = NULL, admin_at = NULL WHERE id = ?1', r.id, changed);
+        await run(env.DB, 'UPDATE float_receipt SET po_total = ?2, po_changed_at = ?3, holder_answer = NULL, holder_at = NULL, admin_answer = NULL, admin_by = NULL, admin_at = NULL WHERE id = ?1', r.id, changed, seen);
       }
       if (r.status !== 'checking') continue;
       const st = state.get(String(r.po_name).toUpperCase());
@@ -134,12 +137,18 @@ async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
  * in Odoo once accepted (by an admin, or by the person when no admin has
  * said otherwise).
  */
-const amountOf = (r) => (r.po_total != null && (r.admin_answer === 'accept' || (!r.admin_answer && r.holder_answer === 'accept')) ? r.po_total : r.amount);
+const amountOf = (r) => (r.po_total != null && (r.admin_answer === 'accept' || (!r.admin_answer && asksHolder(r) && r.holder_answer === 'accept')) ? r.po_total : r.amount);
+/** Changed within 30 days of the receipt being sent: the person is asked too. */
+function asksHolder(r) {
+  const sent = Date.parse(`${String(r.at || '').replace(' ', 'T').slice(0, 19)}Z`);
+  const seen = r.po_changed_at ? Date.parse(`${String(r.po_changed_at).replace(' ', 'T').slice(0, 19)}Z`) : Date.now();
+  return Number.isFinite(sent) && seen - sent <= ASK_HOLDER_DAYS * 86_400_000;
+}
 /** What a receipt counts for: its amount unless refused (none read yet counts nothing). */
 const spentBy = (r) => (r.status === 'refused' ? 0 : Number(amountOf(r)) || 0);
 /** A PO changed in Odoo to another total, and what was said to it. */
 const changeOf = (r) => (r.po_total != null && r.status !== 'refused' ? {
-  was: r.amount, now: r.po_total, counts: amountOf(r),
+  was: r.amount, now: r.po_total, counts: amountOf(r), asksHolder: asksHolder(r),
   holder: r.holder_answer || null, admin: r.admin_answer || null, adminBy: r.admin_by || null,
 } : null);
 
@@ -387,6 +396,7 @@ export async function linkAmount(env, body) {
   const p = await byToken(env, body?.t, body?.s);
   const r = await first(env.DB, 'SELECT * FROM float_receipt WHERE id = ?1 AND person_id = ?2', Number(body?.id), p.id);
   if (!r || r.po_total == null) throw badRequest('That receipt has no new amount to answer.');
+  if (!asksHolder(r)) throw badRequest('It was changed more than 30 days after you sent it: the office decides this one.');
   const answer = { accept: 'accept', dispute: 'dispute' }[body?.answer];
   if (!answer) throw badRequest('Accept the new amount, or say it is not right.');
   await run(env.DB, 'UPDATE float_receipt SET holder_answer = ?2, holder_at = ?3 WHERE id = ?1', r.id, answer, now());

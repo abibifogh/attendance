@@ -79,7 +79,9 @@ right**. In Buying › Floats the receipt says what changed and what they said,
 with **Accept** or **Keep** for an admin; until then it counts among the
 receipts to look at. The new total counts once they accept it, unless an
 admin keeps the receipt's amount: an admin's answer stands over theirs, and
-**Change** takes it off. Changed again in Odoo, both are asked again;
+**Change** takes it off. The person is asked only when the PO changed within
+30 days of their sending the receipt; after that, only an admin is asked
+(their page says the office will decide). Changed again in Odoo, both are asked again;
 changed back to the receipt's amount, nothing is asked.
 
 ## Notes on money given
