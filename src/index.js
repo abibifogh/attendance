@@ -370,6 +370,8 @@ export const ROUTES = [
   ['POST', '/api/advances/import/read', 'hr_pay', advance.readAdvanceImport],
   ['POST', '/api/advances/import', 'hr_pay', advance.applyAdvanceImport],
   ['GET', '/api/advances/staff/:id', 'hr_pay', advance.staffAdvances],
+  // Till shortages taken from pay, read on their own. Above any :id pattern.
+  ['GET', '/api/advances/till', 'hr_pay', advance.tillShortages],
   // Typing the old notebook in. Administrator only, checked in the handler.
   ['POST', '/api/advances/staff/:id/history', 'hr_pay', advance.bringHistoryAcross],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],

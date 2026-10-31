@@ -10,6 +10,7 @@ import {
   reconcilePlan, scheduleFor, startsOn, summarise, unansweredMonths,
 } from '../lib/advances.js';
 import { isAdmin } from '../lib/payroll-access.js';
+import { shiftOf } from '../lib/till-checks.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
 import { firstName, sayDate, sayMonth } from '../lib/email-design.js';
 
@@ -239,6 +240,70 @@ export async function advances(ctx) {
 }
 
 /** One person's advances, with the schedule drawn out. */
+/**
+ * Every till shortage taken from pay, for everybody, on one list.
+ *
+ * Each one is a one-month advance Insight asked for, so it lives with the
+ * advances; this is the same records read as till shortages: the shift it
+ * came from, who checked that shift, who decided to recover it, and where it
+ * stands. Held means its shift is not checked in Insight (now), so nothing
+ * comes off until it is.
+ */
+export async function tillShortages(ctx) {
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const thisMonth = monthOf(todayIn(timezone));
+  const { advances: all, entriesBy } = await ledger(ctx.db);
+  const rows = all.filter((a) => a.purpose === 'till');
+  const staff = await ctx.db.prepare('SELECT id, name, department, employee_no FROM att_staff').all();
+  const staffById = new Map((staff.results ?? []).map((s) => [s.id, s]));
+
+  const items = rows.map((a) => {
+    const entries = entriesBy.get(a.id) ?? [];
+    const left = balanceOf(a, entries);
+    const deducted = entries.filter((e) => e.kind === 'repayment' && Number(e.amount) > 0)
+      .map((e) => ({ month: e.month, amount: round2(e.amount) }))
+      .sort((x, y) => String(x.month).localeCompare(String(y.month)));
+    const shift = shiftOf(a);
+    const person = staffById.get(a.staff_id);
+    let status;
+    if (['declined', 'withdrawn'].includes(a.status)) status = 'cancelled';
+    else if (left <= 0) status = deducted.length ? 'deducted' : 'settled';
+    else if (!a.till_checked_at) status = 'held';
+    else status = 'coming';
+    const start = startsOn(a);
+    return {
+      id: a.id,
+      staff: person ? { id: person.id, name: person.name, department: person.department ?? null, employeeNo: person.employee_no ?? null } : { id: a.staff_id, name: 'Somebody', department: null },
+      amount: round2(a.amount),
+      left,
+      // The kind of difference, as Insight wrote it: "Till: <kind>, <day> <slot>".
+      what: String(a.reason ?? '').replace(/^Till:\s*/, '').replace(/,?\s*\d{4}-\d{2}-\d{2} (morning|afternoon|night)\s*$/, '') || 'Till shortage',
+      reason: a.reason ?? null,
+      day: shift?.day ?? null,
+      slot: shift?.slot ?? null,
+      checkedAt: a.till_checked_at ?? null,
+      checkedBy: a.till_checked_by ?? null,
+      decidedBy: String(a.decided_by ?? a.asked_by ?? '').replace(/\s*\(Insight\)\s*$/, '') || null,
+      recordedOn: a.taken_on ?? null,
+      comesOff: status === 'coming' || status === 'held' ? (start && start > thisMonth ? start : thisMonth) : null,
+      deducted,
+      status,
+    };
+  });
+
+  const sum = (list, pick) => round2(list.reduce((n, i) => n + pick(i), 0));
+  return json({
+    currency,
+    month: thisMonth,
+    items,
+    totals: {
+      coming: sum(items.filter((i) => i.status === 'coming'), (i) => i.left),
+      held: sum(items.filter((i) => i.status === 'held'), (i) => i.left),
+      deducted: sum(items, (i) => i.deducted.reduce((n, d) => n + d.amount, 0)),
+    },
+  });
+}
+
 export async function staffAdvances(ctx, idParam) {
   const staffId = int(idParam, 'Who', { required: true, min: 1 });
   const { timezone, currency } = await settingsOf(ctx.db);

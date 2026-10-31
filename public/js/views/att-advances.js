@@ -659,7 +659,9 @@ function advanceBlock(advance, { person, data, reload, cash }) {
       h('div',
         h('strong', cash(advance.amount)),
         advance.purposeLabel ? h('span.muted', ` for ${advance.purposeLabel.toLowerCase()}`) : null,
-        h('span.muted', ` handed over ${advance.takenOn ? fmtDay(advance.takenOn) : 'at some point'}`),
+        h('span.muted', advance.purpose === 'till'
+          ? ` recorded ${advance.takenOn ? fmtDay(advance.takenOn) : ''}`
+          : ` handed over ${advance.takenOn ? fmtDay(advance.takenOn) : 'at some point'}`),
         h('span.pill' + (badge[0] ? `.${badge[0]}` : ''), { style: { marginLeft: '.4rem' } }, badge[1])),
       h('div.btn-row',
         advance.status === 'approved'
@@ -689,6 +691,12 @@ function advanceBlock(advance, { person, data, reload, cash }) {
           : null)),
 
     advance.reason ? h('div.adv-reason', advance.reason) : null,
+    // A till shortage comes off pay only while its shift is checked in Insight.
+    advance.till && advance.status === 'approved'
+      ? h('div.adv-reason', advance.till.checkedAt
+        ? `Shift checked${advance.till.checkedBy ? ` by ${advance.till.checkedBy}` : ''} on ${fmtDay(String(advance.till.checkedAt).slice(0, 10))}.`
+        : h('span', { style: { color: 'var(--bad)' } }, 'Held: its shift is not checked in Insight, so nothing comes off until it is.'))
+      : null,
 
     // The gap between what the schedule assumes and what the books have seen.
     // Left alone it hides: the balance is right, because nothing was written,

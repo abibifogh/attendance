@@ -502,6 +502,7 @@ export const api = {
   holidayPick: (id, body) => request(`/api/att/holidays/${id}/pick`, { method: 'POST', body }),
   remindHolidays: (id) => request(`/api/att/holidays/${id}/remind`, { method: 'POST', body: {} }),
   confirmHolidays: (id) => request(`/api/att/holidays/${id}/confirm`, { method: 'POST', body: {} }),
+  tillShortages: () => request('/api/advances/till'),
   myHoliday: () => request('/api/me/holiday'),
   chooseHoliday: (optionId) => request('/api/me/holiday', { method: 'POST', body: { optionId } }),
   attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),

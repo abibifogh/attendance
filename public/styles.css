@@ -8191,3 +8191,9 @@ button.lp-row:disabled { cursor: default; }
 }
 .hc-card .card-head { flex-wrap: wrap; }
 .hc-card .card-head .pill { flex: none; width: auto; }
+
+/* ---- Money › Advances › Till shortages ---- */
+.ts-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .6rem; margin-bottom: .8rem; }
+.ts-search { flex: 0 1 260px; min-height: 40px; }
+.ts-note { font-size: .82rem; margin: .7rem 0 0; }
+.ts-pay { display: grid; gap: .2rem; justify-items: start; }

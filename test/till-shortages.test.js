@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { dueThisMonth, whyNotDue, NOT_DUE } from '../src/lib/advances.js';
 import { shiftOf, syncTillChecks } from '../src/lib/till-checks.js';
+import { tillShortages } from '../src/routes/advances.js';
 
 /**
  * Till shortages: their own line on the payslip, and off pay only while their
@@ -113,4 +114,29 @@ test('the payslip gives till shortages a line of their own', () => {
   const view = readFileSync('public/js/views/payslip.js', 'utf8');
   assert.match(view, /'Till shortages' : 'Till shortage'/);
   assert.match(view, /l\.what === 'till'/);
+});
+
+test('the till shortages list: shift, check, who recovered it, and where it stands', async () => {
+  const { raw, db } = setup();
+  raw.exec("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'");
+  const insert = raw.prepare(`INSERT INTO hr_advance (id, staff_id, amount, months, monthly, status, purpose, start_month, taken_on, reason,
+      asked_by, decided_by, till_day, till_slot, till_checked_at, till_checked_by, currency)
+    VALUES (?, 1, ?, 1, ?, 'approved', ?, '2026-10', '2026-10-07', ?, 'Test Owner (Insight)', 'Test Owner (Insight)', ?, ?, ?, ?, 'GHS')`);
+  insert.run(1, 50, 50, 'till', 'Till: Cash left the drawer with no envelope or PO, 2026-10-06 afternoon', '2026-10-06', 'afternoon', '2026-10-07 09:00:00', 'Check Er');
+  insert.run(2, 20, 20, 'till', 'Till: The drawer did not agree, 2026-10-05 morning', '2026-10-05', 'morning', null, null);
+  insert.run(3, 30, 30, 'till', 'Till: The drawer did not agree, 2026-09-04 night', '2026-09-04', 'night', '2026-09-05 08:00:00', 'Check Er');
+  insert.run(4, 500, 500, 'other', 'School shoes', null, null, null, null);
+  raw.prepare("INSERT INTO hr_advance_entry (advance_id, month, kind, amount, actor) VALUES (3, '2026-09', 'repayment', 30, 'x')").run();
+
+  const ctx = { db, url: new URL('https://x/api/advances/till'), session: { user: { id: 1, name: 'Pay Roll', role: 'admin' }, permissions: ['hr_pay'] } };
+  const data = await (await tillShortages(ctx)).json();
+  assert.deepEqual(data.items.map((i) => i.id).sort(), [1, 2, 3], 'salary advances are not on it');
+  const by = Object.fromEntries(data.items.map((i) => [i.id, i]));
+  assert.equal(by[1].status, 'coming');
+  assert.equal(by[1].what, 'Cash left the drawer with no envelope or PO');
+  assert.deepEqual([by[1].day, by[1].slot, by[1].checkedBy, by[1].decidedBy], ['2026-10-06', 'afternoon', 'Check Er', 'Test Owner']);
+  assert.equal(by[2].status, 'held');
+  assert.equal(by[3].status, 'deducted');
+  assert.deepEqual(by[3].deducted, [{ month: '2026-09', amount: 30 }]);
+  assert.deepEqual(data.totals, { coming: 50, held: 20, deducted: 30 });
 });
