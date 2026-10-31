@@ -1873,7 +1873,7 @@ export async function placeShift(env, body, account) {
     const m = was[0];
     if (!m) return { ok: true, back: true };
     if (lockedDay(m.day) || lockedDay(m.from_day)) throw badRequest(`Days up to ${lock.through} are locked.`);
-    await carry(env, { day: m.day, slot: m.slot }, { day: m.from_day, slot: m.from_slot });
+    if (m.carried !== 0) await carry(env, { day: m.day, slot: m.slot }, { day: m.from_day, slot: m.from_slot });
     await run(env.DB, `DELETE FROM shift_place WHERE start_seq IN (${seqs.map((_, i) => `?${i + 1}`).join(', ')})`, ...seqs);
     await logEvent(env, `shift:${m.from_day}:${m.from_slot}`, `Put back on ${m.from_day} ${m.from_slot}, where the journal puts it`, by);
     return { ok: true, back: true };
@@ -1889,10 +1889,12 @@ export async function placeShift(env, body, account) {
   if (!why || why.length < 3) throw badRequest('Say why it belongs there.');
   // Where the journal put it first: kept through a second move, for Put it back.
   const origin = was[0] ? { day: was[0].from_day, slot: was[0].from_slot } : { day: fromDay, slot: fromSlot };
-  await carry(env, { day: fromDay, slot: fromSlot }, { day, slot });
+  // One session taken out of a shift it was joined to leaves the shift's records where they are.
+  const carried = body?.carry !== false && (!was[0] || was[0].carried !== 0);
+  if (carried) await carry(env, { day: fromDay, slot: fromSlot }, { day, slot });
   const at = now();
-  await env.DB.batch(seqs.map((seq) => env.DB.prepare(`INSERT INTO shift_place (start_seq, day, slot, from_day, from_slot, why, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-      ON CONFLICT (start_seq) DO UPDATE SET day = ?2, slot = ?3, why = ?6, by_name = ?7, at = ?8`).bind(seq, day, slot, origin.day, origin.slot, why, by, at)));
+  await env.DB.batch(seqs.map((seq) => env.DB.prepare(`INSERT INTO shift_place (start_seq, day, slot, from_day, from_slot, why, by_name, at, carried) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+      ON CONFLICT (start_seq) DO UPDATE SET day = ?2, slot = ?3, why = ?6, by_name = ?7, at = ?8`).bind(seq, day, slot, origin.day, origin.slot, why, by, at, carried ? 1 : 0)));
   await logEvent(env, `shift:${day}:${slot}`, `Moved here from ${fromDay} ${fromSlot}: “${why}”`, by);
   return { ok: true, day, slot };
 }

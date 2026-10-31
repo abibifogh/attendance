@@ -2703,6 +2703,20 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       // The usual mistake: a night dated the next morning. Offered first.
       const night = SLOTS.indexOf(s.slot) === 0 ? `${plusDays(s.day, -1)}|night` : null;
       if (night) to.value = night;
+      // A shift made of two ASSD sessions (one person's shift joined to the next one's): one of them can be taken out on its own.
+      const parts = (s.sessions || []).filter((x) => x.startSeq != null);
+      const which = parts.length > 1 ? h('select',
+        h('option', { value: 'all' }, `All of it (${parts.map((x) => nameOf(x.user)).join(' and ')})`),
+        parts.map((x, k) => h('option', { value: String(k) }, `Only ${nameOf(x.user)}’s session`))) : null;
+      which?.addEventListener('change', () => {
+        if (which.value === 'all') return;
+        // The first session most likely belongs to the slot before, the last to the slot after.
+        const k = Number(which.value);
+        const i = SLOTS.indexOf(s.slot);
+        const before = i > 0 ? `${s.day}|${SLOTS[i - 1]}` : `${plusDays(s.day, -1)}|night`;
+        const after = i < 2 ? `${s.day}|${SLOTS[i + 1]}` : `${plusDays(s.day, 1)}|morning`;
+        to.value = k === 0 ? before : after;
+      });
       const why = h('input', { type: 'text', maxlength: '300', placeholder: 'e.g. The night shift of the 30th; ASSD dated its opening the next morning' });
       const said = h('span.small');
       const go = h('button.btn.primary', { type: 'button', onclick: async () => {
@@ -2710,13 +2724,15 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         const [day, slot] = to.value.split('|');
         go.disabled = true; said.textContent = 'Moving…';
         try {
-          await api('/shifts/place', { method: 'POST', body: { startSeqs, day, slot, fromDay: s.day, fromSlot: s.slot, why: why.value } });
+          const one = which && which.value !== 'all' ? parts[Number(which.value)] : null;
+          await api('/shifts/place', { method: 'POST', body: { startSeqs: one ? [one.startSeq] : startSeqs, carry: !one, day, slot, fromDay: s.day, fromSlot: s.slot, why: why.value } });
           reopen(day, slot, `Moved to ${where(day, slot)}. Its counts and answers came with it.`);
         } catch (err) { said.textContent = err.message; go.disabled = false; }
       } }, 'Move it');
       mount(box, h('div.sh-moveform',
         h('strong', `Move ${nameOf(s.user)}’s shift`),
         h('p.small', 'For a shift the journal put on the wrong day or slot. Its counts, answers, notes and check go with it, and Put it back undoes it. Its closing report in HIVE is moved on its own card, below.'),
+        which ? h('label.field', 'What to move', which) : null,
         h('label.field', 'It belongs on', to), h('label.field', 'Why', why),
         h('div.sh-save', go, h('button.btn', { type: 'button', onclick: () => mount(box, opener) }, 'Cancel'), said)));
     };

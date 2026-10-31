@@ -106,6 +106,13 @@ from, by whom and why, with **Put it back**, which returns it and what came
 with it. Its closing report in HIVE moves on its own card. Locked days
 refuse both.
 
+A shift made of two ASSD sessions ("2 ASSD sessions: one → other", often
+because the slot before was taken by a shift on the wrong day) can have one
+of them moved on its own (**What to move: Only …’s session**). The first is
+offered the slot before, the last the slot after. Nothing on the shift is
+carried with a single session, and Put it back carries nothing back. Moving
+the shift on the wrong day first often puts the other back by itself.
+
 ### What is still to sort out
 
 Every shift has a checklist under its title, **To sort out on this shift**:
