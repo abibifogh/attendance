@@ -12,6 +12,7 @@ import { holdRefresh, replaceParams, warnBeforeLeaving } from '../app.js';
 import { printReport } from '../print.js';
 import { niceMonth } from './att-advances.js';
 import { companyFrom, payslipPage, showPayslips } from './payslip.js';
+import { payslipMailCard } from './payslip-mail.js';
 import { belowZero } from '../pay-checks.js';
 import { returnsSheet } from './pay-returns.js';
 import { readXlsx } from '../xlsx-read.js';
@@ -283,7 +284,7 @@ export async function renderAttPayroll(params) {
       severanceCard(data, month, closed, reload, cash),
     ],
     3: [closeCard],
-    4: [papersCard],
+    4: [data.slips ? payslipMailCard(month, closed) : null, papersCard].filter(Boolean),
   }[step];
 
   const stepNav = h('div.pay-nav',

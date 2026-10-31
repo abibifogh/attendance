@@ -876,6 +876,15 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'payroll.payslip',
+    group: 'money',
+    label: 'Your payslip, by email',
+    who: 'The person whose payslip it is',
+    when: 'Payroll emails the payslips for a closed month',
+    ways: ['email'],
+    note: 'Sent only when payroll presses Email the payslips; the PDF is attached.',
+  },
+  {
     key: 'till.credited',
     group: 'money',
     label: 'A till surplus is being paid with somebody\u2019s pay',

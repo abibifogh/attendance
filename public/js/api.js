@@ -428,6 +428,8 @@ export const api = {
     return request(`/api/payroll${q.toString() ? `?${q}` : ''}`);
   },
   payslip: (staffId, month) => request(`/api/payroll/slip/${staffId}${month ? `?month=${month}` : ''}`),
+  payslipMail: (month) => request(`/api/payroll/mail?month=${month}${companyQuery()}`),
+  sendPayslipMail: (body) => request('/api/payroll/mail', { method: 'POST', body: withCompany(body) }),
   payrollProfiles: (body) => request('/api/payroll/profiles', { method: 'POST', body }),
   payrollScheme: (body) => request('/api/payroll/schemes', { method: 'POST', body }),
   payrollRemoveScheme: (id) => request(`/api/payroll/schemes/${id}`, { method: 'DELETE' }),
