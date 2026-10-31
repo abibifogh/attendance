@@ -367,6 +367,9 @@ export function readCarried(s, ask, poTotals) {
  * left with no movement (they are reconciled as swapped for cash, like any
  * others). `pos` is [{ name, paid }]: what each PO took out of the drawer.
  *
+ * Not when the counts either side of it show the notes did not go down: then
+ * it took no cash, it carried the receipts.
+ *
  * A movement labelled by hand as the safe or a split keeps its label. A PO
  * that is exactly a movement with no receipts in it is that movement's, and
  * not counted for another. Returns the movements read again.
@@ -381,9 +384,15 @@ export function cashForPos(s, pos) {
     if (same) used.add(same.i);
   }
   const changed = [];
+  // The counts either side of a movement can say it took no cash: the
+  // receipts went down by what it moved and the notes did not. Then it
+  // carried the receipts, whatever the POs add up to.
+  const tookNoCash = (m) => (m.drops || []).every((d) => d.leg && d.leg.prev < m.seq && m.seq < d.seq
+    && d.leg.notesAfter != null && d.leg.notesBefore != null && d.leg.notesAfter >= d.leg.notesBefore);
   const candidates = live
     .filter((m) => m.receipts > 0 && !(m.manual && ['safe', 'split'].includes(m.kind)))
     .filter((m) => (m.drops || []).reduce((t, d) => t + d.amount, 0) === m.receipts)
+    .filter((m) => !tookNoCash(m))
     .sort((a, b) => b.amount - a.amount);
   for (const m of candidates) {
     const free = list.filter((p) => !used.has(p.i)).slice(0, 14);
@@ -1267,7 +1276,11 @@ export async function shifts(env, query, account) {
     const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
     const openingFrom = typed?.opening != null ? 'typed' : assdOpening != null ? 'assd' : previousClosing ? 'carried' : null;
     const out = s.drawerOut;
-    const swapped = swap?.amount || 0;
+    // Reconciled as swapped for cash: never more than the receipts that left
+    // with no movement as the counts read them now. A movement read again as
+    // having carried them leaves nothing swapped, and the drawer is not
+    // given cash nobody put in.
+    const swapped = Math.max(0, Math.min(swap?.amount || 0, s.receiptsSwapped || 0));
     // Expenses with no PO that the big safe paid: cash the drawer kept.
     const fromSafe = safeRows.filter((x) => x.day === s.day && x.slot === s.slotName && String(x.po).startsWith('NOPO-')).reduce((t, x) => t + x.amount, 0);
     const expected = opening == null ? null : opening + s.cash - s.receiptsIn - (out - s.receiptsMoved) + swapped + fromSafe;
@@ -1292,7 +1305,7 @@ export async function shifts(env, query, account) {
         open: s.opening?.receipts ?? null, close: s.closing?.receipts ?? null,
         in: s.receiptsIn, out: s.receiptsOut, moved: s.receiptsMoved, swapped: s.receiptsSwapped,
         direct: s.directExpenses, list: s.receiptsNew,
-        reconciled: swap ? { amount: swap.amount, note: swap.note, by: swap.by_name, at: swap.at } : null,
+        reconciled: swap ? { amount: swapped, saved: swap.amount, note: swap.note, by: swap.by_name, at: swap.at } : null,
       },
       sheetGap: sheet != null && sheet !== expenses ? sheet - expenses : null,
       corrected: s.corrected,
@@ -1365,10 +1378,11 @@ export async function shifts(env, query, account) {
         seq: ask.seq, amount: ask.amount, move: ask.move, reading: d?.reading || null, why: d?.why || null, by: d?.by || null, at: d?.at || null,
       });
     }
-    if (r.receipts.reconciled?.amount) {
+    // Shown while it counts, and while it is saved for more than counts now (to undo).
+    if (r.receipts.reconciled?.amount || r.receipts.reconciled?.saved) {
       exceptions.push({
         ...base, key: `receipts:${s.day}:${s.slotName}`, kind: 'receipts-swapped', group: 'explained', severity: 'info',
-        amount: r.receipts.reconciled.amount, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
+        amount: r.receipts.reconciled.amount, saved: r.receipts.reconciled.saved, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
         swapFrom: swapFromOf(r),
       });
