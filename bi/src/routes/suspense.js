@@ -108,8 +108,28 @@ export async function undoSuspense(env, body, account) {
         if (a?.answer === IN_SUSPENSE && String(a.note || '').startsWith(`S${r.id}`)) await saveAnswer(env, { key, answer: '' }, account);
       }
     }
+    // What was left after reconciling: taken out, the reconciliation it came
+    // from is undone too, so each difference is open again at its full size.
+    let unlinked = false;
+    if (!r.answered) {
+      let own = [];
+      try { own = JSON.parse(r.keys || '[]').map(String); } catch { own = []; }
+      const want = JSON.stringify(own.sort());
+      for (const l of await all(env.DB, "SELECT id, keys FROM shift_link WHERE COALESCE(status, 'applied') = 'applied'").catch(() => [])) {
+        let keys = [];
+        try { keys = JSON.parse(l.keys).map(String); } catch { keys = []; }
+        if (JSON.stringify([...keys].sort()) !== want) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', l.id);
+        for (const k of keys) {
+          // eslint-disable-next-line no-await-in-loop
+          await logEvent(env, k, `S${r.id} taken out of suspense; no longer reconciled together`, who(account)).catch(() => {});
+        }
+        unlinked = true;
+      }
+    }
     await run(env.DB, 'DELETE FROM suspense WHERE id = ?1', r.id);
-    return { ok: true, removed: true };
+    return { ok: true, removed: true, unlinked };
   }
   if (r.closure_id != null) throw badRequest('A safe count has taken it in: undo that count first.');
   if (r.status === 'matched') {

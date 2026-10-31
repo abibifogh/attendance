@@ -44,3 +44,31 @@ test('a difference put in suspense is answered; matched with another, or moved t
   await suspense.undoSuspense(env, { id: c.id }, OWNER);
   assert.equal(await first(db, 'SELECT * FROM shift_answer WHERE key = ?1', 'drawer:2026-10-10:night'), null);
 });
+
+test('what reconciling left in suspense goes with the reconciliation: undo either, and both are undone', async () => {
+  const { db } = freshDb();
+  const env = { DB: db };
+  const shifts = await import('../src/routes/shifts.js');
+  const keys = ['drawer:2026-10-10:afternoon', 'pogap:2026-10-10:afternoon:66000:33000'];
+  const linkId = async () => (await first(db, 'SELECT id FROM shift_link ORDER BY id DESC LIMIT 1'))?.id ?? null;
+
+  // Undo the reconciliation: what was left comes out of suspense.
+  await shifts.saveLink(env, { keys, note: 'GH₵10 left, to suspense' }, OWNER);
+  const a = (await suspense.addSuspense(env, { keys: [...keys].reverse(), amount: -1000, what: 'Left after reconciling 2 together', reconciled: true }, OWNER)).entry;
+  const out = await shifts.removeLink(env, { id: await linkId() }, OWNER);
+  assert.deepEqual(out.suspense, [a.ref]);
+  assert.equal((await suspense.suspenseView(env)).open.length, 0, 'not counted twice');
+
+  // Take it out of suspense: the reconciliation is undone with it.
+  await shifts.saveLink(env, { keys, note: 'GH₵10 left, to suspense' }, OWNER);
+  const b = (await suspense.addSuspense(env, { keys, amount: -1000, what: 'Left after reconciling 2 together', reconciled: true }, OWNER)).entry;
+  assert.equal((await suspense.undoSuspense(env, { id: b.id }, OWNER)).unlinked, true);
+  assert.equal(await linkId(), null, 'each difference open again at its full size');
+
+  // Matched in suspense already: undone there first.
+  await shifts.saveLink(env, { keys, note: 'GH₵10 left, to suspense' }, OWNER);
+  const c = (await suspense.addSuspense(env, { keys, amount: -1000, what: 'Left', reconciled: true }, OWNER)).entry;
+  const d = (await suspense.addSuspense(env, { key: 'not-recorded:t:9', amount: 1000, what: 'Paid, but not in ASSD' }, OWNER)).entry;
+  await suspense.matchSuspense(env, { ids: [c.id, d.id] }, OWNER);
+  await assert.rejects(shifts.removeLink(env, { id: await linkId() }, OWNER), /matched in the suspense account/);
+});

@@ -468,7 +468,7 @@ async function suspenseView(v, notice = null) {
             h('button.sh-link', { type: 'button', onclick: () => mount(act, toSafe(e)) }, 'Move to the safe'), ' · ',
             h('button.sh-link', { type: 'button', onclick: async () => {
               if (!confirm(`Take ${e.ref} out of suspense? Its difference is open again on its shift.`)) return;
-              try { await api('/suspense/undo', { method: 'POST', body: { id: e.id } }); await re(`${e.ref} taken out of suspense.`); } catch (err) { fail(err); }
+              try { const out = await api('/suspense/undo', { method: 'POST', body: { id: e.id } }); await re(`${e.ref} taken out of suspense.${out?.unlinked ? ' What it came from is no longer reconciled together: each difference is open again on its shift, at its full size.' : ''}`); } catch (err) { fail(err); }
             } }, 'Take out')));
       })),
       h('tfoot', h('tr', h('td', { colspan: '4' }, `${d.open.length} open`), h('td.num', h('b', d.total === 0 ? money(0) : signed(d.total))), h('td')))))

@@ -186,6 +186,13 @@ short: the shift's drawer says **✓ Reconciled**, the day and calendar say
 ASSD's own count is still shown, with how far it was out. One answered on
 its own (Explained, say) stays over or short, answered.
 
+Undo the reconciliation and the difference is back at once, at its full size:
+the drawer says Over or Short again, and People counts it again. Whatever was
+left over goes with it: taken off the staff accounts (they are told), or out
+of the suspense account. Once that leftover has been matched in suspense or
+moved to the safe, undo that in Safe › Suspense first. Taking a leftover out
+of suspense undoes its reconciliation the same way.
+
 ### What is left after reconciling, on a staff account
 
 Ticked differences that do not net to nothing say what is left in the bar:

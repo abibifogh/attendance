@@ -773,8 +773,40 @@ export async function removeLink(env, body, account, { pending = false } = {}) {
   if (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL', `left:${id}`).catch(() => null)) {
     throw badRequest('What was left after reconciling these is on a staff account. Take it off the account, and the reconciliation is undone with it.');
   }
+  // What it left over went to suspense: taken out with it, so each difference
+  // is open again at its full size and nothing is counted twice. Once matched
+  // or moved to the safe, that is undone there first.
+  const row = await first(env.DB, 'SELECT keys FROM shift_link WHERE id = ?1', id).catch(() => null);
+  const parked = row ? await leftInSuspense(env, row.keys) : [];
+  const done = parked.find((e) => e.status !== 'open');
+  if (done) {
+    throw badRequest(`What was left after reconciling these, S${done.id}, has been ${done.status === 'matched' ? 'matched in the suspense account' : 'moved from suspense to the safe'}. Undo that in Safe › Suspense first.`);
+  }
+  for (const e of parked) {
+    // eslint-disable-next-line no-await-in-loop
+    await run(env.DB, 'DELETE FROM suspense WHERE id = ?1', e.id);
+  }
   await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', id);
-  return { ok: true };
+  if (parked.length) {
+    let keys = [];
+    try { keys = JSON.parse(row.keys); } catch { keys = []; }
+    for (const k of keys) {
+      // eslint-disable-next-line no-await-in-loop
+      await logEvent(env, k, `No longer reconciled together; ${parked.map((e) => `S${e.id}`).join(', ')} taken out of suspense with it`, who(account)).catch(() => {});
+    }
+  }
+  return { ok: true, suspense: parked.map((e) => `S${e.id}`) };
+}
+
+/** Suspense entries holding what was left when exactly these differences were reconciled together. */
+export async function leftInSuspense(env, keysJson) {
+  const sameKeys = (json) => {
+    try { return JSON.stringify([...JSON.parse(json)].map(String).sort()); } catch { return null; }
+  };
+  const want = sameKeys(keysJson);
+  if (!want) return [];
+  const rows = await all(env.DB, 'SELECT id, keys, status FROM suspense WHERE answered = 0').catch(() => []);
+  return rows.filter((r) => sameKeys(r.keys) === want);
 }
 
 /** The answers that make a guest's overpayment a refund owed, and keep a pair apart. */

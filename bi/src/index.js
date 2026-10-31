@@ -253,8 +253,8 @@ const ROUTES = [
   ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
   ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, async (env, ctx) => {
     // An admin undoing a reconciliation whose leftover is on staff accounts takes that off too.
-    if (!isSupervisor(ctx)) await till.undoLeftOf(env, ctx.body?.id, ctx.account);
-    return shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) });
+    const left = isSupervisor(ctx) ? false : await till.undoLeftOf(env, ctx.body?.id, ctx.account);
+    return { ...(await shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) })), staff: left };
   })],
   ['GET', '/api/shifts/files', 'shifts', area('files', 1, (env) => shiftRoutes.filesStatus(env))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],

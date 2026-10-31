@@ -3397,7 +3397,11 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         may('bank', 2) || may('moves', 2) ? h('button.sh-link', {
           type: 'button',
           onclick: async () => {
-            try { await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } }); await load(banner('good', 'Undone. Those exceptions are open again.')); } catch (err) { said.textContent = err.message; }
+            try {
+              const out = await api('/shifts/unlink', { method: 'POST', body: { id: x.link.id } });
+              till.forget();
+              await load(banner('good', `Undone. Those exceptions are open again, each at its full size${out?.suspense?.length ? `; what was left, ${out.suspense.join(', ')}, is out of the suspense account` : ''}${out?.staff ? '; what was left is off the staff accounts, and they have been told' : ''}.`));
+            } catch (err) { said.textContent = err.message; }
           },
         }, 'Undo') : null)
       : x.moved ? h('div.sh-done',
