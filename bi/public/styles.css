@@ -346,9 +346,9 @@ main { padding: 14px 28px 120px; max-width: 1320px; }
 .card .sub { color: var(--ink-2); font-size: .86rem; margin: -.2rem 0 .8rem; }
 
 .grid { display: grid; gap: 1rem; }
-.grid.two   { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-.grid.three { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
-.grid.four  { grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); }
+.grid.two   { grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); }
+.grid.three { grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); }
+.grid.four  { grid-template-columns: repeat(auto-fit, minmax(min(196px, 100%), 1fr)); }
 
 /* ----------------------------------------------------------- stat tile -- */
 
@@ -724,7 +724,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 /* tiles */
 /* one strip of four, divided by hairlines (the strip's own colour showing through the gaps) */
 .sh-kpis {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1px;
   background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
 }
 .sh-kpi {
@@ -837,7 +837,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-vbox.none { background: var(--surface-2); }
 .sh-vbox .big { font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; }
 .sh-vbox p { margin: 0; font-size: .85rem; color: var(--ink-2); max-width: 46ch; }
-.sh-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .6rem; margin-top: .8rem; align-items: end; }
+.sh-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: .6rem; margin-top: .8rem; align-items: end; }
 .sh-save { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .6rem; }
 .sh-unsaved { color: var(--sh-warn-ink); font-size: .8rem; font-weight: 600; }
 
@@ -893,7 +893,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 }
 .sh-filters button i { width: 9px; height: 9px; border-radius: 50%; }
 .sh-filters button[aria-pressed='true'] { background: var(--ink); color: var(--plane); border-color: var(--ink); }
-.sh-exgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .8rem; }
+.sh-exgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: .8rem; }
 /* the Exceptions inbox: pairs first, then a list and the one open */
 .sh-exhead .sh-progress { gap: .8rem 1.2rem; }
 .sh-exkind { min-width: 0; max-width: 100%; flex: 0 1 auto; }
@@ -978,7 +978,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-done > button, .sh-done > .sh-link { flex: none; white-space: nowrap; }
 
 /* people */
-.sh-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
+.sh-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: .8rem; }
 .sh-person { display: grid; gap: .7rem; border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem; background: var(--surface); }
 .sh-person .top { display: flex; gap: .7rem; align-items: center; }
 .sh-person .top b { font-size: 1.05rem; display: block; }
@@ -992,7 +992,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-strip button { width: 26px; height: 26px; border-radius: 7px; border: 0; color: #fff; font-size: .62rem; font-weight: 700; cursor: pointer; }
 
 /* files */
-.sh-files { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; }
+.sh-files { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: .8rem; }
 .sh-drop {
   border: 2px dashed var(--sh-line); border-radius: var(--radius); padding: 1rem; display: grid; gap: .5rem; justify-items: start;
   background: var(--surface); transition: border-color .15s, background .15s;
@@ -1030,7 +1030,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-plabel { font-size: 1rem; min-width: 12rem; text-align: center; }
 .sh-nav .sh-period { gap: .4rem .5rem; }
 .sh-nav .sh-arrow { width: 32px; height: 32px; }
-.sh-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .8rem; }
+.sh-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: .8rem; }
 .sh-daycard {
   --tone: var(--sh-good);
   display: grid; gap: .6rem; align-content: start; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
@@ -1052,11 +1052,11 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-mixkey span { display: inline-flex; align-items: center; gap: .3rem; }
 .sh-mixkey i { width: 8px; height: 8px; border-radius: 2px; }
 .sh-open { color: var(--series-1); font-size: .82rem; font-weight: 600; }
-.sh-daysum { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .6rem; margin-bottom: .8rem; }
+.sh-daysum { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: .6rem; margin-bottom: .8rem; }
 .sh-daysum div { display: grid; gap: .1rem; padding: .6rem .7rem; border-radius: 10px; background: var(--surface-2); }
 .sh-daysum small { color: var(--ink-2); }
 .sh-daysum b { font-size: 1.1rem; }
-.sh-hbar { display: grid; grid-template-columns: 9rem minmax(0, 1fr) 7rem; gap: .6rem; align-items: center; font-size: .86rem; margin: .3rem 0; }
+.sh-hbar { display: grid; grid-template-columns: 9rem minmax(0, 1fr) minmax(7rem, auto); gap: .6rem; align-items: center; font-size: .86rem; margin: .3rem 0; }
 .sh-hbar b { text-align: right; }
 .sh-month { display: grid; grid-template-columns: repeat(7, minmax(92px, 1fr)); gap: .35rem; min-width: 680px; }
 .sh-mhead { text-align: center; color: var(--muted); font-size: .78rem; font-weight: 600; padding-bottom: .2rem; }
@@ -1075,7 +1075,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-mslots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .sh-mslot { height: 22px; border: 0; border-radius: 5px; color: #fff; font-size: .68rem; font-weight: 700; cursor: pointer; padding: 0; }
 .sh-mslot.empty { background: var(--surface-2); cursor: default; }
-@media (max-width: 520px) { .sh-hbar { grid-template-columns: 6rem minmax(0, 1fr) 5.6rem; } }
+@media (max-width: 520px) { .sh-hbar { grid-template-columns: 6rem minmax(0, 1fr) minmax(5.6rem, auto); } }
 
 /* ------------------------------------- reconciling exceptions together -- */
 .sh .sh-pick { margin-left: .4rem; display: inline-flex; align-items: center; cursor: pointer; }
@@ -1175,7 +1175,7 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 
 /* ------------------------------------------------------------ invitations -- */
 
-.inv-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem; margin: .25rem 0 .9rem; }
+.inv-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); gap: .5rem; margin: .25rem 0 .9rem; }
 .inv-levels button {
   text-align: left; border-radius: 10px; padding: .6rem .75rem; min-height: 2.75rem; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink); font: inherit;
@@ -1210,7 +1210,7 @@ label.field textarea.inv-note { font-family: var(--sans); }
 /* The safe. */
 .sh-safetable td, .sh-safetable th { vertical-align: middle; }
 .sh-safetable tr.closed td { color: var(--ink-2); }
-.sh-safeform { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .2rem .8rem; }
+.sh-safeform { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: .2rem .8rem; }
 .sh-safeclose { border: 2px solid var(--series-1); }
 .sh-unsure summary { cursor: pointer; padding: .2rem 0 .6rem; }
 .sh-unsure[open] summary { margin-bottom: .4rem; }
@@ -1280,7 +1280,7 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .mc-legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .mc-legend small { color: var(--muted); }
 .mc-warn { color: var(--sh-warn-ink); font-weight: 600; }
-.mc-nights { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; margin: .7rem 0; }
+.mc-nights { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: .5rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; margin: .7rem 0; }
 .mc-nights small { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
 .mc-nights b { font-size: 1.15rem; }
 .mc-card select { max-width: 100%; }
@@ -1337,7 +1337,7 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .td-dhead h2 { margin: .15rem 0 0; font-size: 1.25rem; }
 .td-kind { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .td-big { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
-.td-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .6rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; font-size: .86rem; }
+.td-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .6rem; background: var(--surface-2); border-radius: 10px; padding: .7rem .9rem; font-size: .86rem; }
 .td-facts small { display: block; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
 .td-facts .td-age { text-align: left; font-size: .86rem; }
 .td-detail p { margin: 0; }
@@ -1446,7 +1446,7 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .tl-person:first-child { border-top: 0; }
 .tl-personrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
 .tl-personrow select { min-width: 14rem; max-width: 100%; }
-.tl-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .8rem; margin-top: 1rem; }
+.tl-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr)); gap: .8rem; margin-top: 1rem; }
 .tl-presets > div { background: var(--surface-2); border-radius: 10px; padding: .7rem .8rem; }
 .tl-presets p { margin: .25rem 0 0; }
 .tl-limits { display: grid; gap: 0; }
@@ -1499,7 +1499,7 @@ label.field textarea.inv-note { font-family: var(--sans); }
 .pp-top p { margin: .2rem 0 0; }
 .pp-month { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .pp-month b { min-width: 9.5rem; text-align: center; }
-.pp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; }
+.pp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: .8rem; }
 .pp-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem 1rem; display: grid; gap: .1rem; }
 .pp-tile small { color: var(--ink-2); }
 .pp-tile b { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
@@ -1608,7 +1608,7 @@ label.fm-row input { margin-top: .2rem; }
 @media (max-width: 560px) { .sh-swap .sh-otable th:nth-child(3), .sh-swap .sh-otable td:nth-child(3) { display: table-cell; } .sh-swap .sh-otable th:nth-child(4), .sh-swap .sh-otable td:nth-child(4) { display: none; } }
 .sh-flow .sh-link { text-align: left; }
 @media (max-width: 560px) { .sh-flow .ar { display: none; } }
-.sh-evidence.sh-three { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.sh-evidence.sh-three { grid-template-columns: repeat(auto-fit, minmax(min(90px, 100%), 1fr)); }
 .sh-evidence.sh-three span.small { color: var(--ink-2); }
 /* Where receipts that left with no movement were spent. */
 .sh-swapfrom { display: grid; gap: .25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; font-size: .86rem; }
@@ -1632,7 +1632,7 @@ label.fm-row input { margin-top: .2rem; }
 .np-grow { flex: 1; }
 .np-link, .np-upload { display: inline-flex; flex-wrap: wrap; gap: .5rem; align-items: center; min-width: 0; }
 .np-link code { background: var(--surface-2); border-radius: 8px; padding: .35rem .55rem; font-size: .8rem; overflow-wrap: anywhere; }
-.np-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; }
+.np-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: .75rem; }
 .np-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem; display: grid; }
 .np-tile small { color: var(--ink-2); }
 .np-tile b { font-size: 1.6rem; }
@@ -1690,7 +1690,7 @@ label.fm-row input { margin-top: .2rem; }
 .np-fix { border: 1px dashed var(--border); border-radius: 12px; padding: .7rem .9rem; margin-top: .7rem; display: grid; gap: .5rem; }
 .np-fixgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .np-fixgrid label { display: grid; gap: .2rem; font-size: .8rem; color: var(--ink-2); }
-.np-setgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.2rem; }
+.np-setgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 1.2rem; }
 .np-names { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
 .np-inline { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .3rem; }
 .np-inline input { max-width: 9rem; }
@@ -1783,7 +1783,7 @@ label.fm-row input { margin-top: .2rem; }
 .ap-facts dt { color: var(--muted); }
 .ap-facts dd { margin: 0; overflow-wrap: anywhere; }
 .ap-warn { margin: 0; padding-left: 1.1rem; }
-.ap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .6rem; }
+.ap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); gap: .6rem; }
 .ap-field { display: grid; gap: .2rem; font-size: .8rem; color: var(--muted); }
 .ap-field input, .ap-field select, .ap-detail > input { font: inherit; font-size: .92rem; color: var(--ink); padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .ap-check { display: flex; gap: .4rem; align-items: center; font-size: .88rem; }
@@ -1986,7 +1986,7 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .tl-moverow input, .tl-why input { padding: .4rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
 .tl-why { display: grid; gap: .25rem; font-size: .85rem; font-weight: 600; }
 .tl-why input { font-weight: 400; }
-.tl-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem; }
+.tl-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); gap: .5rem; }
 .tl-slot { display: grid; gap: .1rem; text-align: left; border: 1px solid var(--border); border-radius: 10px; padding: .5rem .65rem; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
 .tl-slot small { color: var(--ink-2); font-size: .78rem; }
 .tl-slot.on { border: 2px solid var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, var(--surface)); }
@@ -2014,7 +2014,7 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sv-row label { display: grid; gap: .2rem; font-size: .8rem; font-weight: 600; color: var(--ink-2); }
 .sv-row input { padding: .4rem .55rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
 .sv-gap { flex: 1; }
-.sv-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; }
+.sv-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: .8rem; }
 .sv-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem; }
 .sv-tile small { display: block; color: var(--ink-2); font-size: .8rem; }
 .sv-tile b { display: block; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
@@ -2779,3 +2779,29 @@ tfoot td { font-family: var(--disp); }
 :is(.fl-tile, .pu-tile, .pp-tile, .mg-tile, .sv-tile, .sb-tile, .np-tile, .tl-kpi):nth-child(4n+4) { background: var(--bl-soft); }
 :is(.fl-tile, .pu-tile, .pp-tile, .mg-tile, .sv-tile, .sb-tile, .np-tile, .tl-kpi) > small:first-child { font: 600 .68rem var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
 :is(.fl-tile, .pu-tile, .pp-tile, .mg-tile, .sv-tile, .sb-tile, .np-tile, .tl-kpi) > b { font-family: var(--disp); font-weight: 800; letter-spacing: -.025em; font-size: 1.55rem; }
+
+/* Nothing spills out of its box: a long word with no spaces (a key name, an
+   address) breaks rather than pushing the page wider, and amounts never break. */
+main, .pop, .pal-box, .po-sheet { overflow-wrap: anywhere; }
+.num, td.num, th.num, b.num, .big, .tile .value, .sh-kpi .v, .as-kpi b, .cnt, kbd { overflow-wrap: normal; white-space: nowrap; }
+main img, main svg, main canvas, main video { max-width: 100%; }
+/* The few places a row of figures or words ran out of room. */
+.fl-d4 { grid-template-columns: repeat(auto-fit, minmax(min(128px, 100%), 1fr)); }
+.pp-mo small { white-space: normal; text-align: center; line-height: 1.2; }
+@media (max-width: 860px) {
+  .pop.apps-pop { position: fixed; left: 12px; right: 12px; top: 70px; width: auto; }
+  .pop { max-width: calc(100vw - 24px); }
+}
+/* A big figure keeps to its tile (js/fit.js sets it smaller when it would not fit). */
+.tile .value, .sh-kpi .v, .as-kpi b, .hero, .sh-safebal b, .fl-tile > b, .pu-tile > b, .pp-tile > b, .mg-tile > b, .sv-tile > b, .sb-tile > b, .np-tile > b, .tl-kpi > b, .fl-d4 b, .sh-tile2 > b {
+  display: block; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.tile, .sh-kpi, .as-kpi, .fl-tile, .pu-tile, .pp-tile, .mg-tile, .sv-tile, .sb-tile, .np-tile, .tl-kpi, .fl-d4 > div, .sh-tile2, .as-main, .as-side, .pu > * { min-width: 0; }
+.pu-install > span { min-width: 0; flex: 1 1 220px; }
+/* The drawer, row by row: the amounts' column as wide as the widest amount, the same for every row. */
+@supports (grid-template-columns: subgrid) {
+  .sh-fall { grid-template-columns: 9.5rem minmax(0, 1fr) minmax(7rem, max-content); column-gap: .6rem; }
+  .sh-fall > * { grid-column: 1 / -1; }
+  .sh-fall > .sh-frow { grid-template-columns: subgrid; }
+  @media (max-width: 860px) { .sh-fall { grid-template-columns: 6.8rem minmax(0, 1fr) minmax(5.6rem, max-content); } }
+}
+.sh-frow .amt { white-space: nowrap; }

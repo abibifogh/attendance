@@ -30,6 +30,7 @@ import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
+import { watchFigures } from './fit.js';
 import { canInstall, install, onInstallChange, registerWorker, IPHONE_STEPS, ANDROID_STEPS } from './install.js';
 
 registerWorker();
@@ -345,6 +346,8 @@ async function renderApp() {
     bottom,
     quick.length > 1 ? [fabMenu, fab] : null);
 
+  // Big figures shrink to fit their tiles, whatever the page and whenever they arrive.
+  watchFigures(root);
   state.reload = () => go(current());
   // A part of Shifts that moved to another (a shift opened from To sort out):
   // the address and the menu follow without drawing the page again.
