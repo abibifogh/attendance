@@ -179,14 +179,56 @@ test('a person’s list over the link, and settling it', async () => {
       return Response.json(url.pathname.endsWith('/recover') ? { ok: true, advanceId: 55 } : { ok: true });
     };
     await assert.rejects(till.resolve(env, { key: list.issues[0].key, userId: 8, outcome: 'recover' }, SUPERVISOR, { fetchImpl }), /not been shared|not change/);
+    // Not until the shift is checked: the amount may still change.
+    await assert.rejects(till.resolve(env, { key: list.issues[0].key, userId: 8, outcome: 'recover', note: 'agreed' }, OWNER, { fetchImpl }), /not been checked yet/);
+    assert.equal(asked.length, 0, 'HIVE is not asked');
+    await till.checkShift(env, { day: '2026-08-01', slot: 'afternoon' }, OWNER, { fetchImpl });
+    asked.length = 0;
     const out = await till.resolve(env, { key: list.issues[0].key, userId: 8, outcome: 'recover', note: 'agreed' }, OWNER, { fetchImpl });
     assert.equal(out.advanceId, 55);
-    assert.deepEqual(asked[0], ['/api/link/till/recover', { userId: 8, amount: 2000, key: list.issues[0].key, reason: 'Till: Cash left the drawer with no envelope or PO, 2026-08-01 afternoon', by: 'Test Owner' }]);
+    const [path, sent] = asked[0];
+    assert.equal(path, '/api/link/till/recover');
+    assert.deepEqual({ ...sent, checkedAt: undefined }, {
+      userId: 8, amount: 2000, key: list.issues[0].key, reason: 'Till: Cash left the drawer with no envelope or PO, 2026-08-01 afternoon', by: 'Test Owner',
+      day: '2026-08-01', slot: 'afternoon', checked: true, checkedBy: 'Test Owner', checkedAt: undefined,
+    });
+    assert.ok(sent.checkedAt, 'when it was checked goes with it');
     assert.equal(asked[1][0], '/api/link/till/tell');
 
+    // Recovered from pay stays on their list, marked so; nothing else settled does.
     list = await till.linkIssues(env, { userId: 8 });
-    assert.deepEqual(list.issues, [], 'settled leaves the list');
-    assert.equal(list.cleared, 1);
+    assert.equal(list.issues.length, 1);
+    assert.deepEqual({ ...list.issues[0].recovered, at: undefined }, { how: 'recover', amount: 2000, at: undefined, by: 'Test Owner', advanceId: 55 });
+    assert.equal(list.cleared, 0);
+    // And it is decided, so it is no longer waiting in HIVE.
+    assert.deepEqual((await till.linkToDecide(env)).issues, []);
+  } finally {
+    global.Date = RealDate;
+    Date.now = realNow;
+  }
+});
+
+test('HIVE lists shortages on checked shifts and decides them: not recovered leaves the person’s list', async () => {
+  const { env } = await setUp();
+  const realNow = Date.now;
+  const RealDate = Date;
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [RealDate.parse('2026-08-03T09:00:00Z')])); } static now() { return RealDate.parse('2026-08-03T09:00:00Z'); } };
+  try {
+    const fetchImpl = async () => Response.json({ ok: true });
+    // Not checked yet: nothing to decide.
+    assert.deepEqual((await till.linkToDecide(env)).issues, []);
+    await till.checkShift(env, { day: '2026-08-01', slot: 'afternoon' }, OWNER, { fetchImpl });
+    const waiting = (await till.linkToDecide(env)).issues;
+    assert.equal(waiting.length, 1);
+    assert.deepEqual([waiting[0].userId, waiting[0].amount, waiting[0].day, waiting[0].slot, waiting[0].checkedBy], [8, 2000, '2026-08-01', 'afternoon', 'Test Owner']);
+    // No answer from them is needed.
+    assert.equal(waiting[0].answer, null);
+
+    await assert.rejects(till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'maybe' }, { fetchImpl }), /Recover it, pay it, or not/);
+    await till.linkDecide(env, { key: waiting[0].key, userId: 8, outcome: 'writeoff', by: 'Pay Person' }, { fetchImpl });
+    assert.deepEqual((await till.linkToDecide(env)).issues, []);
+    const list = await till.linkIssues(env, { userId: 8 });
+    assert.deepEqual(list.issues, [], 'not recovered leaves their list');
   } finally {
     global.Date = RealDate;
     Date.now = realNow;
@@ -765,6 +807,86 @@ test('any difference with an amount goes on an account as a deficit or a surplus
   await assert.rejects(till.approve(env, { answer: x.key, ok: true }, OWNER), /already decided: put on Kofi Test's account by Test Owner/);
 });
 
+test('what two reconciled differences do not net to goes on a staff account, and undoing it undoes the reconciliation', async () => {
+  const { env } = await setUp();
+  const fetchImpl = async () => Response.json({ ok: true });
+  // Two card payments on the morning that ASSD never shows.
+  const head = '"SN","Date","PAN","MTI","Terminal","Type","TransactionType","Amount","STAN","MCC","TransactionFee","RRN","MID","Merchant","Currency","Responsecode","Status","AgentId","PhoneNumber","ApprovalCode","IsCNP"';
+  const tap = (n, at, amount) => `"${n}","${at}","=""411111******000${n}""","0200","=""TERM0001""","000000","Purchase","${amount}","=""10000${n}""","7011","D00000000","=""90000000000${n}""","=""MID""","TEST HOTEL","936","=""00""","Approved or completed successfully","=""""","=""""","=""A1B2C${n}""","NO"`;
+  await routes.uploadTerminal(env, { text: [head, tap(1, '2026-08-01 09:00:00', '40.00'), tap(2, '2026-08-01 09:30:00', '25.00')].join('\n'), name: 'tams.csv' }, OWNER);
+  const view = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const open =view.exceptions.filter((e) => e.slot && e.severity !== 'info' && till.flowOf(e) != null && !e.answer && !e.link);
+  // Two whose money does not net to nothing.
+  let pair = null;
+  for (const a of open) for (const b of open) if (!pair && a !== b && till.flowOf(a) + till.flowOf(b) !== 0) pair = [a, b];
+  assert.ok(pair, `two differences with amounts: ${open.map((e) => e.kind).join(', ')}`);
+  const net = till.flowOf(pair[0]) + till.flowOf(pair[1]);
+  const keys = pair.map((x) => x.key);
+  const days = [...new Set(pair.map((x) => x.day))];
+  const left = (body) => till.moveLeftToStaff(env, { keys, days, reason: 'Kept the change', shares: [{ userId: 8, amount: Math.abs(net) }], ...body }, OWNER, { fetchImpl });
+  await assert.rejects(left({ amount: net + 100 }), /What is left has changed/);
+  await assert.rejects(left({ shares: [{ userId: 8, amount: Math.abs(net) + 1 }] }), /Place all of it/);
+  await assert.rejects(till.moveLeftToStaff(env, { keys, days, reason: 'x', shares: [] }, SUPERVISOR), /admin/i);
+  const out = await left({ amount: net });
+  assert.equal(out.ok, true);
+
+  // Both reconciled together; the leftover is on Kofi's list, as a deficit or a surplus.
+  const after = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions.filter((e) => keys.includes(e.key));
+  assert.ok(after.every((e) => e.link), 'both reconciled');
+  assert.match(after[0].link.note, /left, put on Kofi Test: Kept the change/);
+  const kofi = (await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.find((i) => i.userId === 8 && i.kind === 'moved');
+  assert.equal(kofi.amount, net);
+  assert.match(kofi.text, new RegExp(`^A ${net < 0 ? 'deficit' : 'surplus'} of GH₵`));
+
+  // The reconciliation cannot be undone on its own while the leftover is on an account.
+  await assert.rejects(routes.removeLink(env, { id: after[0].link.id }, OWNER), /on a staff account/);
+  // Taking it off the account undoes both.
+  await till.undoMove(env, { id: out.id }, OWNER, { fetchImpl });
+  const again = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions.filter((e) => keys.includes(e.key));
+  assert.ok(again.every((e) => !e.link), 'open again');
+
+  // Undoing the reconciliation, as an admin, takes the leftover off the account too.
+  await left({});
+  const link = (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).exceptions.find((e) => e.key === keys[0]).link;
+  assert.equal(await till.undoLeftOf(env, link.id, OWNER, { fetchImpl }), true);
+  await routes.removeLink(env, { id: link.id }, OWNER);
+  assert.equal((await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.some((i) => i.userId === 8 && i.kind === 'moved'), false, 'off Kofi’s list');
+});
+
+test('a keying slip nets as what ASSD has over what the terminal took', () => {
+  assert.equal(till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -2000);
+  assert.equal(till.flowOf({ kind: 'not-recorded', amount: 1000 }) + till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -1000);
+});
+
+test('cash keyed while the drawer did not move is minus, and takes back its part of its own drawer', () => {
+  const still = { kind: 'keyed-no-cash', amount: 28000, day: '2026-10-13', slot: 'afternoon' };
+  assert.equal(till.flowOf(still), -28000, 'ASSD shows 280 the drawer never had');
+  assert.equal(till.flowOf({ ...still, amount: -5000 }), 5000, 'keyed as paid out, never left');
+  const over = { kind: 'drawer-over', amount: 28000, day: '2026-10-14', slot: 'morning' };
+  assert.deepEqual(till.netFlows([still, over]), [-28000, 28000], 'another shift’s 280 over nets it');
+  assert.equal(till.flowOf({ kind: 'laundry-mismatch', amount: -1500 }), -1500, 'the laundry stays as it was: against its card or drawer twin');
+  const own = { kind: 'drawer-short', amount: -30000, day: '2026-10-13', slot: 'afternoon' };
+  assert.deepEqual(till.netFlows([still, own]), [28000, -30000], 'explains 280 of its own drawer’s 300 short: 20 left');
+});
+
+test('every difference with an amount of its own says which way it goes, as the month table does (the laundry aside)', async () => {
+  const { signedAmount } = await import('../public/js/difftable.js');
+  const cases = [
+    [{ kind: 'laundry-card', amount: 2000 }, 2000, 'card paid at the laundry, not in ASSD'],
+    [{ kind: 'movement-unlabelled', amount: 20000 }, -20000, 'cash out with no label'],
+    [{ kind: 'expense-no-po', amount: 4000 }, -4000, 'expenses with no PO'],
+    [{ kind: 'expense-po-gap', amount: 4000 }, -4000, 'paid out more than the POs show'],
+    [{ kind: 'expense-po-gap', amount: -4000 }, 4000, 'POs above what was paid out'],
+  ];
+  for (const [x, v, why] of cases) {
+    assert.equal(till.flowOf(x), v, why);
+    assert.equal(signedAmount(x), v, `the table agrees: ${why}`);
+  }
+  const twice = { kind: 'movement-twice', amount: 5000, day: '2026-10-13', slot: 'night' };
+  const own = { kind: 'drawer-over', amount: 5000, day: '2026-10-13', slot: 'night' };
+  assert.deepEqual(till.netFlows([twice, own]), [-5000, 5000], 'a movement out twice explains its own drawer’s over: nothing left');
+});
+
 test('admins are told an answer waits once a quarter of an hour, with what it is and how many wait in all', async () => {
   const { env } = await setUp();
   await env.DB.prepare("INSERT INTO till_notify (hive_user_id, name, push, email, amounts, on_closed, on_answer, on_approval) VALUES (3, 'Test Owner', 1, 1, 1, 1, 1, 1)").run();
@@ -816,6 +938,10 @@ test('a shift is “not checked yet” on its person’s list until somebody che
     // The overview says so, with what was noted.
     let row = (await till.overview(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).reports.find((r) => r.slot === 'afternoon');
     assert.deepEqual([row.check.by, row.check.changed, row.notes[0].text], ['Test Owner', false, 'A guest was given change twice']);
+    // The quick list of checks says it too, without working the shifts out.
+    assert.deepEqual((await till.checkList(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER)).checks.map((c) => [c.day, c.slot, c.by]),
+      [['2026-08-01', 'afternoon', 'Test Owner']]);
+    assert.deepEqual((await till.checkList(env, { from: '2026-08-02', to: '2026-08-02' }, OWNER)).checks, [], 'only the days asked for');
 
     // Changed since it was checked (here: the amount it was checked at differs): not checked again.
     await env.DB.prepare(`UPDATE shift_check SET snapshot = ?1`).bind(JSON.stringify({ [kofi.key]: '-1500|' })).run();
@@ -1073,4 +1199,54 @@ test('an expense with no PO the big safe paid: off the drawer, which kept the ca
   const last = (await routes.shifts(env, range, OWNER)).days.flatMap((d) => d.shifts).find((s) => s.day === before.day && s.slot === before.slot);
   assert.equal(last.register.expenses, r0.expenses - 500);
   assert.deepEqual((await env.DB.prepare("SELECT description FROM safe_entry WHERE kind = 'pending'").all()).results.map((x) => x.description), ['Bulbs']);
+});
+
+test('HIVE asking about checks: a difference put on staff accounts is checked while the move stands', async () => {
+  const { env } = await setUp();
+  await env.DB.prepare("INSERT INTO shift_check (day, slot, by_name, at, snapshot) VALUES ('2026-08-01', 'morning', 'Test Owner', '2026-08-02 08:00:00', '{}')").run();
+  await env.DB.prepare("INSERT INTO till_move (id, key, kind, day, slot, amount, shares, reason, by_name, at) VALUES (7, 'f:6', 'drawer-short', '2026-08-01', 'night', -500, '[]', 'Taken', 'Test Owner', '2026-08-02 09:00:00')").run();
+  const out = await till.linkChecks(env, {
+    shifts: [{ day: '2026-08-01', slot: 'morning' }, { day: '2026-08-01', slot: 'night' }],
+    keys: ['moved:7:3', 'moved:8:3', 'not-a-key'],
+  });
+  assert.deepEqual(out.checked.map((c) => c.slot), ['morning']);
+  assert.deepEqual(out.keys, [{ key: 'moved:7:3', by: 'Test Owner', at: '2026-08-02 09:00:00' }]);
+  // Undone: no longer.
+  await env.DB.prepare("UPDATE till_move SET undone_at = '2026-08-03 08:00:00' WHERE id = 7").run();
+  assert.deepEqual((await till.linkChecks(env, { shifts: [], keys: ['moved:7:3'] })).keys, []);
+});
+
+test('a surplus put on somebody’s account can be paid with salary, from HIVE or Insight, by an admin', async () => {
+  const { env } = await setUp();
+  const realNow = Date.now;
+  const RealDate = Date;
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [RealDate.parse('2026-08-03T09:00:00Z')])); } static now() { return RealDate.parse('2026-08-03T09:00:00Z'); } };
+  try {
+    await env.DB.prepare(`INSERT INTO till_move (id, key, kind, day, slot, owner_name, amount, shares, reason, by_name, at)
+      VALUES (4, 'drawer:2026-08-01:night', 'drawer-over', '2026-08-01', 'night', 'Someone', 1500, '[{"userId":8,"name":"Kofi","amount":1500}]', 'Over at the count', 'Test Owner', '2026-08-02 08:00:00')`).run();
+    const asked = [];
+    const fetchImpl = async (request) => {
+      const path = new URL(request.url).pathname;
+      asked.push([path, JSON.parse(await request.text())]);
+      return Response.json(path === '/api/link/till/credit' ? { ok: true, creditId: 12 } : { ok: true });
+    };
+    const waiting = (await till.linkToDecide(env)).issues.filter((i) => i.key === 'moved:4:8');
+    assert.equal(waiting.length, 1);
+    assert.deepEqual([waiting[0].amount, waiting[0].surplus], [1500, true]);
+    // A supervisor cannot; recovering a surplus makes no sense.
+    await assert.rejects(till.resolve(env, { key: 'moved:4:8', userId: 8, outcome: 'pay' }, SUPERVISOR, { fetchImpl }), /not been shared|not change|Only an admin/);
+    await assert.rejects(till.resolve(env, { key: 'moved:4:8', userId: 8, outcome: 'recover' }, OWNER, { fetchImpl }), /not a shortage/);
+
+    await till.linkDecide(env, { key: 'moved:4:8', userId: 8, outcome: 'pay', by: 'Pay Person' }, { fetchImpl });
+    const [path, sent] = asked[0];
+    assert.equal(path, '/api/link/till/credit');
+    assert.deepEqual([sent.userId, sent.amount, sent.key, sent.day, sent.slot, sent.checked], [8, 1500, 'moved:4:8', '2026-08-01', 'night', true]);
+    // Off the waiting list, and on theirs marked paid through payroll.
+    assert.deepEqual((await till.linkToDecide(env)).issues.filter((i) => i.key === 'moved:4:8'), []);
+    const mine = (await till.linkIssues(env, { userId: 8 })).issues.find((i) => i.key === 'moved:4:8');
+    assert.deepEqual([mine.recovered.how, mine.recovered.creditId, mine.recovered.amount], ['pay', 12, 1500]);
+  } finally {
+    global.Date = RealDate;
+    Date.now = realNow;
+  }
 });

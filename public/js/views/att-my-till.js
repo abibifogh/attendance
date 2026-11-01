@@ -565,9 +565,12 @@ export async function renderAttMyTillIssues() {
   return host;
 
   function paint() {
-    // Checked by the office: final, to answer. Not checked yet: may change, a note at most.
-    const checked = data.issues.filter((i) => i.checked !== false);
-    const waiting = data.issues.filter((i) => i.checked === false);
+    // Checked by the office: final, to answer. Not checked yet: may change, a
+    // note at most. Recovered from pay: nothing to do, kept so it can be seen.
+    const recovered = data.issues.filter((i) => i.recovered);
+    const live = data.issues.filter((i) => !i.recovered);
+    const checked = live.filter((i) => i.checked !== false);
+    const waiting = live.filter((i) => i.checked === false);
     const sub = [
       checked.filter((i) => !i.locked).length ? `${checked.filter((i) => !i.locked).length} checked and need${checked.filter((i) => !i.locked).length === 1 ? 's' : ''} you` : null,
       waiting.length ? `${waiting.length} not checked yet` : null,
@@ -581,8 +584,33 @@ export async function renderAttMyTillIssues() {
         waiting.length ? [h('h2.till-group', '⏳ Not checked yet'),
           h('p.till-group-why', 'These are the figures as they stand now. The office has not checked these shifts, so the amounts may change or go away. You will be told when they are checked.'),
           waiting.map(issueCard)] : null,
+        recovered.length ? [h('h2.till-group', 'Through payroll'),
+          h('p.till-group-why', 'These were taken from your pay, on a line of their own: Till shortage. Nothing to do.'),
+          recovered.map(recoveredCard)] : null,
       ] : emptyState('Nothing to sort out', 'Every one of your shifts agrees. A shift only shows here when it is short, over, missing a PO or missing a rental.'),
-      h('p.till-hint.till-cleared', `${data.cleared} settled this month. Settled shifts leave this list.`));
+      h('p.till-hint.till-cleared', `${data.cleared} settled another way this month. Those leave this list; anything recovered through payroll stays, marked so.`));
+  }
+
+  /** Taken from pay: when, and that it is on the payslip. Nothing to answer. */
+  function recoveredCard(issue) {
+    const r = issue.recovered;
+    const month = r.month
+      ? new Date(`${r.month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+      : null;
+    if (r.how === 'pay') {
+      const paid = r.taken ? `Paid with your ${month} pay.` : month ? `Paid with your ${month} pay.` : 'Paid with your next pay.';
+      return card(`${SLOT[issue.slot]} · ${dayText(issue.day)}`, { cls: 'till-issue till-recovered', note: 'paid through payroll' },
+        h('div.till-amount', h('strong', issue.amount ? signed(issue.amount) : ''), h('span.till-kind', issue.label)),
+        h('div.till-checked', `✓ Paid through payroll${r.by ? `, decided by ${r.by}` : ''}. ${paid}`),
+        h('p.till-hint', 'It meets any till shortage on the same payslip first; the rest is added to your pay, untaxed.'));
+    }
+    const when = r.taken ? `Taken from your ${month} pay.`
+      : r.held ? 'Waiting: it comes off once the shift is checked again.'
+        : month ? `Comes off your ${month} pay.` : 'Comes off your next pay.';
+    return card(`${SLOT[issue.slot]} · ${dayText(issue.day)}`, { cls: 'till-issue till-recovered', note: 'recovered through payroll' },
+      h('div.till-amount', h('strong', issue.amount ? signed(issue.amount) : ''), h('span.till-kind', issue.label)),
+      h('div.till-checked', `✓ Recovered through payroll${r.by ? `, decided by ${r.by}` : ''}. ${when}`),
+      h('p.till-hint', 'It shows on your payslip as Till shortage.'));
   }
 
   /** Not checked yet: nothing to do, but a note for whoever checks it, if they know why. */

@@ -40,7 +40,7 @@ const AREA_TEXT = {
   unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
-export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
+export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', pay: 'Paid with salary', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
 
 const dayText = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const signed = (minor) => (minor == null ? '—' : minor === 0 ? money(0) : `${minor > 0 ? '+' : '−'}${money(Math.abs(minor))}`);
@@ -81,15 +81,34 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   let cache = null;
 
   // Kept for half a minute only: a report sent from HIVE while this screen is
-  // open must show the next time it is opened, not after a reload.
-  async function read(force = false) {
+  // open must show the next time it is opened, not after a reload. What is
+  // kept is the request itself, so the cards of one shift that ask at the same
+  // moment share one reading rather than each starting its own.
+  function read(force = false) {
     const key = `${period().from}|${period().to}`;
     if (!force && cache?.key === key && Date.now() - cache.at < 30_000) return cache.value;
-    const value = await api(`/till?from=${period().from}&to=${period().to}`);
-    cache = { key, value, at: Date.now() };
+    const value = api(`/till?from=${period().from}&to=${period().to}`);
+    const mine = { key, value, at: Date.now() };
+    cache = mine;
+    value.then((d) => { mine.data = d; }, () => { if (cache === mine) cache = null; });
     return value;
   }
-  const forget = () => { cache = null; };
+  // Which shifts are checked, on their own: one quick look at the checks, so
+  // the padlocks and the check card show without waiting for the full reading.
+  let quick = null;
+  const seesChecks = admin || access.reports || access.answers || access.check;
+  function readChecks() {
+    if (!seesChecks) return Promise.resolve(new Map());
+    const key = `${period().from}|${period().to}`;
+    if (quick?.key === key && Date.now() - quick.at < 30_000) return quick.value;
+    const value = api(`/till/checks?from=${period().from}&to=${period().to}`)
+      .then((d) => new Map((d.checks || []).map((c) => [`${c.day}|${c.slot}`, c])));
+    const mine = { key, value, at: Date.now() };
+    quick = mine;
+    value.catch(() => { if (quick === mine) quick = null; });
+    return value;
+  }
+  const forget = () => { cache = null; quick = null; };
 
   const notLinked = (d) => (d.linked ? null : banner('warning',
     h('strong', 'HIVE and Insight are not linked yet. '),
@@ -404,52 +423,85 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
    * makes them final and tells them. Changed since checked: check it again.
    */
   async function shiftCheck(day, slot, after = () => {}) {
-    const d = await read();
-    const r = (d.reports || []).find((x) => x.day === day && x.slot === slot);
-    if (!r) return null;
     const may = admin || (access.check || 0) > 1;
-    const people = r.report?.name || 'Its people';
-    const said = h('span.tl-small');
-    const act = (path, words) => async (e) => {
-      e.target.disabled = true;
-      said.textContent = 'Saving…';
-      try {
-        const out = await api(path, { method: 'POST', body: { day, slot } });
-        forget();
-        await after(words(out));
-      } catch (err) { said.textContent = err.message; e.target.disabled = false; }
+    const box = h('div');
+    let busy = false;
+    const card = (r) => {
+      const people = r.report?.name || 'Its people';
+      const said = h('span.tl-small');
+      const act = (path, words) => async (e) => {
+        e.target.disabled = true;
+        busy = true;
+        said.textContent = 'Saving…';
+        try {
+          const out = await api(path, { method: 'POST', body: { day, slot } });
+          forget();
+          await after(words(out));
+        } catch (err) { said.textContent = err.message; e.target.disabled = false; busy = false; }
+      };
+      const check = h('button.btn.primary', { type: 'button', onclick: act('/till/check', (out) => (out.open ? `Checked. ${out.open} thing${out.open === 1 ? '' : 's'} on it to sort out, now final${out.told ? '; they have been told' : ''}.` : 'Checked. Nothing on it to sort out.')) },
+        r.check?.changed ? '✓ Check again' : '✓ Mark this shift checked');
+      const undo = h('button.btn', { type: 'button', onclick: act('/till/check/undo', () => 'No longer checked: its differences show as not checked yet again.') }, 'Undo the check');
+      const notes = (r.notes || []).map((n) => h('div.tl-small', h('strong', `${n.name || 'Staff'}’s note: `), n.text));
+      const today = new Date().toISOString().slice(0, 10);
+      if (!r.check) {
+        return h('section.card.ck-bar',
+          h('div', h('strong', '⏳ Not checked yet'),
+            h('div.tl-small', r.issues == null ? 'Look at the report, the drawer and the payments, then mark it checked.'
+              : r.issues
+                ? `${people} sees ${r.issues === 1 ? 'its difference' : `its ${r.issues} differences`} as “not checked yet”: the amounts may change. Look at the report, the drawer and the payments, then mark it checked.`
+                : 'No question on it for the staff. Look at the report, the drawer and the payments, then mark it checked.'),
+            notes),
+          may && day < today ? h('div.ck-acts', check, said) : null);
+      }
+      const when = new Date(`${String(r.check.at).replace(' ', 'T')}Z`).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+      if (r.check.changed) {
+        return h('section.card.ck-bar.changed',
+          h('div', h('strong', '! Changed since it was checked'),
+            h('div.tl-small', `Checked by ${r.check.by} on ${when}, but something on it has changed since (a file loaded again). ${people} sees what changed as not checked yet until it is checked again. 🔒 Locked while checked: undo the check to change anything on it.`),
+            notes),
+          may ? h('div.ck-acts', check, undo, said) : null);
+      }
+      return h('section.card.ck-bar.ok',
+        h('div', h('strong', `✓ Checked by ${r.check.by}, ${when}`),
+          h('div.tl-small', `${r.issues == null ? '' : r.issues ? `${people} sees what is on it as checked, to sort out. ` : 'No question on it for the staff. '}🔒 Locked: nothing on it can be answered, corrected or moved until the check is undone.`),
+          notes),
+        may ? h('div.ck-acts', undo, said) : null);
     };
-    const check = h('button.btn.primary', { type: 'button', onclick: act('/till/check', (out) => (out.open ? `Checked. ${out.open} thing${out.open === 1 ? '' : 's'} on it to sort out, now final${out.told ? '; they have been told' : ''}.` : 'Checked. Nothing on it to sort out.')) },
-      r.check?.changed ? '✓ Check again' : '✓ Mark this shift checked');
-    const undo = h('button.btn', { type: 'button', onclick: act('/till/check/undo', () => 'No longer checked: its differences show as not checked yet again.') }, 'Undo');
-    const notes = (r.notes || []).map((n) => h('div.tl-small', h('strong', `${n.name || 'Staff'}’s note: `), n.text));
-    const today = new Date().toISOString().slice(0, 10);
-    if (!r.check) {
-      return h('section.card.ck-bar',
-        h('div', h('strong', '⏳ Not checked yet'),
-          h('div.tl-small', r.issues
-            ? `${people} sees ${r.issues === 1 ? 'its difference' : `its ${r.issues} differences`} as “not checked yet”: the amounts may change. Look at the report, the drawer and the payments, then mark it checked.`
-            : 'No question on it for the staff. Look at the report, the drawer and the payments, then mark it checked.'),
-          notes),
-        may && day < today ? h('div.ck-acts', check, said) : null);
-    }
-    const when = new Date(`${String(r.check.at).replace(' ', 'T')}Z`).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
-    if (r.check.changed) {
-      return h('section.card.ck-bar.changed',
-        h('div', h('strong', '! Changed since it was checked'),
-          h('div.tl-small', `Checked by ${r.check.by} on ${when}, but something on it has changed since (a file loaded again, a correction). ${people} sees what changed as not checked yet until it is checked again.`),
-          notes),
-        may ? h('div.ck-acts', check, undo, said) : null);
-    }
-    return h('section.card.ck-bar.ok',
-      h('div', h('strong', `✓ Checked by ${r.check.by}, ${when}`),
-        h('div.tl-small', r.issues ? `${people} sees what is on it as checked, to sort out.` : 'No question on it for the staff.'),
-        notes),
-      may ? h('div.ck-acts', undo, said) : null);
+    // At once from the checks alone; then, once the full reading is in, with
+    // how many differences its people see, their notes and whether anything
+    // changed since it was checked.
+    const c = (await readChecks()).get(`${day}|${slot}`);
+    mount(box, card({ check: c ? { by: c.by, at: c.at, changed: false } : null }));
+    read().then((d) => {
+      if (busy) return;
+      const r = (d.reports || []).find((x) => x.day === day && x.slot === slot);
+      if (r) mount(box, card(r));
+    }).catch(() => {});
+    return box;
   }
 
-  /** Each shift's check, for the week's tiles: `day|slot` → 'ok', 'changed' or 'wait'. */
+  /**
+   * Each shift's check, for the tiles, calendar bars and table: `day|slot` →
+   * 'ok' or 'changed' (checked, so locked) or 'wait'. Quick: from the checks
+   * alone, so a checked shift says 'ok' until `changes()` says otherwise. A
+   * shift not in the map is not checked.
+   */
   async function checks() {
+    const map = await readChecks();
+    const out = new Map([...map.keys()].map((k) => [k, 'ok']));
+    // The full reading, when already in, also knows what changed since.
+    if (cache?.data && cache.key === `${period().from}|${period().to}`) {
+      for (const r of cache.data.reports || []) {
+        const k = `${r.day}|${r.slot}`;
+        if (r.check?.changed && out.has(k)) out.set(k, 'changed');
+      }
+    }
+    return out;
+  }
+
+  /** The same from the full reading: slower, but it knows a shift that changed since it was checked. */
+  async function changes() {
     const d = await read();
     return new Map((d.reports || []).map((r) => [`${r.day}|${r.slot}`, !r.check ? 'wait' : r.check.changed ? 'changed' : 'ok']));
   }
@@ -502,11 +554,12 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
         note,
         h('div.tl-actions',
           actAnswers ? h('button.btn.primary', { type: 'button', onclick: decide('accept') }, 'Accept') : null,
-          actMoney && short && i.answer?.how === 'repay' ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'A one-month advance in HIVE, off the next payslip' }, 'Recover from pay') : null,
+          admin && actMoney && short && i.checked ? h('button.btn', { type: 'button', onclick: decide('recover'), title: 'Off the next payslip in HIVE, as a till shortage' }, 'Recover from pay') : null,
+          admin && actMoney && !short && i.amount > 0 && i.checked ? h('button.btn', { type: 'button', onclick: decide('pay'), title: 'With their next payslip in HIVE, after any till shortage that month' }, 'Pay with salary') : null,
           actMoney && short ? h('button.btn', { type: 'button', onclick: decide('cash') }, 'Paid in cash') : null,
-          actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
+          admin && actMoney ? h('button.btn', { type: 'button', onclick: decide('writeoff') }, 'Write off') : null,
           actAnswers && i.status === 'answered' ? h('button.btn', { type: 'button', onclick: decide('back') }, 'Send back') : null),
-        actMoney && short && i.answer?.how !== 'repay' ? h('p.tl-small', 'Recover from pay appears once they have agreed to pay it back.') : null) : null,
+        actMoney && short && !i.checked ? h('p.tl-small', 'Recover from pay appears once the shift is checked and the amount is final. It can also be decided in HIVE, under Money › Advances › Till shortages.') : null) : null,
       // Proof of what they said, asked of them in HIVE.
       i.status === 'answered' && i.userId != null ? proofBox(`issue:${i.key}`, { who: i.name }) : null);
   }
@@ -857,7 +910,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
   }
 
   return {
-    read, forget, notLinked, shiftReport, shiftCheck, checks, issueCard, peopleExtras, settings, reportList, whoseShift, names,
+    read, forget, notLinked, shiftReport, shiftCheck, checks, changes, issueCard, peopleExtras, settings, reportList, whoseShift, names,
     ...(admin ? { answerApprovalCard, correctionCard } : {}),
   };
 }

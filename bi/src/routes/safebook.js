@@ -1,3 +1,4 @@
+import { closeSuspense, suspenseSafeLines } from './suspense.js';
 import { all, first, run } from '../lib/db.js';
 import { badRequest, HttpError, notFound, str } from '../lib/http.js';
 import { addDays } from '../lib/dates.js';
@@ -98,6 +99,9 @@ async function openPage(env, account) {
   // Nice Place's pickups: the cash counted, into the safe on the day of the pickup.
   const pickups = await safeIns(env);
   for (const p of pickups) lines.push({ type: 'in', kind: 'pickup', day: p.day, amount: p.amount, by: p.by, pickup: p.id, status: p.status });
+  // Moved from the suspense account: in when plus, out when minus.
+  const suspense = await suspenseSafeLines(env);
+  for (const sx of suspense) lines.push({ type: sx.amount > 0 ? 'in' : 'out', kind: 'suspense', day: sx.safeDay, amount: Math.abs(sx.amount), ref: sx.ref, what: sx.what, note: sx.clearedNote, by: sx.clearedBy, suspense: sx.id });
   for (const e of outs) lines.push({ type: 'out', ...entryView(e) });
   // In the order things happened: by day, envelopes before payments.
   lines.sort((a, b) => (a.day === b.day ? (a.type === b.type ? 0 : a.type === 'in' ? -1 : 1) : a.day < b.day ? -1 : 1));
@@ -106,7 +110,7 @@ async function openPage(env, account) {
     balance += l.type === 'in' ? l.amount : -l.amount;
     l.balance = balance;
   }
-  return { start, lines, balance, ins, outs, pickups };
+  return { start, lines, balance, ins, outs, pickups, suspense };
 }
 
 function entryView(e) {
@@ -284,9 +288,10 @@ export async function countSafe(env, body, account) {
   const left = page.ins.filter((r) => !shifts.includes(r));
   const outs = page.outs.filter((e) => e.day <= closedOn);
   const pickups = page.pickups.filter((p) => p.day <= closedOn);
+  const suspense = page.suspense.filter((sx) => sx.safeDay <= closedOn);
   // The book as it stands for what this count takes in.
   const book = page.start
-    ? page.start.counted + shifts.reduce((t, r) => t + r.assd, 0) + pickups.reduce((t, p) => t + p.amount, 0) - outs.reduce((t, e) => t + e.amount, 0)
+    ? page.start.counted + shifts.reduce((t, r) => t + r.assd, 0) + pickups.reduce((t, p) => t + p.amount, 0) + suspense.reduce((t, sx) => t + sx.amount, 0) - outs.reduce((t, e) => t + e.amount, 0)
     : counted;
   const made = await first(env.DB, `INSERT INTO safe_closure (closed_on, with_name, assd, envelopes, counted, book, note, by_name, at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id`,
@@ -302,5 +307,6 @@ export async function countSafe(env, body, account) {
     await run(env.DB, 'UPDATE safe_entry SET closure_id = ?2 WHERE id = ?1', e.id, made.id);
   }
   await closeInto(env, pickups.map((p) => p.id), made.id);
+  await closeSuspense(env, suspense.map((sx) => sx.id), made.id);
   return { ok: true, id: made.id, counted, book, difference: counted - book, started: !page.start, carried: left.length };
 }

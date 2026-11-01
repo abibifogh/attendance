@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
+  answer, closeShift, closedSummary, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkCredit, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -232,10 +232,11 @@ test('a shift not checked yet takes a note, not an answer; once checked, the oth
   await answer(ctx(db, AMA, { env: older, body: { key, how: 'repay', text: 'From my pay' }, path: '/api/me/till/answer' }));
 });
 
-test('Insight can take a shortage from pay, as a one-month advance, only when it signs the request', async () => {
+test('Insight can take a shortage from pay, as a one-month till shortage, only when it signs the request', async () => {
   const { db, raw } = await setup();
   const path = '/api/link/till/recover';
-  const body = JSON.stringify({ userId: 7, amount: 5000, reason: 'Till: the drawer did not agree, 2026-10-06 afternoon', by: 'Test Owner' });
+  const shift = { key: 'drawer|2026-10-06|afternoon', day: '2026-10-06', slot: 'afternoon', checked: true, checkedBy: 'Test Owner', checkedAt: '2026-10-07 09:00:00' };
+  const body = JSON.stringify({ userId: 7, amount: 5000, reason: 'Till: the drawer did not agree, 2026-10-06 afternoon', by: 'Test Owner', ...shift });
   const signed = (headers) => ({
     db, env: { INSIGHT_SSO_SECRET: SECRET }, url: new URL(`https://x${path}`), session: null, executionContext: null,
     request: new Request(`https://x${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body }),
@@ -244,12 +245,25 @@ test('Insight can take a shortage from pay, as a one-month advance, only when it
   await assert.rejects(linkRecover(signed(await signLink('wrong', path, body))), /did not come from Insight/);
   const out = await (await linkRecover(signed(await signLink(SECRET, path, body)))).json();
   const advance = raw.prepare('SELECT * FROM hr_advance WHERE id = ?').get(out.advanceId);
-  assert.deepEqual([advance.staff_id, advance.amount, advance.months, advance.monthly, advance.status, advance.purpose], [1, 50, 1, 50, 'approved', 'other']);
+  assert.deepEqual([advance.staff_id, advance.amount, advance.months, advance.monthly, advance.status, advance.purpose], [1, 50, 1, 50, 'approved', 'till']);
+  assert.deepEqual([advance.till_key, advance.till_day, advance.till_slot, advance.till_checked_at, advance.till_checked_by],
+    [shift.key, '2026-10-06', 'afternoon', '2026-10-07 09:00:00', 'Test Owner']);
+
+  // Sent again after a timeout: still one shortage.
+  const again = await (await linkRecover(signed(await signLink(SECRET, path, body)))).json();
+  assert.equal(again.advanceId, out.advanceId);
+  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM hr_advance WHERE purpose = 'till'").get().n, 1);
+
+  const send = async (payload) => {
+    const text = JSON.stringify(payload);
+    return linkRecover({ ...signed({}), request: new Request(`https://x${path}`, { method: 'POST', headers: await signLink(SECRET, path, text), body: text }) });
+  };
+  // A shift nobody has checked: refused, whatever else it says.
+  await assert.rejects(send({ userId: 7, amount: 5000, key: 'other|2026-10-08|night', day: '2026-10-08', slot: 'night' }), /not been checked yet/);
+  await assert.rejects(send({ userId: 7, amount: 5000, checked: true }), /Which shift/);
 
   // Nobody's pay to take it from.
-  const kofi = JSON.stringify({ userId: 8, amount: 5000 });
-  const k = { ...signed({}), request: new Request(`https://x${path}`, { method: 'POST', headers: await signLink(SECRET, path, kofi), body: kofi }) };
-  await assert.rejects(linkRecover(k), /not linked to a staff record/);
+  await assert.rejects(send({ userId: 8, amount: 5000, key: 'k2', day: '2026-10-06', slot: 'morning', checked: true }), /not linked to a staff record/);
 });
 
 test('a reopened report frees its POs and can be sent again', async () => {
@@ -602,4 +616,27 @@ test('a closing report still owed has to go in before any later one', async (t) 
   assert.equal(sent.ok, true, 'the owed one goes in');
   const now = await (await closeShift(ctx(db, AMA, { env, body: good(current, { rentals: { padlock: { start: 5, end: 5 } } }) }))).json();
   assert.equal(now.ok, true, 'and then today’s');
+});
+
+test('Insight can pay a till surplus with salary: one per difference, into the open payroll', async () => {
+  const { db, raw } = await setup();
+  const path = '/api/link/till/credit';
+  const send = async (payload) => {
+    const text = JSON.stringify(payload);
+    return linkCredit({
+      db, env: { INSIGHT_SSO_SECRET: SECRET }, url: new URL(`https://x${path}`), session: null, executionContext: null,
+      request: new Request(`https://x${path}`, { method: 'POST', headers: await signLink(SECRET, path, text), body: text }),
+    });
+  };
+  const shift = { key: 'moved:4:7', day: '2026-10-06', slot: 'night', checked: true, checkedBy: 'Test Owner', checkedAt: '2026-10-07 09:00:00' };
+  const out = await (await send({ userId: 7, amount: 3000, reason: 'Till: put on your account, 2026-10-06 night', by: 'Test Owner', ...shift })).json();
+  const credit = raw.prepare('SELECT * FROM till_credit WHERE id = ?').get(out.creditId);
+  assert.deepEqual([credit.staff_id, credit.amount, credit.till_key, credit.status], [1, 30, 'moved:4:7', 'due']);
+  assert.match(credit.month, /^\d{4}-\d{2}$/);
+  // Sent again: still one.
+  const again = await (await send({ userId: 7, amount: 3000, ...shift })).json();
+  assert.equal(again.creditId, out.creditId);
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM till_credit').get().n, 1);
+  await assert.rejects(send({ userId: 7, amount: 3000, key: 'k3', day: '2026-10-06', slot: 'night' }), /not been checked yet/);
+  await assert.rejects(send({ userId: 8, amount: 3000, key: 'k4', day: '2026-10-06', slot: 'night', checked: true }), /not linked to a staff record/);
 });

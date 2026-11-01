@@ -428,6 +428,8 @@ export const api = {
     return request(`/api/payroll${q.toString() ? `?${q}` : ''}`);
   },
   payslip: (staffId, month) => request(`/api/payroll/slip/${staffId}${month ? `?month=${month}` : ''}`),
+  payslipMail: (month) => request(`/api/payroll/mail?month=${month}${companyQuery()}`),
+  sendPayslipMail: (body) => request('/api/payroll/mail', { method: 'POST', body: withCompany(body) }),
   payrollProfiles: (body) => request('/api/payroll/profiles', { method: 'POST', body }),
   payrollScheme: (body) => request('/api/payroll/schemes', { method: 'POST', body }),
   payrollRemoveScheme: (id) => request(`/api/payroll/schemes/${id}`, { method: 'DELETE' }),
@@ -503,6 +505,9 @@ export const api = {
   holidayPick: (id, body) => request(`/api/att/holidays/${id}/pick`, { method: 'POST', body }),
   remindHolidays: (id) => request(`/api/att/holidays/${id}/remind`, { method: 'POST', body: {} }),
   confirmHolidays: (id) => request(`/api/att/holidays/${id}/confirm`, { method: 'POST', body: {} }),
+  tillShortages: () => request('/api/advances/till'),
+  tillToDecide: () => request('/api/advances/till-decisions'),
+  tillDecide: (body) => request('/api/advances/till-decisions', { method: 'POST', body }),
   myHoliday: () => request('/api/me/holiday'),
   chooseHoliday: (optionId) => request('/api/me/holiday', { method: 'POST', body: { optionId } }),
   attRequestLeave: (body) => request('/api/att/leave', { method: 'POST', body }),

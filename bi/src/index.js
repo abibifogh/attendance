@@ -9,6 +9,7 @@ import * as admin from './routes/admin.js';
 import * as accounts from './routes/accounts.js';
 import * as viewAs from './routes/viewas.js';
 import * as floats from './routes/floats.js';
+import * as suspense from './routes/suspense.js';
 import * as reports from './routes/reports.js';
 import * as shiftRoutes from './routes/shifts.js';
 import * as till from './routes/till.js';
@@ -237,6 +238,12 @@ const ROUTES = [
   // A payment ASSD does not show, moved to the shift it belongs to. Admins.
   ['POST', '/api/shifts/payment-home', 'shifts', adminOnly((env, ctx) => shiftRoutes.movePayment(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/place', 'shifts', adminOnly((env, ctx) => shiftRoutes.placeShift(env, ctx.body, ctx.account))],
+  // The suspense account: an admin's.
+  ['GET', '/api/suspense', 'shifts', adminOnly((env) => suspense.suspenseView(env))],
+  ['POST', '/api/suspense/add', 'shifts', adminOnly((env, ctx) => suspense.addSuspense(env, ctx.body, ctx.account))],
+  ['POST', '/api/suspense/match', 'shifts', adminOnly((env, ctx) => suspense.matchSuspense(env, ctx.body, ctx.account))],
+  ['POST', '/api/suspense/safe', 'shifts', adminOnly((env, ctx) => suspense.suspenseToSafe(env, ctx.body, ctx.account))],
+  ['POST', '/api/suspense/undo', 'shifts', adminOnly((env, ctx) => suspense.undoSuspense(env, ctx.body, ctx.account))],
   // Which day an ASSD line is on, so an approval can open its shift.
   ['GET', '/api/shifts/where', 'shifts', adminOnly((env, ctx) => shiftRoutes.whereIs(env, ctx.query))],
   // Refunds owed to guests who paid more by card or MoMo than ASSD shows.
@@ -244,7 +251,11 @@ const ROUTES = [
   ['POST', '/api/shifts/refunds/paid', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.refundPaid(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/movement', 'shifts', movement],
   ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
-  ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, (env, ctx) => shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }))],
+  ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, async (env, ctx) => {
+    // An admin undoing a reconciliation whose leftover is on staff accounts takes that off too.
+    const left = isSupervisor(ctx) ? false : await till.undoLeftOf(env, ctx.body?.id, ctx.account);
+    return { ...(await shiftRoutes.removeLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) })), staff: left };
+  })],
   ['GET', '/api/shifts/files', 'shifts', area('files', 1, (env) => shiftRoutes.filesStatus(env))],
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
@@ -275,6 +286,7 @@ const ROUTES = [
 
   // Closing reports from HIVE, what staff answered, and the settings.
   ['GET', '/api/till', 'shifts', (env, ctx) => till.overview(env, ctx.query, ctx.account)],
+  ['GET', '/api/till/checks', 'shifts', (env, ctx) => till.checkList(env, ctx.query, ctx.account)],
   ['POST', '/api/till/resolve', 'shifts', (env, ctx) => till.resolve(env, ctx.body, ctx.account)],
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
   ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],
@@ -290,6 +302,7 @@ const ROUTES = [
   ['GET', '/api/odoo/links', 'owner', (env, ctx) => odooact.linksView(env, ctx.account)],
   ['POST', '/api/odoo/links', 'owner', (env, ctx) => odooact.saveLink(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge', 'shifts', (env, ctx) => till.moveToStaff(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/charge-left', 'shifts', (env, ctx) => till.moveLeftToStaff(env, ctx.body, ctx.account)],
   ['POST', '/api/till/charge/undo', 'shifts', (env, ctx) => till.undoMove(env, ctx.body, ctx.account)],
   // A shift checked: its differences are confirmed to its people (or taken back).
   ['POST', '/api/till/check', 'shifts', (env, ctx) => till.checkShift(env, ctx.body, ctx.account)],
@@ -301,6 +314,10 @@ const ROUTES = [
   ['POST', '/api/link/till/setup', 'link', (env) => till.linkSetup(env)],
   ['POST', '/api/link/till/po', 'link', (env, ctx) => till.linkPo(env, ctx.body)],
   ['POST', '/api/link/till/issues', 'link', (env, ctx) => till.linkIssues(env, ctx.body)],
+  ['POST', '/api/link/till/checks', 'link', (env, ctx) => till.linkChecks(env, ctx.body)],
+  // Shortages on checked shifts, decided in HIVE: recovered from pay, or not.
+  ['POST', '/api/link/till/to-decide', 'link', (env) => till.linkToDecide(env)],
+  ['POST', '/api/link/till/decide', 'link', (env, ctx) => till.linkDecide(env, ctx.body)],
   ['POST', '/api/link/till/lock', 'link', (env) => lock.linkLock(env)],
   ['POST', '/api/link/till/recipients', 'link', (env, ctx) => till.linkRecipients(env, ctx.body)],
   // A staff member sending the proof an admin asked for, from HIVE's To sort out.
@@ -369,9 +386,11 @@ const ROUTES = [
   ['GET', '/api/po/find', 'insight', adminOnly((env, ctx) => newpo.findPo(env, ctx.query))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
   // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
-  ['GET', '/api/assistant', 'session', adminOnly((env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true }))],
-  ['GET', '/api/assistant/brief', 'session', adminOnly((env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by })))],
-  ['POST', '/api/assistant/ask', 'session', adminOnly((env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true }))],
+  // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
+  ['GET', '/api/assistant', 'session', (env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true })],
+  ['GET', '/api/assistant/brief', 'session', (env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by }))],
+  ['POST', '/api/assistant/ask', 'session', (env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true })],
+  ['POST', '/api/assistant/bills', 'session', adminOnly((env, ctx) => assistant.setBills(env, ctx.body, ctx.account))],
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.
@@ -455,19 +474,24 @@ const ROUTES = [
 const LOCKED = {
   '/api/shifts/count': {}, '/api/shifts/po-safe': {}, '/api/shifts/expense': {}, '/api/shifts/expense/pull': {}, '/api/shifts/expense/link': {},
   '/api/shifts/form-match/apply': {}, '/api/shifts/receipts': {}, '/api/shifts/receipts-read': {}, '/api/shifts/answer': {}, '/api/shifts/answer-many': {},
-  '/api/shifts/payment-home': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
+  '/api/shifts/payment-home': {}, '/api/shifts/place': {}, '/api/suspense/add': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
   '/api/till/resolve': {}, '/api/till/reopen': { report: 'reportId' }, '/api/till/move': { report: 'reportId' }, '/api/till/owner': {},
-  '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
+  '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge-left': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
   '/api/np/review': {}, '/api/np/reread': {}, '/api/np/move': {}, '/api/np/reading': {}, '/api/np/upload': {}, '/api/np/check': {}, '/api/np/answer': {},
 };
 for (const route of ROUTES) {
-  if (route[0] === 'POST' && LOCKED[route[1]]) route[3] = locked(route[3], LOCKED[route[1]]);
+  if (route[0] === 'POST' && LOCKED[route[1]]) route[3] = locked(route[3], LOCKED[route[1]], route[1]);
 }
 
-/** A change to a shift: refused when any day it touches is locked. */
-function locked(handler, ids = {}) {
+/**
+ * A change to a shift: refused when any day it touches is locked, or any
+ * shift it touches is checked (checking and unchecking are how that moves).
+ */
+function locked(handler, ids = {}, path = '') {
+  const checking = path === '/api/till/check' || path === '/api/till/check/undo';
   return async (env, ctx) => {
     await lock.assertOpen(env, await lock.daysOf(env, ctx.body, { dayOfKey: shiftRoutes.dayOfKey, ids }));
+    if (!checking) await lock.assertShiftsOpen(env, ctx.body, { whereIs: shiftRoutes.whereIs, ids });
     return handler(env, ctx);
   };
 }

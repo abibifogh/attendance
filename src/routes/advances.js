@@ -10,6 +10,8 @@ import {
   reconcilePlan, scheduleFor, startsOn, summarise, unansweredMonths,
 } from '../lib/advances.js';
 import { isAdmin } from '../lib/payroll-access.js';
+import { shiftOf } from '../lib/till-checks.js';
+import { callLink } from '../lib/till-link.js';
 import { addMonths, isDay, isMonth, monthOf, todayIn } from '../util/dates.js';
 import { firstName, sayDate, sayMonth } from '../lib/email-design.js';
 
@@ -75,7 +77,11 @@ function shape(advance, entries, { withSchedule = false, asOfMonth = null } = {}
     currency: advance.currency,
     reason: advance.reason,
     purpose: advance.purpose ?? null,
-    purposeLabel: purposeOf(advance.purpose)?.label ?? null,
+    purposeLabel: advance.purpose === 'till' ? 'Till shortage' : purposeOf(advance.purpose)?.label ?? null,
+    // A till shortage comes off pay only while its shift is checked in Insight.
+    till: advance.purpose === 'till'
+      ? { day: advance.till_day ?? null, slot: advance.till_slot ?? null, checkedAt: advance.till_checked_at ?? null, checkedBy: advance.till_checked_by ?? null }
+      : null,
     hasPaper: Boolean(advance.document_id),
     status: advance.status,
     takenOn: advance.taken_on,
@@ -164,6 +170,9 @@ export async function advances(ctx) {
     if (balance <= 0) continue;
     if (startsOn(advance) > month) continue;
     const already = entries.find((e) => e.month === month && ['repayment', 'skipped'].includes(e.kind));
+    // A till shortage whose shift is not checked comes off nobody's pay, so it
+    // is not offered as taken either: it waits on Till shortages as held.
+    if (advance.purpose === 'till' && !advance.till_checked_at && !already) continue;
     due.push({
       advanceId: advance.id,
       staff: staffById.get(advance.staff_id)?.name ?? 'Somebody',
@@ -235,6 +244,164 @@ export async function advances(ctx) {
 }
 
 /** One person's advances, with the schedule drawn out. */
+/**
+ * Every till shortage taken from pay, for everybody, on one list.
+ *
+ * Each one is a one-month advance Insight asked for, so it lives with the
+ * advances; this is the same records read as till shortages: the shift it
+ * came from, who checked that shift, who decided to recover it, and where it
+ * stands. Held means its shift is not checked in Insight (now), so nothing
+ * comes off until it is.
+ */
+export async function tillShortages(ctx) {
+  const { timezone, currency } = await settingsOf(ctx.db);
+  const thisMonth = monthOf(todayIn(timezone));
+  const { advances: all, entriesBy } = await ledger(ctx.db);
+  const rows = all.filter((a) => a.purpose === 'till');
+  const staff = await ctx.db.prepare('SELECT id, name, department, employee_no FROM att_staff').all();
+  const staffById = new Map((staff.results ?? []).map((s) => [s.id, s]));
+
+  const items = rows.map((a) => {
+    const entries = entriesBy.get(a.id) ?? [];
+    const left = balanceOf(a, entries);
+    const deducted = entries.filter((e) => e.kind === 'repayment' && Number(e.amount) > 0)
+      .map((e) => ({ month: e.month, amount: round2(e.amount) }))
+      .sort((x, y) => String(x.month).localeCompare(String(y.month)));
+    const shift = shiftOf(a);
+    const person = staffById.get(a.staff_id);
+    let status;
+    if (['declined', 'withdrawn'].includes(a.status)) status = 'cancelled';
+    else if (left <= 0) status = deducted.length ? 'deducted' : 'settled';
+    else if (!a.till_checked_at) status = 'held';
+    else status = 'coming';
+    const start = startsOn(a);
+    return {
+      id: a.id,
+      staff: person ? { id: person.id, name: person.name, department: person.department ?? null, employeeNo: person.employee_no ?? null } : { id: a.staff_id, name: 'Somebody', department: null },
+      amount: round2(a.amount),
+      left,
+      // The kind of difference, as Insight wrote it: "Till: <kind>, <day> <slot>".
+      what: String(a.reason ?? '').replace(/^Till:\s*/, '').replace(/,?\s*\d{4}-\d{2}-\d{2} (morning|afternoon|night)\s*$/, '') || 'Till shortage',
+      reason: a.reason ?? null,
+      day: shift?.day ?? null,
+      slot: shift?.slot ?? null,
+      checkedAt: a.till_checked_at ?? null,
+      checkedBy: a.till_checked_by ?? null,
+      decidedBy: String(a.decided_by ?? a.asked_by ?? '').replace(/\s*\(Insight\)\s*$/, '') || null,
+      recordedOn: a.taken_on ?? null,
+      comesOff: status === 'coming' || status === 'held' ? (start && start > thisMonth ? start : thisMonth) : null,
+      deducted,
+      status,
+    };
+  });
+
+  const credits = ((await ctx.db.prepare("SELECT * FROM till_credit WHERE status = 'due' ORDER BY month DESC, id DESC LIMIT 300").all()
+    .catch(() => ({ results: [] }))).results ?? []);
+  const closed = new Set(((await ctx.db.prepare("SELECT substr(month, 1, 7) AS month, COALESCE(company_id, 1) AS company FROM pay_run WHERE status = 'final'").all()
+    .catch(() => ({ results: [] }))).results ?? []).map((r) => `${r.month}|${r.company}`));
+  const companyOf = new Map(((await ctx.db.prepare('SELECT id, company_id FROM att_staff').all().catch(() => ({ results: [] }))).results ?? [])
+    .map((r) => [r.id, Number(r.company_id) || 1]));
+  const surpluses = credits.map((c) => {
+    const person = staffById.get(c.staff_id);
+    return {
+      id: c.id,
+      staff: person ? { id: person.id, name: person.name, department: person.department ?? null } : { id: c.staff_id, name: 'Somebody', department: null },
+      amount: round2(c.amount),
+      month: c.month,
+      what: String(c.reason ?? '').replace(/^Till:\s*/, '').replace(/,?\s*\d{4}-\d{2}-\d{2} (morning|afternoon|night)\s*$/, '') || 'Till surplus',
+      day: c.till_day ?? null,
+      slot: c.till_slot ?? null,
+      decidedBy: String(c.decided_by ?? '').replace(/\s*\(Insight\)\s*$/, '') || null,
+      status: closed.has(`${c.month}|${companyOf.get(c.staff_id) ?? 1}`) ? 'paid' : 'coming',
+    };
+  });
+
+  const sum = (list, pick) => round2(list.reduce((n, i) => n + pick(i), 0));
+  return json({
+    currency,
+    month: thisMonth,
+    items,
+    totals: {
+      coming: sum(items.filter((i) => i.status === 'coming'), (i) => i.left),
+      held: sum(items.filter((i) => i.status === 'held'), (i) => i.left),
+      deducted: sum(items, (i) => i.deducted.reduce((n, d) => n + d.amount, 0)),
+      surplus: sum(surpluses.filter((c) => c.status === 'coming'), (c) => c.amount),
+    },
+    // Surpluses paid with salary: each nets against a till shortage on the
+    // same payslip, and what is left is added to the pay.
+    surpluses,
+  });
+}
+
+/** Ask Insight something on the till link, its refusal as this app's own. */
+async function askInsight(ctx, path, body = {}) {
+  try {
+    return await callLink({ binding: ctx.env?.INSIGHT, secret: ctx.env?.INSIGHT_SSO_SECRET, path, body, fetchImpl: ctx.fetchImpl ?? null });
+  } catch (err) {
+    const error = new Error(err.message || 'Insight could not be reached.');
+    error.status = err.status && err.status < 600 ? err.status : 502;
+    throw error;
+  }
+}
+
+/**
+ * Shortages on checked shifts, waiting for a decision: recover it from pay, or
+ * not. Insight works them out; HIVE adds who each person is.
+ */
+export async function tillToDecide(ctx) {
+  let answer;
+  try {
+    answer = await askInsight(ctx, '/api/link/till/to-decide');
+  } catch (err) {
+    return json({ issues: [], error: err.message });
+  }
+  const ids = [...new Set((answer.issues ?? []).map((i) => Number(i.userId)).filter(Number.isInteger))];
+  const people = ids.length
+    ? ((await ctx.db.prepare(
+      `SELECT u.id, u.name AS login, s.name, s.department FROM users u LEFT JOIN att_staff s ON s.id = u.staff_id
+        WHERE u.id IN (${ids.map(() => '?').join(',')})`,
+    ).bind(...ids).all()).results ?? [])
+    : [];
+  const byId = new Map(people.map((p) => [Number(p.id), p]));
+  const { currency } = await settingsOf(ctx.db);
+  return json({
+    currency,
+    // Only an administrator decides; anybody else who handles pay sees them.
+    canDecide: isAdmin(ctx.session),
+    issues: (answer.issues ?? []).map((i) => {
+      const p = byId.get(Number(i.userId));
+      return {
+        ...i,
+        // Insight counts in pesewas; the pay is in cedis.
+        amount: round2(Number(i.amount) / 100),
+        name: p?.name || p?.login || 'Somebody',
+        department: p?.department ?? null,
+      };
+    }),
+  });
+}
+
+/**
+ * Decide one: recover it from pay, or not. Not recovering takes it off their
+ * list. An administrator's decision only: it is money off somebody's pay, or
+ * money the property lets go.
+ */
+export async function tillDecide(ctx) {
+  if (!isAdmin(ctx.session)) throw forbidden('Only an administrator decides whether a till shortage comes off pay.');
+  const body = await readJson(ctx.request);
+  const key = str(body.key, 'Which shortage', { required: true, max: 200 });
+  const userId = int(body.userId, 'Whose', { required: true, min: 1 });
+  // A shortage is recovered from pay or not; a surplus is paid with pay or not.
+  const outcome = ['recover', 'writeoff', 'pay'].includes(body.outcome) ? body.outcome : null;
+  if (!outcome) throw badRequest('Recover it, pay it, or not?');
+  const out = await askInsight(ctx, '/api/link/till/decide', {
+    key, userId, outcome, by: ctx.session.user.name, note: str(body.note, 'Note', { max: 600 }),
+  });
+  const kind = { recover: 'till.recovered_in_hive', pay: 'till.paid_in_hive', writeoff: 'till.not_recovered_in_hive' }[outcome];
+  await audit(ctx, kind, key, { userId, advanceId: out?.advanceId ?? null });
+  return json({ ok: true, outcome, advanceId: out?.advanceId ?? null });
+}
+
 export async function staffAdvances(ctx, idParam) {
   const staffId = int(idParam, 'Who', { required: true, min: 1 });
   const { timezone, currency } = await settingsOf(ctx.db);
@@ -1222,6 +1389,8 @@ export async function closeMonth(ctx) {
         WHERE advance_id = ? AND month = ? AND kind IN ('repayment','skipped')`,
     ).bind(id, month).first();
     if (already) continue;                       // answered already; never twice
+    // Held: its shift is not checked, so the payroll took nothing either.
+    if (advance.purpose === 'till' && !advance.till_checked_at && line.paid !== false) continue;
 
     if (line.paid === false) {
       await write(ctx, advance, {

@@ -1,8 +1,10 @@
 import {
-  badRequest, bool, csvResponse, int, json, notFound, num, readJson, str,
+  badRequest, bool, csvResponse, forbidden as forbiddenHere, int, json, notFound, num, readJson, str,
 } from '../lib/http.js';
 import { createNotice } from '../lib/notices.js';
-import { firstUsableEmail, isEmail } from '../lib/notify.js';
+import { emailPersonally, firstUsableEmail, isEmail } from '../lib/notify.js';
+import { payslipFilename, payslipPdf } from '../lib/payslip-pdf.js';
+import { companyLogoBytes } from './people.js';
 import { sayMonth } from '../lib/email-design.js';
 import { paidInMonth } from '../lib/leaving.js';
 import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
@@ -146,7 +148,7 @@ async function gather(ctx, month, { open = true } = {}) {
   const run = await runFor(ctx.db, month, actorOf(ctx), { open, company });
 
   const [everybody, profiles, allowances, schemes, members, scores, penalties, severances,
-    advances, entries, slips]
+    advances, entries, slips, credits]
     = await Promise.all([
       ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on, company_id FROM att_staff ORDER BY name').all()
         // A database from before there were companies has no column to read.
@@ -175,6 +177,9 @@ async function gather(ctx, month, { open = true } = {}) {
       ).all().catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM hr_advance_entry').all().catch(() => ({ results: [] })),
       ctx.db.prepare('SELECT * FROM pay_slip WHERE run_id = ?').bind(run.id).all(),
+      // Till surpluses paid with this month's pay.
+      ctx.db.prepare("SELECT * FROM till_credit WHERE month = ? AND status = 'due' ORDER BY id").bind(month).all()
+        .catch(() => ({ results: [] })),
     ]);
 
   // This company's people, and anybody already on one of its payslips this
@@ -233,6 +238,7 @@ async function gather(ctx, month, { open = true } = {}) {
     // something this payroll could take anything off.
     advances: (advances.results ?? []).filter((a) => ours.has(a.staff_id)),
     entriesBy,
+    creditsBy: group((credits.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
     slipBy: new Map((slips.results ?? []).map((s) => [s.staff_id, s])),
     paidBy: new Map((staff.results ?? []).map((person) => {
       const closed = (earlier.results ?? []).find((r) => r.staff_id === person.id);
@@ -352,6 +358,9 @@ function linesFrom(data, month) {
         id: p.id, amount: p.amount, reason: p.reason, at: p.at,
       })),
       loans,
+      tillCredits: (data.creditsBy?.get(person.id) ?? []).map((c) => ({
+        creditId: c.id, amount: Number(c.amount), reason: c.reason ?? null, day: c.till_day ?? null, slot: c.till_slot ?? null,
+      })),
       annualBasic: round2(profile.basic * 12),
       bonusPaidThisYear: data.paidBy.get(person.id) ?? 0,
       // Older profiles have nothing written here and every figure in them was
@@ -1289,7 +1298,7 @@ export async function exportBook(ctx) {
     money(line.gross),
     money(line.ssnit?.employee),
     money(line.paye?.total),
-    money(line.loanTotal),
+    money(round2((line.loanTotal ?? 0) - (line.tillCredit ?? 0))),
     money(line.net),
     money(line.ssnit?.employer),
     money(line.employerCost),
@@ -1297,7 +1306,7 @@ export async function exportBook(ctx) {
   const payTotals = [{ v: 'Everybody', s: S.total }, { v: '', s: S.total },
     totalMoney(totals.basic), totalMoney(totals.allowancesOnSlip ?? totals.allowances),
     totalMoney(totals.bonusNet), totalMoney(totals.carriedOnBonus ?? 0), totalMoney(totals.gross),
-    totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(totals.loans),
+    totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(round2((totals.loans ?? 0) - (totals.tillCredit ?? 0))),
     totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
 
   const payroll = {
@@ -2660,6 +2669,7 @@ export async function closeRun(ctx) {
     // the month has already been answered by hand, which the unique index
     // would refuse anyway.
     for (const loan of line.loans) {
+      if (loan.advanceId == null) continue;
       await ctx.db.prepare(
         `INSERT OR IGNORE INTO hr_advance_entry (advance_id, month, kind, amount, note, actor, source)
          VALUES (?1, ?2, 'repayment', ?3, ?4, ?5, 'payroll')`,
@@ -2769,3 +2779,163 @@ const money = (amount, currency = 'GHS') => {
     maximumFractionDigits: 2,
   })}`;
 };
+
+// --------------------------------------------------------------------------
+// Payslips by email
+// --------------------------------------------------------------------------
+
+/**
+ * Where an emailed payslip goes: the personal email on the staff record,
+ * else the address they sign in with.
+ */
+async function slipAddresses(db, staffIds) {
+  if (!staffIds.length) return new Map();
+  const rows = await db.prepare(
+    `SELECT s.id AS staff_id, u.email AS login_email, hp.personal_email
+       FROM att_staff s
+       LEFT JOIN users u ON u.staff_id = s.id AND u.active = 1
+       LEFT JOIN hr_profile hp ON hp.staff_id = s.id
+      WHERE s.id IN (${staffIds.map(() => '?').join(',')})`,
+  ).bind(...staffIds).all().catch(() => ({ results: [] }));
+  const out = new Map();
+  for (const r of rows.results ?? []) {
+    const id = Number(r.staff_id);
+    const found = firstUsableEmail(r.personal_email, r.login_email);
+    if (found || !out.has(id)) out.set(id, found);
+  }
+  return out;
+}
+
+async function slipHash(detail) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(detail ?? '')));
+  return [...new Uint8Array(bytes)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The closed run and its slips, or a refusal that says why. */
+async function closedSlips(ctx, month) {
+  const run = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(runKey(month, companyIdOf(ctx))).first();
+  if (!run || run.status !== 'final') throw badRequest('Only a closed month can be emailed: close the payroll first.');
+  const slips = (await ctx.db.prepare(
+    `SELECT p.staff_id, p.detail, s.name, s.department FROM pay_slip p JOIN att_staff s ON s.id = p.staff_id
+      WHERE p.run_id = ? ORDER BY s.name`,
+  ).bind(run.id).all()).results ?? [];
+  return { run, slips };
+}
+
+/**
+ * Who has been sent their payslip for the month, and who has not: the
+ * latest attempt for each, and whether the slip changed since.
+ */
+export async function slipMailList(ctx) {
+  if (!isAdmin(ctx.session)) throw forbiddenHere('Payslips are an administrator’s to send.');
+  const { timezone } = await settingsOf(ctx.db);
+  const month = isMonth(ctx.url.searchParams.get('month')) ? ctx.url.searchParams.get('month') : monthOf(todayIn(timezone));
+  await useCompany(ctx, null);
+  const run = await ctx.db.prepare('SELECT * FROM pay_run WHERE month = ?').bind(runKey(month, companyIdOf(ctx))).first();
+  if (!run || run.status !== 'final') return json({ month, closed: false, people: [] });
+  const { slips } = await closedSlips(ctx, month);
+  const addresses = await slipAddresses(ctx.db, slips.map((s) => s.staff_id));
+  const tries = (await ctx.db.prepare('SELECT * FROM pay_slip_mail WHERE run_id = ? ORDER BY id').bind(run.id).all()
+    .catch(() => ({ results: [] }))).results ?? [];
+  const last = new Map();
+  for (const t of tries) last.set(Number(t.staff_id), t);
+  const people = [];
+  for (const s of slips) {
+    const t = last.get(Number(s.staff_id)) ?? null;
+    // eslint-disable-next-line no-await-in-loop
+    const changed = t?.status === 'sent' && t.slip_hash ? t.slip_hash !== await slipHash(s.detail) : false;
+    people.push({
+      staffId: s.staff_id,
+      name: s.name,
+      department: s.department ?? null,
+      email: addresses.get(Number(s.staff_id)) ?? null,
+      status: t ? t.status : (addresses.get(Number(s.staff_id)) ? 'not_sent' : 'no_email'),
+      sentTo: t?.address ?? null,
+      at: t?.at ?? null,
+      by: t?.by_name ?? null,
+      error: t?.status === 'failed' ? t.error : null,
+      changed,
+    });
+  }
+  return json({ month, closed: true, people });
+}
+
+/**
+ * Email payslips: each person their own, as a PDF attached. A few at a time,
+ * so the screen can show them going and a slow one does not hold up the rest.
+ */
+export async function sendSlipMail(ctx, { send = emailPersonally } = {}) {
+  if (!isAdmin(ctx.session)) throw forbiddenHere('Payslips are an administrator’s to send.');
+  const body = await readJson(ctx.request);
+  const { timezone, settings, currency } = await settingsOf(ctx.db);
+  if (!isMonth(body.month)) throw badRequest('Which month?');
+  const month = body.month;
+  await useCompany(ctx, body.company);
+  const wanted = [...new Set((Array.isArray(body.staffIds) ? body.staffIds : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!wanted.length) throw badRequest('Choose who to send them to.');
+  if (wanted.length > 10) throw badRequest('Ten at a time at most.');
+  const note = str(body.note, 'A line from you', { max: 400 });
+  const copyTo = bool(body.copy) && isEmail(String(ctx.session.user.email ?? '').trim()) ? [String(ctx.session.user.email).trim()] : [];
+
+  const { run, slips } = await closedSlips(ctx, month);
+  const company = ctx.company ?? {};
+  const property = settings.property_name || 'HIVE';
+  const employer = company.legalName || property;
+  const logo = await companyLogoBytes(ctx.db, companyIdOf(ctx)).catch(() => null);
+  const addresses = await slipAddresses(ctx.db, wanted);
+  const nice = sayMonth(month);
+  const sentAt = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, day: 'numeric', month: 'short', year: 'numeric' }).format(new Date());
+
+  const results = [];
+  for (const staffId of wanted) {
+    const slip = slips.find((s) => Number(s.staff_id) === staffId);
+    if (!slip) { results.push({ staffId, status: 'failed', error: 'Not on this month’s payroll.' }); continue; }
+    const to = addresses.get(staffId) ?? null;
+    if (!to) { results.push({ staffId, status: 'no_email' }); continue; }
+    const line = JSON.parse(slip.detail);
+    let status = 'sent';
+    let error = null;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const pdf = await payslipPdf({ line, company, property, month, currency, logo, sentAt });
+      let binary = '';
+      for (let i = 0; i < pdf.length; i += 0x8000) binary += String.fromCharCode(...pdf.subarray(i, i + 0x8000));
+      const first = String(slip.name ?? '').trim().split(/\s+/)[0] || 'there';
+      // eslint-disable-next-line no-await-in-loop
+      const out = await send(ctx.db, ctx.env, {
+        kind: 'payroll.payslip',
+        title: `Your payslip for ${nice}`,
+        body: `Attached as a PDF.${note ? ` ${note}` : ''}`,
+        link: '#/att-my-payslips',
+        to,
+        wanted: true,
+        copyTo,
+        attachments: [{ filename: payslipFilename(month, slip.name), content: btoa(binary) }],
+        mail: {
+          subject: `Your payslip for ${nice}`,
+          preheader: 'Your payslip is attached as a PDF.',
+          eyebrow: 'Payslip',
+          headline: `${first}, your ${nice} payslip is attached`,
+          intro: 'It is a PDF, one page, and yours only. You can also see it in HIVE under Pay.',
+          after: note ? `“${note}”` : null,
+          button: 'See it in HIVE',
+          why: `No amounts are written in this email. You get it because you are on the payroll of ${employer}.`,
+          settingsLink: false,
+        },
+      });
+      if (!Number(out?.sent)) { status = 'failed'; error = out?.reason || 'The email could not be sent.'; }
+    } catch (err) {
+      status = 'failed';
+      error = err.message || 'The email could not be sent.';
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await ctx.db.prepare(
+      'INSERT INTO pay_slip_mail (run_id, staff_id, address, status, error, slip_hash, by_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+    ).bind(run.id, staffId, to, status, error ? String(error).slice(0, 300) : null, await slipHash(slip.detail), ctx.session.user.name).run();
+    results.push({ staffId, status, to, error });
+  }
+  await audit(ctx, 'payroll.payslips_emailed', runKey(month, companyIdOf(ctx)), {
+    sent: results.filter((r) => r.status === 'sent').length, failed: results.filter((r) => r.status === 'failed').length,
+  });
+  return json({ ok: true, month, results });
+}

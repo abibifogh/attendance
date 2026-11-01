@@ -147,6 +147,7 @@ export async function undoClosure(env, id, account) {
   await run(env.DB, 'DELETE FROM safe_closure_shift WHERE closure_id = ?1', row.id);
   // What the book paid out on that page is open again too.
   await run(env.DB, 'UPDATE safe_entry SET closure_id = NULL WHERE closure_id = ?1', row.id).catch(() => {});
+  await run(env.DB, 'UPDATE suspense SET closure_id = NULL WHERE closure_id = ?1', row.id).catch(() => {});
   await run(env.DB, 'DELETE FROM safe_closure WHERE id = ?1', row.id);
   return { ok: true };
 }

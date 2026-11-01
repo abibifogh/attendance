@@ -91,7 +91,7 @@ if they were given those (see `docs/till.md`).
 A shift opens on one screen:
 
 - **The header**: who, the slot and day, the ASSD sessions inside it, its
-  status, **‹ ›** to the shift before and after, and **⋯** for the
+  status, **🔒 Checked · locked** once it is checked, **‹ ›** to the shift before and after, and **⋯** for the
   reconciliation report, moving the shift, and its notes and history. Whose
   shift it was, when ASSD and HIVE name different people, sits under it.
 - **Four numbers**: what was taken (cash and card), the drawer, card and
@@ -148,14 +148,69 @@ the shift on the wrong day first often puts the other back by itself.
 
 ### What is still to sort out
 
-Every shift has a checklist under its title, **To sort out on this shift**:
-each difference on it, ticked once it is answered, reconciled with others or
-explained, one answered by a supervisor marked as waiting for an admin, and
-last **Marked checked by an admin**. It counts what is done ("3 of 5 done");
-tap a line to go to its card. Over the days (Day, Week, Month), **Still to
-sort out** puts the shifts with a difference still open side by side, latest
-first, each as its checklist, ticking itself as answers come in; tap a shift
-to open it.
+A day's page lists every shift's differences as one checklist, **To sort out
+on 6 Oct**, whose shift each is, open ones first, each answered where it
+opens, the rules' own explanations folded into one line. Each shift's page
+lists what is still to sort out on it (see **One shift**:
+To sort out, ticked as it is answered, the check as the last step). The Day,
+Week and Month views show where each shift stands by its colour, and a 🔒 on
+those checked, so locked: on the week's tiles and the day's cards (🔒
+Checked), beside the letter on the month's bars, and in the Table (beside the
+name, and a Checked column with how many of the month's shifts are).
+
+### The suspense account
+
+A difference an admin cannot settle yet can be parked: **Put in suspense** on
+its card (admins only, beside Put on a staff account) puts its amount in the
+suspense account as S12, and the difference counts as answered "In suspense"
+(S12 and the note). When differences reconciled together do not net to
+nothing, **Reconcile, +GH₵64 to suspense** in the bar reconciles them and
+parks what is left. Plus is money in that ASSD does not show; minus is money
+ASSD shows that is not there.
+
+**Front desk › Safe › Suspense** lists what is open, with the total. Tick two
+or more and **Match them** (a note is needed when they do not net to
+nothing), or **Move to the safe** on a day: a plus goes into the safe book as
+a line in, a minus as a line out, until the safe is next counted, when the
+count takes it in. **Take out** returns an open one (its difference is open
+again on its shift); **Undo** under Cleared opens a match, all of it, or a
+move to the safe the count has not taken in yet. A locked or checked shift
+refuses Put in suspense like any other change.
+
+### A drawer difference reconciled with others
+
+A drawer over or short reconciled with other differences (an expense ASSD
+moved twice, say) is the same money as those, so it is no longer over or
+short: the shift's drawer says **✓ Reconciled**, the day and calendar say
+✓ reconciled, and it is left out of its person's over and short on People.
+ASSD's own count is still shown, with how far it was out. One answered on
+its own (Explained, say) stays over or short, answered.
+
+Undo the reconciliation and the difference is back at once, at its full size:
+the drawer says Over or Short again, and People counts it again. Whatever was
+left over goes with it: taken off the staff accounts (they are told), or out
+of the suspense account. Once that leftover has been matched in suspense or
+moved to the safe, undo that in Safe › Suspense first. Taking a leftover out
+of suspense undoes its reconciliation the same way.
+
+### What is left after reconciling, on a staff account
+
+Ticked differences that do not net to nothing say what is left in the bar:
+a keying slip counts as what ASSD has over what the terminal took (ASSD
+GH₵40 against GH₵20 taken is −GH₵20), so with a payment ASSD does not show
+of +GH₵10 the bar says net −GH₵10. An admin has three ways on:
+
+- **Reconcile, −GH₵10 on a staff account** opens the staff-account panel for
+  what is left: who carries it, how much each, and why. A minus is a deficit
+  (they owe it), a plus a surplus. Both differences are reconciled together
+  and the leftover goes on each person's list, on the shift of the first,
+  and they are told in HIVE.
+- **Reconcile, −GH₵10 to suspense** parks it (above).
+- **Reconcile, the difference explained** reconciles them with a note, and
+  nothing is left anywhere.
+
+Undoing the reconciliation (an admin's Undo) takes the leftover off the staff
+accounts too; taking it off the accounts undoes the reconciliation.
 
 ### Exceptions that are one story
 
@@ -166,7 +221,9 @@ Tick each of them (**Reconcile with others**), on a shift, on a day or in
 the Inbox, and press **Reconcile together** in the bar that comes up at the
 bottom; the bar shows what the ticked ones net to (an amount that pulls the
 other way, such as laundry the laundry system took that ASSD does not show,
-is shown with a −), and a note is required
+is shown with a −; cash moved out with no label, expenses with no PO and
+expenses above their POs are −, POs above the expenses and a laundry card
+payment not in ASSD are +), and a note is required
 when they do not net to nothing. Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same
@@ -194,6 +251,14 @@ approved or rejected, proof asked, sent or cancelled, put on or taken off a
 staff account, and a payment moved to another shift or put back. This is kept
 from the day notes were added (`shift_history`, migration 0044); an answer
 changed before then left no trace of what it was.
+
+What staff answered in HIVE (My till › To sort out) is there too, with an
+amber dot, whenever they gave it: HIVE keeps every answer. It covers the
+exception itself, every time it was put on somebody's account (an undone
+placement too: undoing and putting it on again leaves an answer under the
+first one, and the history says so), and, opened from a shift, that shift's
+own drawer and closing report. The count on **Notes and history** includes
+answers on the exception and its placements.
 
 ### To-dos from a difference
 
@@ -404,7 +469,10 @@ Everything typed is signed with the name of whoever typed it.
   movement: they show as taken out with no cash movement (with whose they
   were), and the drawer over by as much is reconciled as receipts swapped for
   cash. A PO equal to a movement with no receipts in it is that movement's.
-  A movement labelled by hand as the safe or a split keeps its label.
+  A movement labelled by hand as the safe or a split keeps its label. Not
+  when the counts either side of the movement show the notes did not go
+  down: the receipts went down by what it moved and no cash left, so it
+  carried the receipts, whatever the POs add up to.
 - **Receipts still in the count after a movement.** A movement keyed
   after a count with receipts in it looks like it took them out. If the
   counts after it still show them (often the same count done twice), it
@@ -419,7 +487,11 @@ Everything typed is signed with the name of whoever typed it.
   movement, the notes going up by as much, were swapped for cash put into the
   drawer: that shift reads over by as much. The Drawer over card says so and
   **Reconcile** adds the cash back; it then sits under Matched and explained,
-  with Undo. Where the counts cannot show it, the amount can be typed.
+  with Undo. Where the counts cannot show it, the amount can be typed. It
+  never adds back more than the receipts that left with no movement as the
+  counts read them now: if a movement is later read as having carried them,
+  the card says the reconciliation no longer counts (or only part of it), to
+  undo.
 - **Receipts swapped for cash, in detail.** Once reconciled, the green line's
   Details show whose receipts they were (each earlier shift a link), the
   count they first appeared in, the hand-over, the count where they left with
@@ -494,7 +566,7 @@ code and card, to check each one arrived.
 
 | Group | What it means |
 | --- | --- |
-| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. Also here: **Keyed as cash, but the drawer did not move**: cash sales, returns or Items Corrections keyed between two Money Counts that found the same notes (to within GH₵1), with no movement and no change in receipts between them, and coming to more than GH₵1. By the drawer's own counts that money never came in or went out: stock put right through the till, or a count copied from the last one. It lists every stretch and line, and the drawer difference says how much of the cash it counts was keyed that way. It explains the drawer's difference, so it carries no amount of its own in the month table, and it asks for an answer only while the drawer difference does: once that is answered, or when the drawer agrees, it is shown as an explanation and leaves the shift's colour as it was. |
+| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. Also here: **Keyed as cash, but the drawer did not move**: cash sales, returns or Items Corrections keyed between two Money Counts that found the same notes (to within GH₵1), with no movement and no change in receipts between them, and coming to more than GH₵1. By the drawer's own counts that money never came in or went out: stock put right through the till, or a count copied from the last one. It lists every stretch and line, and the drawer difference says how much of the cash it counts was keyed that way. It explains the drawer's difference, so it carries no amount of its own in the month table, and it asks for an answer only while the drawer difference does: once that is answered, or when the drawer agrees, it is shown as an explanation and leaves the shift's colour as it was. Its amount carries a sign, as reconciling needs: cash keyed as taken that never came in is − (ASSD shows money that is not there), keyed as paid out and never left is +. It is part of its own shift's drawer difference: ticked with that, it takes back the part it explains (a −GH₵280 keyed this way against a −GH₵300 drawer short leaves −GH₵20), and **Moved out of the drawer twice** does the same against its drawer's over. With differences on other shifts each counts as it is. |
 | Recorded as paid, but the payment failed | The terminal declined the amount and never approved it afterwards, yet ASSD has it as paid by card. |
 | Recorded as card or MoMo, no payment found | Nothing of that amount arrived near the shift. |
 | The same card charged twice | Two approved charges to one card, same amount, within 30 minutes, and ASSD has one. |
@@ -508,6 +580,15 @@ code and card, to check each one arrived.
 
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.
+
+A shift **marked checked** is locked on its own, without moving the date:
+nothing on it can be answered, reconciled, corrected, counted, moved or put
+on a staff account until the check is undone (**Undo the check**, for whoever
+may check shifts). A change is known to be on it by its day and slot, a
+difference's key naming them, or one of its ASSD lines. The other shifts of
+the same day stay open. Shifts checked before this came in are locked the
+same way. Files loaded later still load; a checked shift they change says
+**Changed since it was checked**.
 
 ### A guest who paid more, or less, than ASSD shows
 
@@ -588,8 +669,10 @@ read as all agreeing:
 - **Expenses with no PO**: the drawer paid out expenses and there is no PO at
   all (none on its closing report, none linked in Insight).
 - **PO total does not match the expenses**: the POs, as Odoo has them, add up
-  to more or less than what left the drawer as expenses. POs typed but not
-  read from Odoo yet are not judged.
+  to more or less than what left the drawer as expenses. A PO linked here
+  that Odoo has not given back (it could not be reached, or does not know the
+  number as typed) is not counted: the card says so, names it, and an admin
+  has **Read Odoo again**. Its total counts once Odoo gives it back.
 
 Each card has the PO box: linking the right PO (or unlinking a wrong one)
 takes it off, or answer why. An answer holds while the amounts stay the

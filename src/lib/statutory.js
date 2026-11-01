@@ -122,6 +122,11 @@ export function journalFor({ lines = [], totals, rates, tiers = TIERS }) {
       amount: bonus,
     },
     {
+      account: 'Till surpluses paid back',
+      detail: 'Money over on staff accounts, paid with pay',
+      amount: round2(sum.tillCredit ?? 0),
+    },
+    {
       account: 'Employer pension contribution',
       detail: `${pct(rates.ssnitEmployer)} of basic`,
       amount: pension.employer,

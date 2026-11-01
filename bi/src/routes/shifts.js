@@ -367,6 +367,9 @@ export function readCarried(s, ask, poTotals) {
  * left with no movement (they are reconciled as swapped for cash, like any
  * others). `pos` is [{ name, paid }]: what each PO took out of the drawer.
  *
+ * Not when the counts either side of it show the notes did not go down: then
+ * it took no cash, it carried the receipts.
+ *
  * A movement labelled by hand as the safe or a split keeps its label. A PO
  * that is exactly a movement with no receipts in it is that movement's, and
  * not counted for another. Returns the movements read again.
@@ -381,9 +384,15 @@ export function cashForPos(s, pos) {
     if (same) used.add(same.i);
   }
   const changed = [];
+  // The counts either side of a movement can say it took no cash: the
+  // receipts went down by what it moved and the notes did not. Then it
+  // carried the receipts, whatever the POs add up to.
+  const tookNoCash = (m) => (m.drops || []).every((d) => d.leg && d.leg.prev < m.seq && m.seq < d.seq
+    && d.leg.notesAfter != null && d.leg.notesBefore != null && d.leg.notesAfter >= d.leg.notesBefore);
   const candidates = live
     .filter((m) => m.receipts > 0 && !(m.manual && ['safe', 'split'].includes(m.kind)))
     .filter((m) => (m.drops || []).reduce((t, d) => t + d.amount, 0) === m.receipts)
+    .filter((m) => !tookNoCash(m))
     .sort((a, b) => b.amount - a.amount);
   for (const m of candidates) {
     const free = list.filter((p) => !used.has(p.i)).slice(0, 14);
@@ -769,8 +778,44 @@ export async function removeLink(env, body, account, { pending = false } = {}) {
     const row = await first(env.DB, 'SELECT * FROM shift_link WHERE id = ?1', id);
     if (!row || row.status !== 'pending' || row.by_name !== who(account)) throw badRequest('Only an admin can undo that.');
   }
+  // What it left over is on staff accounts: undoing that undoes this too.
+  if (await first(env.DB, 'SELECT id FROM till_move WHERE key = ?1 AND undone_at IS NULL', `left:${id}`).catch(() => null)) {
+    throw badRequest('What was left after reconciling these is on a staff account. Take it off the account, and the reconciliation is undone with it.');
+  }
+  // What it left over went to suspense: taken out with it, so each difference
+  // is open again at its full size and nothing is counted twice. Once matched
+  // or moved to the safe, that is undone there first.
+  const row = await first(env.DB, 'SELECT keys FROM shift_link WHERE id = ?1', id).catch(() => null);
+  const parked = row ? await leftInSuspense(env, row.keys) : [];
+  const done = parked.find((e) => e.status !== 'open');
+  if (done) {
+    throw badRequest(`What was left after reconciling these, S${done.id}, has been ${done.status === 'matched' ? 'matched in the suspense account' : 'moved from suspense to the safe'}. Undo that in Safe › Suspense first.`);
+  }
+  for (const e of parked) {
+    // eslint-disable-next-line no-await-in-loop
+    await run(env.DB, 'DELETE FROM suspense WHERE id = ?1', e.id);
+  }
   await run(env.DB, 'DELETE FROM shift_link WHERE id = ?1', id);
-  return { ok: true };
+  if (parked.length) {
+    let keys = [];
+    try { keys = JSON.parse(row.keys); } catch { keys = []; }
+    for (const k of keys) {
+      // eslint-disable-next-line no-await-in-loop
+      await logEvent(env, k, `No longer reconciled together; ${parked.map((e) => `S${e.id}`).join(', ')} taken out of suspense with it`, who(account)).catch(() => {});
+    }
+  }
+  return { ok: true, suspense: parked.map((e) => `S${e.id}`) };
+}
+
+/** Suspense entries holding what was left when exactly these differences were reconciled together. */
+export async function leftInSuspense(env, keysJson) {
+  const sameKeys = (json) => {
+    try { return JSON.stringify([...JSON.parse(json)].map(String).sort()); } catch { return null; }
+  };
+  const want = sameKeys(keysJson);
+  if (!want) return [];
+  const rows = await all(env.DB, 'SELECT id, keys, status FROM suspense WHERE answered = 0').catch(() => []);
+  return rows.filter((r) => sameKeys(r.keys) === want);
 }
 
 /** The answers that make a guest's overpayment a refund owed, and keep a pair apart. */
@@ -1043,6 +1088,12 @@ export async function shifts(env, query, account) {
   }
   const inRange = (day) => day >= from && day <= to;
   const placed = result.shifts.filter((s) => inRange(s.day));
+  // A checked shift is locked, a change named by its ASSD line too: each checked shift's lines, as placed now.
+  const checkedRows = await optional(all(env.DB, 'SELECT day, slot, start_seq, end_seq FROM shift_check WHERE day BETWEEN ?1 AND ?2', from, to));
+  const seqWrites = checkedRows.map((c) => [c, placed.find((s) => s.day === c.day && s.slotName === c.slot)])
+    .filter(([c, s]) => s && (c.start_seq !== s.startSeq || c.end_seq !== s.endSeq))
+    .map(([c, s]) => env.DB.prepare('UPDATE shift_check SET start_seq = ?3, end_seq = ?4 WHERE day = ?1 AND slot = ?2').bind(c.day, c.slot, s.startSeq, s.endSeq));
+  if (seqWrites.length) await env.DB.batch(seqWrites).catch(() => {});
 
   const approvedInRange = terminal.filter((t) => t.approved && t.kind === 'card' && inRange(t.day))
     .map((t) => ({ rrn: t.rrn, at: t.at, amount: t.amount, last4: t.last4, approval: t.approval }));
@@ -1225,7 +1276,11 @@ export async function shifts(env, query, account) {
     const opening = typed?.opening ?? assdOpening ?? previousClosing?.amount ?? null;
     const openingFrom = typed?.opening != null ? 'typed' : assdOpening != null ? 'assd' : previousClosing ? 'carried' : null;
     const out = s.drawerOut;
-    const swapped = swap?.amount || 0;
+    // Reconciled as swapped for cash: never more than the receipts that left
+    // with no movement as the counts read them now. A movement read again as
+    // having carried them leaves nothing swapped, and the drawer is not
+    // given cash nobody put in.
+    const swapped = Math.max(0, Math.min(swap?.amount || 0, s.receiptsSwapped || 0));
     // Expenses with no PO that the big safe paid: cash the drawer kept.
     const fromSafe = safeRows.filter((x) => x.day === s.day && x.slot === s.slotName && String(x.po).startsWith('NOPO-')).reduce((t, x) => t + x.amount, 0);
     const expected = opening == null ? null : opening + s.cash - s.receiptsIn - (out - s.receiptsMoved) + swapped + fromSafe;
@@ -1250,7 +1305,7 @@ export async function shifts(env, query, account) {
         open: s.opening?.receipts ?? null, close: s.closing?.receipts ?? null,
         in: s.receiptsIn, out: s.receiptsOut, moved: s.receiptsMoved, swapped: s.receiptsSwapped,
         direct: s.directExpenses, list: s.receiptsNew,
-        reconciled: swap ? { amount: swap.amount, note: swap.note, by: swap.by_name, at: swap.at } : null,
+        reconciled: swap ? { amount: swapped, saved: swap.amount, note: swap.note, by: swap.by_name, at: swap.at } : null,
       },
       sheetGap: sheet != null && sheet !== expenses ? sheet - expenses : null,
       corrected: s.corrected,
@@ -1323,10 +1378,11 @@ export async function shifts(env, query, account) {
         seq: ask.seq, amount: ask.amount, move: ask.move, reading: d?.reading || null, why: d?.why || null, by: d?.by || null, at: d?.at || null,
       });
     }
-    if (r.receipts.reconciled?.amount) {
+    // Shown while it counts, and while it is saved for more than counts now (to undo).
+    if (r.receipts.reconciled?.amount || r.receipts.reconciled?.saved) {
       exceptions.push({
         ...base, key: `receipts:${s.day}:${s.slotName}`, kind: 'receipts-swapped', group: 'explained', severity: 'info',
-        amount: r.receipts.reconciled.amount, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
+        amount: r.receipts.reconciled.amount, saved: r.receipts.reconciled.saved, by: r.receipts.reconciled.by, at: r.receipts.reconciled.at, note: r.receipts.reconciled.note,
         receiptsFrom: r.receipts.open ? previousUser.get(s.index) || null : null,
         swapFrom: swapFromOf(r),
       });
@@ -1360,12 +1416,15 @@ export async function shifts(env, query, account) {
       const fromReport = (reportPos.get(key) || [])
         .filter((o) => !pulled.some((x) => String(x.name).toUpperCase() === String(o.name).toUpperCase()));
       const seqs = s.moves.filter((m) => ['expenses', 'split', 'part'].includes(m.kind)).map((m) => m.seq);
+      // Linked here but not read from Odoo (it could not be read, or does
+      // not know them): not counted, and said so, rather than left out quietly.
+      const unread = poList(exp?.po_numbers).filter((n) => ![...pulled, ...(reportPos.get(key) || [])].some((o) => String(o.name).toUpperCase() === String(n).toUpperCase()));
       if (!poList(exp?.po_numbers).length && !pulled.length && !fromReport.length) {
         exceptions.push({
           ...base, key: `nopo:${s.day}:${s.slotName}`, kind: 'expense-no-po', group: 'nopo', severity: 'warning',
           amount: r.expenses, seqs,
         });
-      } else if (pulled.length || fromReport.length) {
+      } else if (pulled.length || fromReport.length || unread.length) {
         // The POs, as Odoo has them, against what left the drawer as
         // expenses. Typed POs not read from Odoo yet are not judged.
         // What the big safe paid of a PO is not the drawer's (the report's own are already less it).
@@ -1374,7 +1433,7 @@ export async function shifts(env, query, account) {
         if (gap !== 0) {
           exceptions.push({
             ...base, key: `pogap:${s.day}:${s.slotName}:${r.expenses}:${poTotal}`, kind: 'expense-po-gap', group: 'nopo', severity: 'warning',
-            amount: gap, expenses: r.expenses, poTotal, seqs, pos: [...pulled, ...fromReport].map((o) => o.name),
+            amount: gap, expenses: r.expenses, poTotal, seqs, pos: [...pulled, ...fromReport].map((o) => o.name), unread,
           });
         }
       }
@@ -1672,7 +1731,10 @@ export async function shifts(env, query, account) {
     };
   });
 
-  // Per person: counted variance, shifts, cash handled.
+  // Per person: counted variance, shifts, cash handled. A drawer difference
+  // reconciled with others is the same money as those, so it is not counted
+  // as over or short.
+  const reconciledDrawer = new Set(exceptions.filter((x) => x.group === 'drawer' && x.key.startsWith('drawer:') && x.link?.status === 'applied').map((x) => x.key));
   const people = new Map();
   for (const d of days) {
     for (const s of d.shifts) {
@@ -1683,6 +1745,7 @@ export async function shifts(env, query, account) {
       p.exceptions += s.exceptions;
       if (s.register?.variance != null) {
         p.counted += 1;
+        if (reconciledDrawer.has(`drawer:${s.day}:${s.slot}`)) { people.set(s.user, p); continue; }
         p.variance += s.register.variance;
         if (s.register.variance > 0) p.over += s.register.variance;
         if (s.register.variance < 0) p.short += s.register.variance;

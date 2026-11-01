@@ -5,7 +5,7 @@ import { getPepper, hashPin, verifyPasswordKey } from '../lib/auth.js';
 import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
-import { firstMonthFor } from '../lib/advances.js';
+import { tillMonthFor } from '../lib/advances.js';
 import { nextOnReception, owedReports, reportKey } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 import { firstName, sayDate, sayHours, sayMonth, sayShortDate } from '../lib/email-design.js';
@@ -781,6 +781,40 @@ async function tell(ctx, event, { title, withAmounts, withoutAmounts, mailWith, 
 /** Their own list, as Insight works it out. */
 export async function myIssues(ctx) {
   const answer = await insight(ctx.env, '/api/link/till/issues', { userId: Number(ctx.session.user.id) });
+  // Recovered from pay: which month's pay, and whether it has come off yet.
+  const ids = (answer.issues ?? []).map((i) => Number(i.recovered?.advanceId)).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length) {
+    const marks = ids.map(() => '?').join(',');
+    const advances = (await ctx.db.prepare(`SELECT id, start_month, amount, till_checked_at FROM hr_advance WHERE id IN (${marks})`).bind(...ids).all()
+      .catch(() => ({ results: [] }))).results ?? [];
+    const taken = (await ctx.db.prepare(`SELECT advance_id, month, amount FROM hr_advance_entry WHERE kind = 'repayment' AND advance_id IN (${marks}) ORDER BY month`)
+      .bind(...ids).all().catch(() => ({ results: [] }))).results ?? [];
+    const byId = new Map(advances.map((a) => [Number(a.id), a]));
+    for (const issue of answer.issues) {
+      const advance = byId.get(Number(issue.recovered?.advanceId));
+      if (!advance) continue;
+      const off = taken.filter((t) => Number(t.advance_id) === Number(advance.id));
+      issue.recovered.month = off.length ? off[off.length - 1].month : advance.start_month;
+      issue.recovered.taken = off.length > 0;
+      issue.recovered.held = !off.length && !advance.till_checked_at;
+    }
+  }
+  // Surpluses paid with salary: which month's pay, and whether it has gone.
+  const credits = (answer.issues ?? []).map((i) => Number(i.recovered?.creditId)).filter((n) => Number.isInteger(n) && n > 0);
+  if (credits.length) {
+    const rows = (await ctx.db.prepare(`SELECT c.id, c.month, COALESCE(s.company_id, 1) AS company FROM till_credit c
+      LEFT JOIN att_staff s ON s.id = c.staff_id WHERE c.id IN (${credits.map(() => '?').join(',')})`).bind(...credits).all()
+      .catch(() => ({ results: [] }))).results ?? [];
+    const closed = new Set(((await ctx.db.prepare("SELECT substr(month, 1, 7) AS month, COALESCE(company_id, 1) AS company FROM pay_run WHERE status = 'final'").all()
+      .catch(() => ({ results: [] }))).results ?? []).map((r) => `${r.month}|${r.company}`));
+    const byId = new Map(rows.map((r) => [Number(r.id), r]));
+    for (const issue of answer.issues) {
+      const c = byId.get(Number(issue.recovered?.creditId));
+      if (!c) continue;
+      issue.recovered.month = c.month;
+      issue.recovered.taken = closed.has(`${c.month}|${c.company}`);
+    }
+  }
   return json(answer);
 }
 
@@ -907,14 +941,29 @@ export async function fromInsight(ctx) {
  *
  * As an advance: money they owe, agreed and approved, one month, coming off
  * the next payslip the way any advance does. The payroll already knows how to
- * take an advance back and how to show it on a payslip, and a second way of
- * taking money off pay would be a second thing to get wrong.
+ * take an advance back, and a second way of taking money off pay would be a
+ * second thing to get wrong. It is marked as a till shortage, so the payslip
+ * gives it its own line, and it carries its shift: it comes off pay only while
+ * that shift is checked in Insight (lib/till-checks.js). Only a checked shift
+ * may be sent at all.
  */
 export async function linkRecover(ctx) {
   const body = await fromInsight(ctx);
   const userId = Number(body.userId);
   const amount = Number(body.amount);
   if (!Number.isInteger(userId) || !Number.isInteger(amount) || amount <= 0) throw badRequest('Whose pay, and how much?');
+  if (body.checked !== true) throw badRequest('That shift has not been checked yet. A shortage comes off pay only once its shift is checked.');
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(body.day ?? '')) ? String(body.day) : null;
+  const slot = SLOTS.includes(String(body.slot ?? '')) ? String(body.slot) : null;
+  if (!day || !slot) throw badRequest('Which shift was it?');
+  const key = str(body.key, 'Which difference', { max: 200 });
+  // Sent twice (a retry after a timeout) is still one shortage.
+  if (key) {
+    const again = await ctx.db.prepare('SELECT id FROM hr_advance WHERE till_key = ?1').bind(key).first();
+    if (again) return json({ ok: true, advanceId: again.id, again: true });
+  }
+  const checkedAt = str(body.checkedAt, 'Checked at', { max: 40 }) || nowUtc();
+  const checkedBy = str(body.checkedBy, 'Checked by', { max: 120 });
   const user = await ctx.db.prepare('SELECT id, name, staff_id FROM users WHERE id = ?1').bind(userId).first();
   if (!user) throw notFound('That HIVE login no longer exists.');
   if (!user.staff_id) throw badRequest(`${user.name}'s login is not linked to a staff record in HIVE, so there is no pay to take it from.`);
@@ -924,17 +973,17 @@ export async function linkRecover(ctx) {
   const reason = str(body.reason, 'Reason', { max: 300 }) || 'Till shortage';
   const by = str(body.by, 'By', { max: 120 }) || 'Insight';
   const currency = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'currency'").first().catch(() => null))?.value || 'GHS';
-  const startMonth = firstMonthFor(today);
+  const startMonth = await tillMonthFor(ctx.db, today, user.staff_id);
   const row = await ctx.db.prepare(
     `INSERT INTO hr_advance (staff_id, amount, months, monthly, currency, reason, status, taken_on, start_month,
-       asked_by, decided_by, decided_at, decision, purpose)
-     VALUES (?1, ?2, 1, ?2, ?3, ?4, 'approved', ?5, ?6, ?7, ?7, datetime('now'), ?8, 'other') RETURNING id`,
+       asked_by, decided_by, decided_at, decision, purpose, till_key, till_day, till_slot, till_checked_at, till_checked_by)
+     VALUES (?1, ?2, 1, ?2, ?3, ?4, 'approved', ?5, ?6, ?7, ?7, datetime('now'), ?8, 'till', ?9, ?10, ?11, ?12, ?13) RETURNING id`,
   ).bind(user.staff_id, cedi, currency, reason, today, startMonth, `${by} (Insight)`,
-    'A till shortage, recovered from pay as agreed under My till').first();
+    'A till shortage, recovered from pay as agreed under My till', key, day, slot, checkedAt, checkedBy).first();
 
   await createNotice(ctx.db, {
     kind: 'till.recovered', level: 'warn', title: `${cedis(amount)} till shortage to come off ${user.name}'s pay`,
-    body: `${reason}. Recorded as an advance coming off ${startMonth}, decided by ${by}.`,
+    body: `${reason}. Coming off ${startMonth} pay as a till shortage, decided by ${by}.`,
     link: '#/att-advances', audience: 'hr_pay', text: false,
     mail: safeMail(() => ({
       tone: 'warn', status: 'Off their pay', eyebrow: 'Till',
@@ -945,7 +994,7 @@ export async function linkRecover(ctx) {
         ['Reason', reason],
         ['Decided by', by],
       ],
-      note: 'It is recorded as an advance, so it comes off the payslip the way any advance does.',
+      note: 'It comes off the payslip on a line of its own, Till shortage, while its shift stays checked in Insight.',
       button: 'See the advances',
       subject: `${cedis(amount)} till shortage to come off ${user.name}'s pay`,
       preheader: `${reason}. Decided by ${by}.`,
@@ -971,6 +1020,50 @@ export async function linkRecover(ctx) {
     })),
   }, ctx);
   return json({ ok: true, advanceId: row?.id ?? null });
+}
+
+/**
+ * Insight: a till surplus on somebody's account, to be paid with their pay.
+ * It nets against any till shortage on the same payslip; what is left is paid
+ * untaxed. The month is the open payroll's, as for a shortage.
+ */
+export async function linkCredit(ctx) {
+  const body = await fromInsight(ctx);
+  const userId = Number(body.userId);
+  const amount = Number(body.amount);
+  if (!Number.isInteger(userId) || !Number.isInteger(amount) || amount <= 0) throw badRequest('Whose pay, and how much?');
+  if (body.checked !== true) throw badRequest('That shift has not been checked yet. A surplus is paid only once its amount is final.');
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(body.day ?? '')) ? String(body.day) : null;
+  const slot = SLOTS.includes(String(body.slot ?? '')) ? String(body.slot) : null;
+  if (!day || !slot) throw badRequest('Which shift was it?');
+  const key = str(body.key, 'Which difference', { max: 200 });
+  if (key) {
+    const again = await ctx.db.prepare('SELECT id FROM till_credit WHERE till_key = ?1').bind(key).first();
+    if (again) return json({ ok: true, creditId: again.id, again: true });
+  }
+  const user = await ctx.db.prepare('SELECT id, name, staff_id FROM users WHERE id = ?1').bind(userId).first();
+  if (!user) throw notFound('That HIVE login no longer exists.');
+  if (!user.staff_id) throw badRequest(`${user.name}'s login is not linked to a staff record in HIVE, so there is no pay to add it to.`);
+  const tz = await timezoneOf(ctx.db);
+  const month = await tillMonthFor(ctx.db, todayIn(tz), user.staff_id);
+  const reason = str(body.reason, 'Reason', { max: 300 }) || 'Till surplus';
+  const by = str(body.by, 'By', { max: 120 }) || 'Insight';
+  const currency = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'currency'").first().catch(() => null))?.value || 'GHS';
+  const row = await ctx.db.prepare(
+    `INSERT INTO till_credit (staff_id, amount, currency, month, reason, till_key, till_day, till_slot, decided_by)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id`,
+  ).bind(user.staff_id, amount / 100, currency, month, reason, key, day, slot, `${by} (Insight)`).first();
+
+  await createNotice(ctx.db, {
+    kind: 'till.credited', level: 'info', title: `${cedis(amount)} till surplus to be paid with ${user.name}'s pay`,
+    body: `${reason}. With ${sayMonth(month)} pay, after any till shortage that month. Decided by ${by}.`,
+    link: '#/att-payroll', audience: 'hr_pay', text: false,
+  }, ctx);
+  await createNotice(ctx.db, {
+    kind: 'till.credited', level: 'info', title: `${cedis(amount)} will be paid with your ${sayMonth(month)} pay`,
+    body: `${reason}. It meets any till shortage that month first; the rest is added to your pay.`, userId, text: false,
+  }, ctx);
+  return json({ ok: true, creditId: row?.id ?? null, month });
 }
 
 /** Reopen a signed report so its person can send it again. */

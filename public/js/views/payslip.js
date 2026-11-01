@@ -109,15 +109,31 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
     // that belongs on the advance screen, where it is shown properly with the
     // months behind and ahead of it; on a payslip it is a number with no
     // working, printed on a document somebody keeps.
-    (line.loans ?? []).length
-      ? row(
-        (line.loans ?? []).length > 1 ? 'Salary advances' : 'Salary advance',
-        cash(line.loanTotal ?? (line.loans ?? []).reduce((n, l) => n + (l.amount || 0), 0)),
-      )
-      : null,
+    //
+    // A TILL SHORTAGE IS NOT AN ADVANCE to the person reading it: nobody
+    // handed them money. It is recorded as one so the payroll takes it back
+    // the same way, and it gets its own line here so they recognise it.
+    ...(() => {
+      const loans = line.loans ?? [];
+      const till = loans.filter((l) => l.what === 'till');
+      const lent = loans.filter((l) => l.what !== 'till');
+      const sum = (list) => list.reduce((n, l) => n + (l.amount || 0), 0);
+      const lentTotal = till.length ? sum(lent) : (line.loanTotal ?? sum(lent));
+      // A till surplus paid with salary meets the till shortage first: one
+      // till, so one line, with what was short and over said under it.
+      const short = sum(till);
+      const over = Number(line.tillCredit) || 0;
+      const both = short > 0 && over > 0 ? `${cash(short)} short, less ${cash(over)} over` : null;
+      return [
+        lent.length ? row(lent.length > 1 ? 'Salary advances' : 'Salary advance', cash(lentTotal)) : null,
+        short > over ? row(till.length > 1 ? 'Till shortages' : 'Till shortage', cash(short - over), both) : null,
+        over > short ? row('Till surplus paid', `−${cash(over - short)}`, both || 'Money over on your account, handed back untaxed') : null,
+        over > 0 && over === short ? row('Till', cash(0), both) : null,
+      ];
+    })(),
   ].filter(Boolean);
 
-  const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0);
+  const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0) - (Number(line.tillCredit) || 0);
 
   return h('div.slip-page', { style: { width: `${PAGE_W}px`, height: `${PAGE_H}px` } },
     h('div.slip-fit',

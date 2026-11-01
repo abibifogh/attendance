@@ -24,6 +24,7 @@ import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
 import { watchHolidayChoices } from './lib/holiday-choice.js';
+import { syncTillChecks } from './lib/till-checks.js';
 import { watchReminders } from './lib/reminders.js';
 import { watchInterviews } from './lib/interview-mail.js';
 import { watchOffers } from './routes/offers.js';
@@ -234,6 +235,7 @@ export const ROUTES = [
   // And Insight asking, server to server. No session reaches these; each
   // request is signed with the secret the two share for the sign-in hand-off.
   ['POST', '/api/link/till/recover', 'public', till.linkRecover],
+  ['POST', '/api/link/till/credit', 'public', till.linkCredit],
   ['POST', '/api/link/till/reopen', 'public', till.linkReopen],
   ['POST', '/api/link/till/move', 'public', till.linkMove],
   ['POST', '/api/link/till/tell', 'public', till.linkTell],
@@ -369,8 +371,13 @@ export const ROUTES = [
   ['POST', '/api/advances/import/read', 'hr_pay', advance.readAdvanceImport],
   ['POST', '/api/advances/import', 'hr_pay', advance.applyAdvanceImport],
   ['GET', '/api/advances/staff/:id', 'hr_pay', advance.staffAdvances],
+  // Till shortages taken from pay, read on their own. Above any :id pattern.
+  ['GET', '/api/advances/till', 'hr_pay', advance.tillShortages],
   // Typing the old notebook in. Administrator only, checked in the handler.
   ['POST', '/api/advances/staff/:id/history', 'hr_pay', advance.bringHistoryAcross],
+  // Shortages on checked shifts: recover from pay, or not. Above :id patterns.
+  ['GET', '/api/advances/till-decisions', 'hr_pay', advance.tillToDecide],
+  ['POST', '/api/advances/till-decisions', 'hr_pay', advance.tillDecide],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   // Correcting the record rather than the arrangement. Admin only, checked
@@ -434,6 +441,8 @@ export const ROUTES = [
 
   // ----------------------------------------------------------- payroll --
   ['GET', '/api/payroll', 'hr_pay', payroll.payroll],
+  ['GET', '/api/payroll/mail', 'hr_pay', payroll.slipMailList],
+  ['POST', '/api/payroll/mail', 'hr_pay', payroll.sendSlipMail],
   ['GET', '/api/payroll/slip/:id', 'hr_pay', payroll.payslip],
   ['POST', '/api/payroll/profiles', 'hr_pay', payroll.setProfiles],
   ['POST', '/api/payroll/schemes', 'hr_pay', payroll.saveScheme],
@@ -1134,6 +1143,14 @@ export default {
       if (tills.before || tills.after) {
         console.log(`Till: ${tills.before} reminded before the end, ${tills.after} after`);
       }
+
+      // Which till shortages may come off pay: only those whose shift is
+      // checked in Insight. Quiet when there are none to ask about.
+      const tillChecks = await syncTillChecks(env.DB, env).catch((err) => {
+        console.error('Till check sync failed', err);
+        return { held: 0 };
+      });
+      if (tillChecks.held) console.log(`Till: ${tillChecks.held} shortage(s) held until their shift is checked`);
 
       // And the question to whoever runs the floor when somebody has not come
       // in: off sick, absent, or here? Asked until somebody answers.

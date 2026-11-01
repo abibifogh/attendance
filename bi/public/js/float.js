@@ -69,6 +69,8 @@ function span() {
   if (range === 'all') return ['start', today()];
   return dates;
 }
+/** A new tab on a computer; the same window on a phone's home-screen app, where a new tab has no way back. */
+const tab_ = navigator.standalone || matchMedia('(display-mode: standalone)').matches ? '' : ' target="_blank" rel="noopener"';
 const statementUrl = (format) => {
   const [from, to] = span();
   return `/api/float/statement?${key}&from=${from}&to=${to}${format ? `&format=${format}` : ''}`;
@@ -142,7 +144,7 @@ function statementHtml() {
     <div class="chips">${Object.entries(RANGES).map(([k, l]) => `<button type="button" data-range="${k}" class="${range === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${range === 'pick' ? `<div class="dates"><label>From<input type="date" id="from" value="${dates[0]}" max="${today()}"></label><label>To<input type="date" id="to" value="${dates[1]}" max="${today()}"></label></div>` : ''}
     <div class="sumrows">${row('At the start', t?.opening)}${row('Given to you', t?.given)}${row('Spent (receipts)', t?.spent)}${row('Given back', t?.back)}${row('Still with you', t?.closing)}</div>
-    <div class="btns"><a class="btn pri" href="${esc(statementUrl(''))}" target="_blank" rel="noopener">View · print</a><a class="btn" href="${esc(statementUrl('csv'))}">Spreadsheet</a></div></div>`;
+    <div class="btns"><a class="btn pri" href="${esc(statementUrl('pdf'))}"${tab_}>PDF</a><a class="btn" href="${esc(statementUrl(''))}"${tab_}>View</a><a class="btn" href="${esc(statementUrl('csv'))}">Spreadsheet</a></div></div>`;
 }
 
 async function loadTotals() {
