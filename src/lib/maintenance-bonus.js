@@ -76,6 +76,40 @@ export async function askMaintenance(linkText, month, fetchImpl = fetch) {
 }
 
 /**
+ * Ask Maintenance for a month's late-report deductions: GHS 50 off for each
+ * weekly report not sent within four hours of being due. Same link, same key.
+ */
+export async function askMaintenancePenalties(linkText, month, fetchImpl = fetch) {
+  const link = readLink(linkText);
+  if (!link) throw new HttpError(503, 'HIVE is not linked to Maintenance yet.');
+  let response;
+  try {
+    response = await fetchImpl(`${link.url}/rest/v1/rpc/mx_hive_penalties`, {
+      method: 'POST',
+      headers: {
+        apikey: link.anon,
+        Authorization: `Bearer ${link.anon}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_key: link.key, p_month: month }),
+    });
+  } catch {
+    throw new HttpError(502, 'Maintenance could not be reached.');
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new HttpError(502, data?.message || data?.error || `Maintenance answered ${response.status}.`);
+  }
+  if (!data || !Array.isArray(data.penalties)) {
+    throw new HttpError(502, 'Maintenance answered with something that is not a month\'s deductions.');
+  }
+  return data;
+}
+
+/** Employee numbers as they are compared: no spaces, no case, no stray ".0". */
+export { cleanNo };
+
+/**
  * Maintenance's month, set against one scheme.
  *
  * Returns a line for each person on the scheme Maintenance knows about, with
