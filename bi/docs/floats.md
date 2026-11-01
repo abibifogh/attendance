@@ -84,6 +84,45 @@ admin keeps the receipt's amount: an admin's answer stands over theirs, and
 (their page says the office will decide). Changed again in Odoo, both are asked again;
 changed back to the receipt's amount, nothing is asked.
 
+## Where receipts go: Odoo or the POS
+
+Some people buy for the bistro, the bar or the craft shop, whose stock and
+purchase orders live in the POS, not in Odoo. **Buying › Floats › Where
+receipts go** has a tick per person for each place: **Odoo (hotel)**, **POS
+Bistro**, **POS Bar** and **POS Craft**. Admins only; each save is in the
+audit trail.
+
+- **One tick**: their receipts always go there; they are not asked.
+- **More than one**: their page asks "What was it for?" on each send, with
+  only the places ticked for them.
+- **None**: they send as usual and the receipt waits in Insight ("to look
+  at") until an admin chooses where it goes.
+- **Somebody new** starts with Odoo only, as everybody did before.
+
+A receipt for the POS is read as usual (who sold it, the total, the day, and
+each thing bought on its own line) but **no PO is made in Odoo**. Instead
+Insight asks the POS to make a **draft purchase order** for that side,
+carrying the person's reference (FLT/ESI/007), what was read, and the picture.
+The POS matches each line to a stock item where the names agree; the POS
+manager picks the item for any line that does not, and receives it into
+stock, paid from "a float, in Insight", so no drawer or petty cash box looks
+short.
+
+On a person, each receipt says where it went (**Odoo P04131**, **POS PO-0142 ·
+Bar**, or **Waiting**), with **Open … in the POS**. Then, as with Odoo:
+
+- **Received** in the POS (all or some): accepted.
+- **Cancelled or refused** in the POS: refused, and back on what they hold.
+- **Send to … instead**: while its PO in Odoo, or its order in the POS, is
+  still a draft, an admin can send it to another of the person's places. The
+  draft is cancelled where it was and made where it now goes.
+- **Could not be read**: **Read it again**, or **Type in what it says** (who
+  sold it, the total, what was bought), then it is sent.
+- **The POS did not answer**: said on the receipt; **Try the POS again**.
+
+Adding a receipt for somebody (📷 Add a receipt) asks where it goes when they
+have more than one place, or none.
+
 ## Notes on money given
 
 Every amount given can carry a note: typed in **Note on this money** when it
@@ -110,3 +149,12 @@ On a person, **⬇ Statement**: choose the dates, then
 - `public/js/views/floats.js` (Buying › Floats), `public/float.html` and
   `public/js/float.js` (their link).
 - Tables `float_person`, `float_move`, `float_receipt` (migration 0040).
+  Where receipts go: `float_person.dests`, and on `float_receipt` the `dest`,
+  the read `lines` and the POS order (`pos_id`, `pos_no`, `pos_status`,
+  `pos_url`, `pos_problem`) (migration 0065).
+- The POS: three signed paths on its notify function, `/floats/po` (make a
+  draft order, once per receipt), `/floats/po/status` and `/floats/po/cancel`
+  (only a draft), called with `pos()` in `src/routes/approvals.js`: the POS's
+  address from Settings › Connections & files and `SSO_SECRET_POS`, the same
+  as Approvals. Moving a receipt out of Odoo cancels its draft PO there
+  (`cancelDraftPo`).

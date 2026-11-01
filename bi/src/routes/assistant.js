@@ -12,6 +12,7 @@ import { requireAdmin, roleOf, accessOf } from './till.js';
 import { reportsOf } from './reportaccess.js';
 import { envelopeLines } from './envelopes.js';
 import * as proof from './proof.js';
+import * as fixedAssets from './fixedassets.js';
 
 /**
  * The Assistant: everything that needs you, from every system Insight reads,
@@ -61,6 +62,7 @@ const SOURCES = [
   { id: 'files', label: 'Shift files', read: readFiles, area: 'shifts', tag: 'Files' },
   { id: 'suppliers', label: 'Suppliers', read: readSuppliers, area: 'buying', tag: 'Suppliers' },
   { id: 'report', label: 'Management report', read: readReport, area: 'report', tag: 'Report' },
+  { id: 'fixedassets', label: 'Fixed assets', read: (env) => fixedAssets.todayItems(env), area: 'buying', tag: 'Fixed assets' },
 ];
 
 /** What anybody who works shifts has of their own: to-dos given to them, and proof asked of them. */
@@ -326,7 +328,7 @@ async function readFloats(env) {
     });
   }
   if (look) {
-    out.push({ tab: 'decide', key: 'floats:look', sev: 'info', title: `${look} float receipt${look === 1 ? '' : 's'} to look at`, advice: 'A receipt sent from a float link that could not be made into a PO by itself.', actions: [{ label: 'Open floats', href: '#/floats', primary: true }] });
+    out.push({ tab: 'decide', key: 'floats:look', sev: 'info', title: `${look} float receipt${look === 1 ? '' : 's'} to look at`, advice: 'A receipt sent from a float link that could not be made into a PO by itself, or waits for somebody to say where it goes.', actions: [{ label: 'Open floats', href: '#/floats', primary: true }] });
   }
   return out;
 }

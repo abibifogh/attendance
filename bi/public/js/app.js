@@ -9,6 +9,7 @@ import { renderCash } from './views/cash.js';
 import { renderSafe } from './views/safe.js';
 import { renderSpend } from './views/suppliers.js';
 import { renderSupplierBook } from './views/supplierbook.js';
+import { renderFixedAssets } from './views/fixedassets.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub, appsPanel } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
@@ -88,6 +89,7 @@ const ROUTES = [
   { path: 'receipts', label: 'Receipts', section: 'buying', page: 'Receipts', render: renderReceipts, needs: 'admin', own: true },
   { path: 'floats', label: 'Floats', section: 'buying', page: 'Floats', render: renderFloats, needs: 'admin', own: true },
   { path: 'spend', label: 'Spend', section: 'buying', page: 'Spend', render: renderSpend, needs: 'insight', report: 'buying' },
+  { path: 'assets', label: 'Fixed assets', section: 'buying', page: 'Fixed assets', render: renderFixedAssets, needs: 'admin', own: true },
 
   // What the business made, the week's report from the other apps, the guests and the staff.
   { path: 'money', label: 'Profit & loss', section: 'reports', page: 'Money', render: renderPnl, needs: 'insight' },

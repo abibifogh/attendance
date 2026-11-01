@@ -83,6 +83,15 @@
     .thumbs { display: flex; gap: 8px; overflow-x: auto; }
     .thumbs img, .thumbs span { width: 72px; height: 72px; border-radius: 10px; object-fit: cover; flex: none; background: var(--surface-2); display: grid; place-items: center; font-size: 13px; color: var(--ink-2); }
     .sheet label { font-size: 13px; color: var(--ink-2); font-weight: 600; display: grid; gap: 4px; }
+    .places { display: grid; gap: 6px; }
+    .places .lbl { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+    .places .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+    .places .opts button { flex: 1 1 30%; border: 2px solid #e3e6eb; background: #fff; border-radius: 12px; padding: 12px 8px; font: inherit; font-weight: 700; color: var(--ink); }
+    .places .opts button.on { border-color: #4f46e5; background: #eef0ff; color: #3730a3; }
+    .places .needs { display: none; color: var(--bad); font-weight: 600; }
+    .places.need .needs { display: block; }
+    .places.need .opts button { border-color: var(--bad); }
+    .goes { margin: 0; background: #fff4e5; color: #9a3412; border-radius: 12px; padding: 10px 12px; font-weight: 600; font-size: 14px; }
     .err { background: var(--bad-bg); color: var(--bad); border-radius: 12px; padding: 10px 12px; margin: 16px; }
   </style>
 </head>
