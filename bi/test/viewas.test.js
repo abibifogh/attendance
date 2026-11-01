@@ -70,6 +70,9 @@ test('an admin looks as a supervisor: answered as them, and nothing can be chang
   assert.match(refused.data.error, /viewing as Sam Supervisor: nothing can be changed/);
   assert.equal((await call('POST', '/api/sso/start', { system: 'attendance' })).status, 403, 'no opening another system as them');
   assert.equal((await call('POST', '/api/auth/change-password', {})).status, 403);
+  // What only reads still answers, so the cards look as Sam's do: their to-dos and notes.
+  assert.equal((await call('POST', '/api/shifts/tasks/for-keys', { keys: ['drawer:2026-10-27:night'] })).status, 200);
+  assert.equal((await call('POST', '/api/shifts/notes/counts', { keys: ['drawer:2026-10-27:night'] })).status, 200);
 
   // Switch, then stop: back to being the admin. Each time is logged.
   assert.equal((await call('POST', '/api/view-as', { accountId: 4 })).status, 200);

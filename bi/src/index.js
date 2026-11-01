@@ -519,6 +519,8 @@ function locked(handler, ids = {}, path = '') {
 
 /** The morning schedule in wrangler.toml: the daily till summary, at 06:45 in Accra (UTC). */
 const SUMMARY_CRON = '45 6 * * *';
+/** POSTs that change nothing, so View as lets them through: what the cards show, and Ask Insight. */
+const VIEW_READS = new Set(['/api/shifts/notes/counts', '/api/shifts/tasks/for-keys', '/api/assistant/ask']);
 /** Every hour on the hour: the supervisors' 07:00 digest, and the Saturday report's reminders and deduction. */
 const HOURLY_CRON = '0 * * * *';
 
@@ -593,7 +595,8 @@ export default {
         if (till.roleOf(account) !== 'admin') await reportAccess.requireReport(env, account, request.method, url.pathname);
       } else if (permission === 'owner') account = await requireOwner(request, env);
       // Looking as somebody else is look only: nothing may change while it is on.
-      if (account?.viewedBy && request.method !== 'GET' && request.method !== 'HEAD') {
+      // The few POSTs that only read (to-dos and notes on the cards, Ask) still answer, so the page looks as theirs does.
+      if (account?.viewedBy && request.method !== 'GET' && request.method !== 'HEAD' && !VIEW_READS.has(url.pathname)) {
         throw new HttpError(403, `You are viewing as ${account.name}: nothing can be changed. Stop viewing to do this as yourself.`, { viewing: true });
       }
       else if (permission === 'link') {

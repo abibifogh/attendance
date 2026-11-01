@@ -13,6 +13,12 @@ Inbox, only the areas and amounts they are given. Useful when somebody says
 - It is **look only**. Anything that would change something is refused with
   "You are viewing as …: nothing can be changed. Stop viewing to do this as
   yourself." That includes opening another system from the hub as them.
+  What only reads still works: the to-dos and notes on each difference, and
+  **Ask Insight** (answered from their list).
+- **Not the same as their screen:** choices the browser remembers (Day or Week,
+  the chip picked on Today, light or dark, table layout) are yours, from your
+  browser, not theirs; and you see it at your screen's size, not their phone's.
+  Buttons show as they would for them, but pressing one is refused.
 - It ends by itself after 4 hours, when you sign out, or if you stop being an
   admin.
 
