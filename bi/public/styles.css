@@ -2813,3 +2813,7 @@ main img, main svg, main canvas, main video { max-width: 100%; }
 .as-bills label { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
 .as-bills input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; flex: none; }
 .as-bills p { margin: 6px 0 0; }
+
+/* Settings › Notifications › Management report: the last few Saturdays. */
+.mg-weeks { list-style: none; margin: 6px 0 10px; padding: 0; display: grid; gap: 6px; font-size: .86rem; }
+.mg-weeks li { padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }

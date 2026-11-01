@@ -6,6 +6,7 @@ import { createNotice } from '../lib/notices.js';
 import { callLink, verifyLink } from '../lib/till-link.js';
 import { addDays, nowIn, todayIn } from '../util/dates.js';
 import { tillMonthFor } from '../lib/advances.js';
+import { dockFromInsight } from './payroll.js';
 import { nextOnReception, owedReports, reportKey } from '../lib/till-watch.js';
 import { firstUsableEmail, isEmail, sendEmail, senderWithName } from '../lib/notify.js';
 import { firstName, sayDate, sayHours, sayMonth, sayShortDate } from '../lib/email-design.js';
@@ -1436,6 +1437,27 @@ export async function linkTell(ctx) {
  * address staff already know. One recipient per call, and nothing is ever
  * addressed from what the body says: the sender is HIVE's own.
  */
+/**
+ * Money off somebody's bonus, asked for by Insight: a management report sent
+ * more than four hours late. The login is found by the email address their
+ * Insight account has; it must be linked to a staff record, which is whose
+ * bonus it is. Amounts come in pesewas, as everything from Insight does.
+ */
+export async function linkDock(ctx) {
+  const body = await fromInsight(ctx);
+  const email = String(body.email ?? '').trim().toLowerCase();
+  const amount = Number(body.amount);
+  if (!isEmail(email) || !Number.isInteger(amount) || amount <= 0 || amount > 10_000_00) throw badRequest('Whose bonus, and how much?');
+  const reason = str(body.reason, 'Reason', { required: true, max: 300 });
+  const key = str(body.key, 'Key', { required: true, max: 200 });
+  const by = str(body.by, 'By', { max: 120 }) || 'Insight';
+  const user = await ctx.db.prepare('SELECT id, name, staff_id FROM users WHERE lower(email) = ?1 AND active = 1').bind(email).first();
+  if (!user) throw notFound(`Nobody in HIVE signs in as ${email}, so there is no bonus to take it from.`);
+  if (!user.staff_id) throw badRequest(`${user.name}'s login is not linked to a staff record in HIVE, so there is no bonus to take it from.`);
+  const out = await dockFromInsight(ctx, { staffId: user.staff_id, amount: amount / 100, reason, key, by });
+  return json({ ok: true, name: user.name, ...out });
+}
+
 export async function linkMail(ctx) {
   const body = await fromInsight(ctx);
   const to = String(body.to ?? '').trim();
@@ -1444,6 +1466,8 @@ export async function linkMail(ctx) {
   const html = str(body.html, 'Message', { required: true, max: 60000 });
   const text = str(body.text, 'Plain text', { max: 20000 }) || undefined;
   const kind = /^[a-z_.]{1,40}$/.test(String(body.kind ?? '')) ? body.kind : 'insight';
+  // Copied in: a daily digest to a supervisor goes with the admins on it.
+  const cc = [...new Set((Array.isArray(body.cc) ? body.cc : []).map((e) => String(e ?? '').trim()).filter(isEmail))].slice(0, 10);
   // A list Insight attaches (a month's prepaid stays): a CSV, by name, small.
   const attachments = (Array.isArray(body.attachments) ? body.attachments : []).slice(0, 2).map((a) => {
     const filename = String(a?.filename ?? '');
@@ -1475,6 +1499,7 @@ export async function linkMail(ctx) {
       text,
       replyTo: isEmail(body.replyTo) ? body.replyTo : ((settings.email_reply_to || '').trim() || null),
       attachments,
+      cc: cc.length ? cc : null,
     });
   } catch (err) {
     await log('failed', err.message);

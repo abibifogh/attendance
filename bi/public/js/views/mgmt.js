@@ -41,7 +41,43 @@ export async function renderMgmt(root, { part = null } = {}) {
   if (part === 'settings') {
     let mail = await api('/reports/management/mail');
     const r = { sections: mail.sections, skip: [] };
-    return mount(root, view, settingsCard());
+    return mount(root, view, settingsCard(), isAdmin ? dutyCard() : null);
+
+    /** The supervisor who sends it on Saturdays, what happens when it is late, and the morning digest. */
+    function dutyCard() {
+      const box = h('section.card.mg-mail', h('h2', 'Saturday report and morning digest'), h('p.muted', 'Loading…'));
+      let d = null;
+      const draw = () => {
+        const said = h('span.small');
+        const save = async (body) => {
+          said.textContent = 'Saving…'; said.className = 'small';
+          try { d = await api('/duty', { method: 'POST', body }); draw(); } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
+        };
+        const who = h('select', { 'aria-label': 'Supervisor who sends it', onchange: (e) => save({ accountId: Number(e.target.value) || null }) },
+          h('option', { value: '' }, 'Choose a supervisor'),
+          d.supervisors.map((p) => h('option', { value: String(p.id), selected: p.id === d.accountId }, `${p.name}${p.hasEmail ? '' : ' (no email)'}`)));
+        const on = h('input', { type: 'checkbox', role: 'switch', checked: d.on, 'aria-label': 'Saturday report duty', onchange: (e) => save({ on: e.target.checked }) });
+        const digest = h('input', { type: 'checkbox', role: 'switch', checked: d.digest, 'aria-label': 'Morning digest', onchange: (e) => save({ digest: e.target.checked }) });
+        const amount = `GH₵${(d.amount / 100).toFixed(2)}`;
+        mount(box,
+          h('h2', 'Saturday report and morning digest'),
+          h('div.mg-auto',
+            h('label.mg-switch', on, h('span.track', h('span.knob')), h('b', d.on ? 'Saturday report: on' : 'Saturday report: off')),
+            h('p.small.muted', `One supervisor sends this week's report (Monday to Friday) to everybody by 10:00 every Saturday. They are reminded at 17:00 on Friday and 09:00 on Saturday; if it has not gone they are told at 10:00 and 12:00, with the admins copied; at 14:00, more than four hours late, ${amount} comes off their bonus in HIVE and they and the admins are told.`),
+            h('div.mg-row', h('span.small', 'Sent by'), who),
+            d.supervisors.length ? null : h('p.small.form-error', 'No supervisors yet: give somebody Insight as a supervisor under Settings › People & access.')),
+          h('div.mg-auto',
+            h('label.mg-switch', digest, h('span.track', h('span.knob')), h('b', d.digest ? 'Morning digest: on' : 'Morning digest: off')),
+            h('p.small.muted', 'At 07:00 each supervisor gets what is waiting on them (their Assistant list) by email, with the admins copied. Nothing waiting, no email.')),
+          d.weeks.length ? [h('h3', 'Last weeks'), h('ul.mg-weeks', d.weeks.map((w) => h('li',
+            h('b', `Week of ${day(w.key)}`), ' · ',
+            w.sent ? `sent ${String(w.sent.at).slice(0, 16).replace('T', ' ')} by ${w.sent.by || 'somebody'}` : 'not sent',
+            w.docked ? ` · ${`GH₵${(w.docked.amount / 100).toFixed(2)}`} off ${w.who || 'their'} bonus` : '')))] : null,
+          said);
+      };
+      api('/duty').then((x) => { d = x; draw(); }).catch((err) => mount(box, h('h2', 'Saturday report and morning digest'), h('p.form-error', err.message)));
+      return box;
+    }
 
     /** Who gets it, and sending by itself. */
     function settingsCard() {
@@ -92,7 +128,10 @@ export async function renderMgmt(root, { part = null } = {}) {
       return box;
     }
   }
-  const { period, at, skip } = asked();
+  const { period, at: askedAt, skip } = asked();
+  // Whether this person sends the Saturday report: it opens on this week's, with its send box open.
+  let duty = isAdmin ? null : await api('/duty/mine').catch(() => null);
+  const at = askedAt || (duty?.mine && period === 'week' ? duty.key : '');
   mount(root, view, h('p.muted', 'Asking each system…'));
   const r = await api(`/reports/management?period=${period}${at ? `&at=${encodeURIComponent(at)}` : ''}${skip ? `&skip=${encodeURIComponent(skip)}` : ''}`);
   const go = (p, key, left = r.skip) => {
@@ -105,7 +144,7 @@ export async function renderMgmt(root, { part = null } = {}) {
     if (left.length === r.sections.length) return;
     go(r.period, r.key, left);
   };
-  let mailBox = null;
+  let mailBox = duty?.mine && r.period === 'week' && r.key === duty.key ? true : null;
   let mail = null;
 
   paint();
@@ -302,7 +341,20 @@ export async function renderMgmt(root, { part = null } = {}) {
       button.disabled = false;
     };
     const toMe = h('button.btn', { type: 'button', onclick: () => send(toMe, false) }, 'Send it to me');
-    return h('div.card.mg-send', h('p.small', `${r.label}: the figures, what needs attention and both sections in short, with a link back here.`), h('div.mg-row', toMe, said));
+    // The supervisor who sends the Saturday report sends this week's to everybody from here.
+    const theirs = duty?.mine && r.period === 'week' && r.key === duty.key;
+    const all = theirs ? h('button.btn.primary', {
+      type: 'button',
+      onclick: async () => {
+        if (!window.confirm(`Send ${r.title} now to everybody on the list?`)) return;
+        await send(all, true);
+        duty = await api('/duty/mine').catch(() => duty);
+      },
+    }, '✉ Send to everybody') : null;
+    return h('div.card.mg-send',
+      h('p.small', `${r.label}: the figures, what needs attention and both sections in short, with a link back here.`),
+      theirs ? h('p.small', duty.sent ? `✓ Sent ${String(duty.sent.at).slice(0, 16).replace('T', ' ')} by ${duty.sent.by}.` : 'Yours to send to everybody by 10:00 on Saturday.') : null,
+      h('div.mg-row', all, toMe, said));
   }
 
   /** Sending it now, to everybody it goes to or to yourself; who that is and sending by itself are in Settings › Notifications. */

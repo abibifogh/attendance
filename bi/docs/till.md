@@ -290,7 +290,8 @@ minutes, or altered on the way, is refused.
 | Insight | `/api/link/till/reopen` | Reopen a signed report |
 | Insight | `/api/link/till/tell` | Tell people something was settled, sent back or needs approving |
 | Insight | `/api/link/till/expect` | Tell whoever is rostered on the next reception shift that a refund is coming back to the drawer |
-| Insight | `/api/link/mail` | Send one email from HIVE's address: an invitation, or word that somebody joined (see `invitations.md`) |
+| Insight | `/api/link/mail` | Send one email from HIVE's address: an invitation, or word that somebody joined (see `invitations.md`), with people copied in (`cc`: the admins on a supervisor's morning digest) |
+| Insight | `/api/link/pay/dock` | A set amount off somebody's bonus, for the login their Insight account signs in as: the management report sent more than four hours late (see `management-report.md`). Once per key, on the first open payroll, and they are told |
 
 Insight also reads HIVE's database directly, read-only, as it always has:
 the reports, the POs claimed and the answers are HIVE's tables.

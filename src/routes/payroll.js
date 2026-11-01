@@ -7,7 +7,7 @@ import { payslipFilename, payslipPdf } from '../lib/payslip-pdf.js';
 import { companyLogoBytes } from './people.js';
 import { sayMonth } from '../lib/email-design.js';
 import { paidInMonth } from '../lib/leaving.js';
-import { balanceOf, dueThisMonth, startsOn, whyNotDue } from '../lib/advances.js';
+import { balanceOf, dueThisMonth, startsOn, tillMonthFor, whyNotDue } from '../lib/advances.js';
 import {
   computeLine, partMonth, totalsOf,
 } from '../lib/payroll.js';
@@ -2611,6 +2611,31 @@ export async function addPenalty(ctx) {
   }
 
   return json({ ok: true });
+}
+
+/**
+ * Money off somebody's bonus that Insight asked for: a management report sent
+ * more than four hours late, say. It goes on the first payroll from today that
+ * is still open, for the company the person is paid by, with its reason, and
+ * they are told now, as for any deduction. Asked twice with the same key, it is
+ * taken once.
+ */
+export async function dockFromInsight(linkCtx, { staffId, amount, reason, key, by = 'Insight' }) {
+  // Nobody is signed in: Insight, on behalf of whoever it names, is who did it.
+  const ctx = { ...linkCtx, session: { user: { name: by, role: 'Insight' } } };
+  const again = key ? await ctx.db.prepare('SELECT p.id, r.month FROM pay_penalty p JOIN pay_run r ON r.id = p.run_id WHERE p.link_key = ?1').bind(key).first() : null;
+  if (again) return { id: again.id, month: monthOfRun(again.month), again: true };
+  const { timezone } = await settingsOf(ctx.db);
+  const month = await tillMonthFor(ctx.db, todayIn(timezone), staffId);
+  const staff = await ctx.db.prepare('SELECT company_id FROM att_staff WHERE id = ?1').bind(staffId).first().catch(() => null);
+  const run = await runFor(ctx.db, month, `${by} (Insight)`, { company: Number(staff?.company_id) || MAIN });
+  if (run.status === 'final') throw badRequest(`${sayMonth(month)} payroll is closed, so nothing can come off it.`);
+  const row = await ctx.db.prepare(
+    'INSERT INTO pay_penalty (run_id, staff_id, amount, reason, actor, link_key) VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id',
+  ).bind(run.id, staffId, round2(amount), reason, actorOf(ctx), key || null).first();
+  await audit(ctx, 'payroll.penalty', staffId, { month, amount: round2(amount), reason, from: 'Insight' }).catch(() => {});
+  await tellOfDeduction(ctx, staffId, round2(amount), month, reason).catch(() => {});
+  return { id: row.id, month };
 }
 
 /** Take one back off. */
