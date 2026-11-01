@@ -86,7 +86,6 @@ const KIND = {
   chargeback: ['A chargeback: the bank took a card payment back', '↺'],
   'prepaid-not-banked': ['Prepaid by bank transfer, not in the bank', '?'],
   'deposit-not-banked': ['Cash banked from the safe, not in the bank', '?'],
-  'back-office': ['Money taken on the back office, not in the drawer', '!'],
   probable: ['Matched only because the amounts add up', '≈'],
   'search-cut': ['Too many to try every combination', '…'],
   'expense-no-po': ['Expenses with no PO', '#'],
@@ -2495,7 +2494,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         + `${x.original ? ` It takes back the payment of ${money(x.original.amount)} taken ${when(x.original.at)}.` : ' No payment of that amount to that card is on the terminal report.'} Dispute it with the bank, or say it is accepted.`;
       case 'prepaid-not-banked': return `ASSD has ${money(x.amount)} prepaid by bank transfer (ASSD ${x.seq}${x.ref ? `, reservation ${x.ref}` : ''}), and no credit of that amount is on the bank statement from two weeks before to three days after.`;
       case 'deposit-not-banked': return `${money(x.amount)} was banked from the safe on ${shortDay(x.day)}${x.ref ? ` (${x.ref})` : ''}, and no credit of that amount reached the bank within four days.`;
-      case 'back-office': return `${money(Math.abs(x.amount))} was ${x.amount > 0 ? 'taken' : 'paid out'} on the back office (ASSD ${x.seq}, ${x.by || 'somebody'}): ${(x.lines || []).map((l) => `${l.label} ${money(l.amount)}`).join(', ')}. The drawer never held it: say where it is.`;
       case 'probable': return x.how === 'together'
         ? `ASSD lines ${(x.lines || []).map((a) => money(a)).join(' + ')} were matched to one payment of ${money(x.amount)} because the sums agree, and nothing else: confirm they are one guest’s.`
         : `ASSD's ${money(x.amount)} was matched to payments of ${(x.events || []).map((ev) => money(ev.amount)).join(' + ')} because they add up, and nothing else: confirm they were paid in parts.`;
@@ -2650,8 +2648,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (x.kind === 'keyed-no-cash') return -x.amount;
     // Money gone back out, or expected in and not there: ASSD shows money that is not there.
     if (['chargeback', 'prepaid-not-banked', 'deposit-not-banked'].includes(x.kind)) return -a;
-    // Taken on the back office: money ASSD shows that the drawer never held.
-    if (x.kind === 'back-office') return -x.amount;
     return null;
   }
   /**

@@ -1223,7 +1223,7 @@ test('a card refund keyed in ASSD: paired with the bank’s reversal, or a diffe
   assert.equal(routes.unbackedRefunds([{ kind: 'refund', day: '2026-08-02', severity: 'info', pairedWith: 'reversal:T6' }], '2026-09-01')[0].severity, 'info');
 });
 
-test('nothing dropped: refunds on the terminal, MoMo and chargebacks going back, prepayments and safe deposits in the bank, money on the back office', async () => {
+test('nothing dropped: refunds on the terminal, MoMo and chargebacks going back, prepayments and safe deposits in the bank', async () => {
   const { db, raw } = freshDb();
   const env = { DB: db };
   const prepay = (seq, amount) => block('Reservation', 'ALPHA', seq, '01.08.26', '001', [`01.08.26   PRE-BANBANK PREPAID   ${amount} GHS`, `${amount} GHS`]);
@@ -1255,7 +1255,7 @@ test('nothing dropped: refunds on the terminal, MoMo and chargebacks going back,
   assert.deepEqual([cb.amount, cb.severity, cb.event.last4, cb.original.amount], [-27900, 'critical', '0003', 27900], 'a chargeback, with the payment it took back');
   assert.deepEqual(of('prepaid-not-banked').map((x) => [x.seq, x.amount]), [[300561, 45000]], 'the 300 arrived; the 450 did not');
   assert.deepEqual(of('deposit-not-banked').map((x) => x.amount), [9900], 'the 700 deposit is in the bank; the 99 is not');
-  assert.deepEqual(of('back-office').map((x) => [x.seq, x.amount, x.slot != null]), [[300562, 2500, true]], 'cash taken on the back office, which the drawer never held');
+  assert.equal(out.exceptions.filter((x) => x.seq === 300562).length, 0, 'the back office (register 015) is never a shift difference');
   assert.equal(out.totals.bankCharges, 1500);
   assert.equal(out.totals.bankCredits.unclaimed, 0, 'every credit in these days claimed');
 });

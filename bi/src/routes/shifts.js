@@ -1483,13 +1483,6 @@ export async function shifts(env, query, account) {
         amount: Number(declared.cash) - r.closing, declared: Number(declared.cash), closing: r.closing, closingFrom: r.closingFrom, by: declared.name || null,
       });
     }
-    // Money taken on another register (the back office), which the drawer never held.
-    for (const b of s.backOfficeMoney || []) {
-      exceptions.push({
-        ...base, key: `backoffice:${b.seq}`, kind: 'back-office', group: 'drawer', severity: 'warning',
-        seq: b.seq, amount: b.amount, by: b.user, lines: b.lines,
-      });
-    }
     if (r.variance) {
       exceptions.push({
         ...base, key: `drawer:${s.day}:${s.slotName}`, kind: r.variance < 0 ? 'drawer-short' : 'drawer-over',
@@ -2032,7 +2025,7 @@ export function withoutMoney(value) {
 // The drawer's own exceptions (cash, receipts, POs, laundry): acted on with
 // "Correct cash movements" as well as with the bank. Card and bank lines need the bank.
 const CASH_KEYS = ['drawer:', 'handover:', 'unlabelled:', 'receipts:', 'receipts-read:', 'receipts-carried:', 'nopo:', 'pogap:',
-  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:', 'nocash:', 'declared:', 'backoffice:'];
+  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:', 'nocash:', 'declared:'];
 export const isCashKey = (key) => {
   const k = String(key || '');
   // "Not related" names the two it keeps apart.

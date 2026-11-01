@@ -31,8 +31,6 @@ export function flowOf(x) {
   if (x.kind === 'keyed-no-cash') return -x.amount;
   // Money gone back out, or expected in and not there: ASSD shows money that is not there.
   if (['chargeback', 'prepaid-not-banked', 'deposit-not-banked'].includes(x.kind)) return -a;
-  // Taken on the back office: money ASSD shows that the drawer never held.
-  if (x.kind === 'back-office') return -x.amount;
   return null;
 }
 
