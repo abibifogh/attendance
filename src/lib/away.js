@@ -96,21 +96,38 @@ export async function awayByDay(db, { from, to, asked = true }) {
   const days = new Map(daysBetween(from, to).map((day) => [day, []]));
   const put = (day, person) => days.get(day)?.push(person);
 
+  // Who has a photograph, so the calendar can show a face rather than letters.
+  // Ids only: the pictures are fetched by the page, one at a time, as drawn.
+  const faces = await db.prepare("SELECT DISTINCT staff_id FROM hr_document WHERE kind = 'photo'")
+    .all().catch(() => ({ results: [] }));
+  const hasPhoto = new Set((faces.results ?? []).map((r) => Number(r.staff_id)));
+
   const leave = await db.prepare(
-    `SELECT l.staff_id, l.from_day, l.to_day, l.status, s.name, s.department
+    `SELECT l.staff_id, l.from_day, l.to_day, l.status, l.reason_code, r.label AS reason_label,
+            s.name, s.department
        FROM att_leave l JOIN att_staff s ON s.id = l.staff_id
+       LEFT JOIN att_reasons r ON r.code = l.reason_code
       WHERE l.status IN (${asked ? "'pending', 'approved'" : "'approved'"})
         AND l.from_day <= ?2 AND l.to_day >= ?1
       ORDER BY s.name`,
   ).bind(from, to).all().catch(() => ({ results: [] }));
   for (const row of leave.results ?? []) {
     for (const day of daysBetween(row.from_day, row.to_day)) {
-      put(day, { name: row.name, department: row.department ?? null, why: 'leave', asked: row.status === 'pending' });
+      put(day, {
+        id: Number(row.staff_id),
+        name: row.name,
+        department: row.department ?? null,
+        why: 'leave',
+        asked: row.status === 'pending',
+        code: row.reason_code ?? null,
+        label: row.reason_label ?? null,
+        hasPhoto: hasPhoto.has(Number(row.staff_id)),
+      });
     }
   }
 
   const marked = await db.prepare(
-    `SELECT a.day, a.decision, s.name, s.department
+    `SELECT a.staff_id, a.day, a.decision, s.name, s.department
        FROM att_availability a JOIN att_staff s ON s.id = a.staff_id
       WHERE a.status = 'unavailable'
         AND a.decision IN (${asked ? "'waiting', 'approved'" : "'approved'"})
@@ -118,7 +135,14 @@ export async function awayByDay(db, { from, to, asked = true }) {
       ORDER BY s.name`,
   ).bind(from, to).all().catch(() => ({ results: [] }));
   for (const row of marked.results ?? []) {
-    put(row.day, { name: row.name, department: row.department ?? null, why: 'unavailable', asked: row.decision === 'waiting' });
+    put(row.day, {
+      id: Number(row.staff_id),
+      name: row.name,
+      department: row.department ?? null,
+      why: 'unavailable',
+      asked: row.decision === 'waiting',
+      hasPhoto: hasPhoto.has(Number(row.staff_id)),
+    });
   }
 
   return [...days].map(([day, people]) => ({ day, people }));

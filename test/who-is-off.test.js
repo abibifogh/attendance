@@ -103,3 +103,20 @@ test('a long window is cut to six weeks, and a backwards one is refused', async 
   assert.equal(data.days.length, 42);
   await assert.rejects(awayCalendar(ctx(db, '?from=2099-09-14&to=2099-09-01')), /before the start/);
 });
+
+test('each person carries who they are, the kind of leave and whether there is a face to show', async () => {
+  const { raw, db } = setup();
+  raw.prepare(
+    `INSERT INTO hr_document (staff_id, kind, title, mime, bytes, content)
+     VALUES (1, 'photo', 'Photo', 'image/jpeg', 1, x'00')`,
+  ).run();
+  const data = await read(db, '?from=2099-09-14');
+  const adjoa = on(data, '2099-09-14')[0];
+  assert.equal(adjoa.id, 1);
+  assert.equal(adjoa.code, 'annual_leave');
+  assert.equal(adjoa.label, 'Annual leave');
+  assert.equal(adjoa.hasPhoto, true);
+  const kofi = on(data, '2099-09-17')[0];
+  assert.equal(kofi.id, 2);
+  assert.equal(kofi.hasPhoto, false);
+});

@@ -1,7 +1,6 @@
 import { api } from '../api.js';
 import { can, navigate } from '../app.js';
 import { fmtDay, h, mount, toast } from '../util.js';
-import { emptyState } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { inWeek, sayRange, stripKey, yearStrip } from './year-strip.js';
 
@@ -18,14 +17,18 @@ export async function renderLeavePlans(params = {}) {
   const reload = async () => mount(host, ...(await renderLeavePlans({ year: data.year })).childNodes);
   const sets = can('att_setup');
 
+  // Not open yet: a card saying what it is and how to start it, rather than
+  // an empty page.
   if (!data.round) {
     mount(host,
-      h('div.page-head', h('div', h('h1', 'Leave'),
-        h('div.sub', `Plans for ${data.year}. Ask everybody for their leave plan at once, remind them until it is in, and approve the year in one place.`))),
-      emptyState('Planning is not open yet', sets
-        ? 'Choose the dates, the busy seasons and how many can be away, then open it, in Settings › Leave & holidays.'
-        : 'An administrator opens leave planning for the year.'),
-      sets ? h('button.btn.btn-primary', { type: 'button', onclick: () => navigate('settings', { section: 'leave', panel: 'planning' }) }, 'Set up planning') : null);
+      h('div.page-head', h('div', h('h1', 'Leave'), h('div.sub', `Plans for ${data.year}`))),
+      h('section.card.lv-plan-card',
+        h('strong', `Plans for ${data.year}`),
+        h('span', 'Ask everybody for their leave plan at once, remind them until it is in, and approve the year in one place. '
+          + (sets
+            ? 'Not open yet: choose the dates, the busy seasons and how many can be away, in Settings › Leave & holidays.'
+            : 'Not open yet. An administrator opens leave planning for the year.')),
+        sets ? h('button.btn.btn-primary', { type: 'button', onclick: () => navigate('settings', { section: 'leave', panel: 'planning' }) }, 'Set up planning') : null));
     return host;
   }
 
