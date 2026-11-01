@@ -155,6 +155,50 @@ export async function assertShiftsOpen(env, body, { whereIs = null, ids = {} } =
   }
 }
 
+/**
+ * Requests that name what they change by an id rather than by a day or key
+ * (an approval, a suspense entry, a safe line or count, an accept waiting
+ * for an admin): the keys and days behind the id, added to what the lock
+ * reads, so these are refused on a locked or checked day like the rest.
+ */
+export async function expandIds(env, body, ids = {}) {
+  const b = { ...body };
+  const keys = Array.isArray(b.keys) ? [...b.keys] : [];
+  const days = [];
+  const one = async (sql, ...binds) => first(env.DB, sql, ...binds).catch(() => null);
+  // The Approvals page: what kind of approval, and its id.
+  if (ids.approval && b.system === 'insight' && b.id != null) {
+    if (b.kind === 'answer') b.answer = String(b.id);
+    if (b.kind === 'link') b.link = Number(b.id);
+    if (b.kind === 'resolution') b.resolution = Number(b.id);
+    if (b.kind === 'correction') b.seq = Number(b.id);
+  }
+  if (ids.resolution && b[ids.resolution] != null) {
+    const row = await one('SELECT key FROM till_resolution WHERE id = ?1', Number(b[ids.resolution]));
+    if (row?.key) keys.push(row.key);
+  }
+  if (ids.suspense && b[ids.suspense] != null) {
+    const list = (Array.isArray(b[ids.suspense]) ? b[ids.suspense] : [b[ids.suspense]]).map(Number).filter(Number.isInteger);
+    for (const id of list) {
+      // eslint-disable-next-line no-await-in-loop
+      const row = await one('SELECT keys, day FROM suspense WHERE id = ?1', id);
+      try { keys.push(...JSON.parse(row?.keys || '[]').map(String)); } catch { /* none */ }
+      if (row?.day) days.push(row.day);
+    }
+  }
+  if (ids.entry && b[ids.entry] != null) {
+    const row = await one('SELECT day FROM safe_entry WHERE id = ?1', Number(b[ids.entry]));
+    if (row?.day) days.push(row.day);
+  }
+  if (ids.closure && b[ids.closure] != null) {
+    const row = await one('SELECT closed_on FROM safe_closure WHERE id = ?1', Number(b[ids.closure]));
+    if (row?.closed_on) days.push(row.closed_on);
+  }
+  if (keys.length) b.keys = keys;
+  if (days.length) b.items = [...(Array.isArray(b.items) ? b.items : []), ...days.map((day) => ({ day }))];
+  return b;
+}
+
 /** Refuse if any day the request touches is locked. */
 export async function assertOpen(env, days) {
   const lock = await lockOf(env);

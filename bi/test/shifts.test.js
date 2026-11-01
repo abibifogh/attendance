@@ -229,12 +229,25 @@ test('the bank statement: kinds, deleted copies and dates without a time zone', 
   // Paid from a wallet: words between the slashes, the stamp the same.
   const wallet = classify('GTB/TESTHOTEL/DEBIT WALLET/REF4242424208/10/2026 02:24:24', 'C');
   assert.deepEqual([wallet.kind, wallet.reference, wallet.stampedAt], ['momo', 'REF42424242', '2026-10-08 02:24:24']);
-  assert.equal(classify('GTB/TESTHOTEL/DEBIT WALLET/REF4242424208/10/2026 02:24:24', 'D').kind, 'other');
-  assert.equal(classify('A SUPPLIER PAYMENT', 'D').kind, 'other');
+  // MoMo going back out to a wallet: a reversal, no longer thrown away.
+  assert.equal(classify('GTB/TESTHOTEL/DEBIT WALLET/REF4242424208/10/2026 02:24:24', 'D').kind, 'momo-reversal');
+  assert.equal(classify('A SUPPLIER PAYMENT', 'D').kind, 'other', 'payments out are not kept');
+  assert.equal(classify('SALARY OCT KOFI TEST', 'D').kind, 'other');
+  // Money in, all of it, without its words; the bank's own charges and chargebacks out.
+  assert.deepEqual([classify('CASH DEP BY AMA TEST', 'C').kind, classify('NIP TRF FROM TEST COMPANY LTD', 'C').kind, classify('SOMETHING', 'C').kind],
+    ['cash-deposit', 'transfer-in', 'other-credit']);
+  assert.equal(classify('SMS ALERT CHARGES', 'D').kind, 'bank-charge');
+  assert.equal(classify('CHARGEBACK 411111****0001', 'D').kind, 'chargeback');
+  assert.equal(classify('CASH DEP BY AMA TEST', 'C').anonymous, true);
 
   const parsed = parseStatement(statement());
   assert.equal(parsed.counts.flagged, 1);
   assert.equal(parsed.counts.other, 1);
+  // A guest's transfer, kept with no words: its id and reference carry a fingerprint, not the text.
+  const anon = parseStatement([...statement(), ['T7', '1', 'C', 'Y', serial('2026-08-04'), serial('2026-08-04', '09:00:00'), 1200, 'NIP TRF FROM KOFI TEST BOOKING', 'R7', 'N']]).rows.find((r) => r.kind === 'transfer-in');
+  assert.equal(anon.amount, 120000);
+  assert.match(anon.reference, /^h:[0-9a-f]{16}$/);
+  assert.equal(/KOFI|NIP|BOOKING/.test(`${anon.id}${anon.reference}`), false, 'the words are not kept');
   const credit = parsed.rows.find((r) => r.kind === 'card');
   assert.equal(credit.cardDay, '2026-08-01');
   assert.equal(credit.approval, 'A1B2C31');
@@ -350,7 +363,33 @@ test('the explained differences: split differently, keyed on another shift, corr
   assert.equal(regrouped.amount, 193500);
   assert.deepEqual(regrouped.seqs, [1, 2, 3]);
   assert.equal(exceptions.find((x) => x.kind === 'other-shift').otherShift.user, 'B');
-  assert.ok(exceptions.every((x) => x.severity === 'info'));
+  assert.ok(exceptions.filter((x) => x.kind !== 'other-shift').every((x) => x.severity === 'info'));
+  assert.equal(exceptions.find((x) => x.kind === 'other-shift').severity, 'warning', 'keyed on another shift is for a person to confirm');
+});
+
+test('matched by sums alone is probable; a search cut short is said; keyed on another shift only when the payment is the one', () => {
+  // Two lines paid together, and one line paid in two parts.
+  let r = reconcile([shift('A', '2026-08-01', [[1, 20000], [2, 35000], [3, 70000]])],
+    [ev('e1', '2026-08-01 09:00:00', 55000), ev('e2', '2026-08-01 10:00:00', 40000), ev('e3', '2026-08-01 10:20:00', 30000)], []);
+  const probable = r.exceptions.filter((x) => x.kind === 'probable').sort((a, b) => a.amount - b.amount);
+  assert.deepEqual(probable.map((x) => [x.how, x.amount, x.seqs, x.severity, x.group]), [
+    ['together', 55000, [1, 2], 'warning', 'probable'],
+    ['parts', 70000, [3], 'warning', 'probable'],
+  ]);
+
+  // More open lines than every combination can be tried for.
+  const many = Array.from({ length: 26 }, (_, i) => [i + 1, 1000 + i]);
+  r = reconcile([shift('A', '2026-08-01', many)], [], []);
+  assert.deepEqual(r.exceptions.filter((x) => x.kind === 'search-cut').map((x) => [x.lines, x.severity]), [[26, 'warning']]);
+
+  // The one payment of that amount within a day: keyed on another shift, a warning.
+  const three = () => [shift('A', '2026-08-01', [[1, 45400]]), shift('B', '2026-08-01', []), shift('C', '2026-08-02', [[7, 124100]])];
+  const placing = ev('e0', '2026-08-01 09:00:00', 45400);
+  r = reconcile(three(), [placing, ev('e1', '2026-08-01 16:00:00', 124100)], []);
+  assert.deepEqual(r.exceptions.filter((x) => x.kind === 'other-shift').map((x) => x.severity), ['warning']);
+  // Two of that amount within a day: which one is a guess, so nothing is paired.
+  r = reconcile(three(), [placing, ev('e1', '2026-08-01 16:00:00', 124100), ev('e2', '2026-08-01 17:00:00', 124100)], []);
+  assert.deepEqual(r.exceptions.map((x) => x.kind).sort(), ['not-found', 'not-recorded', 'not-recorded']);
 });
 
 test('a card keyed twice but paid once, and a decimal slip', () => {
@@ -463,6 +502,8 @@ test('the whole screen, from the three files', async () => {
     'not-recorded:3500',
     // 276 keyed, 279 taken: a slip of one digit, and the guest paid 3 more.
     'paid-more:300',
+    'probable:120000',
+    'probable:40000',
   ], 'the 1,999 taken after the journal ends is not called unrecorded');
 
   const bravo = day1.shifts[1];
@@ -1148,8 +1189,13 @@ test('the screen: cash keyed while the counts did not move is a drawer differenc
   assert.equal(routes.isCashKey(x.key), true);
   assert.equal(await routes.dayOfKey(env, x.key), '2026-08-02');
 
-  // Once the drawer is answered it is an explanation: it reopens nothing.
+  // A drawer answered only in words does not settle it: it stays to be answered.
   await routes.saveAnswer(env, { key: drawer.key, answer: 'Explained', note: 'Water stock put right through the till' }, OWNER);
+  list = await read();
+  x = list.find((e) => e.kind === 'keyed-no-cash');
+  assert.deepEqual([x.severity, x.group], ['warning', 'drawer']);
+  // Settled with money that nets (here, in suspense), it is an explanation and reopens nothing.
+  await routes.saveAnswer(env, { key: drawer.key, answer: 'In suspense', note: 'S1' }, OWNER);
   list = await read();
   x = list.find((e) => e.kind === 'keyed-no-cash');
   assert.deepEqual([x.severity, x.group], ['info', 'explained']);
@@ -1175,6 +1221,43 @@ test('a card refund keyed in ASSD: paired with the bank’s reversal, or a diffe
   assert.equal(routes.unbackedRefunds(fresh(), '2026-08-07')[0].severity, 'info');
   assert.deepEqual(routes.unbackedRefunds(fresh(), '2026-08-08').map((x) => [x.severity, x.unbacked]), [['warning', true]]);
   assert.equal(routes.unbackedRefunds([{ kind: 'refund', day: '2026-08-02', severity: 'info', pairedWith: 'reversal:T6' }], '2026-09-01')[0].severity, 'info');
+});
+
+test('nothing dropped: refunds on the terminal, MoMo and chargebacks going back, prepayments and safe deposits in the bank, money on the back office', async () => {
+  const { db, raw } = freshDb();
+  const env = { DB: db };
+  const prepay = (seq, amount) => block('Reservation', 'ALPHA', seq, '01.08.26', '001', [`01.08.26   PRE-BANBANK PREPAID   ${amount} GHS`, `${amount} GHS`]);
+  const backOffice = (seq, amount) => block('Accounting', 'DELTA', seq, '01.08.26', '015', [`01.08.26   CASH   CASH   ${amount} GHS`, `${amount} GHS`]);
+  await routes.uploadJournal(env, { lines: redactJournalLines([...journal(), ...prepay(300560, '300,00'), ...prepay(300561, '450,00'), ...backOffice(300562, '25,00')]), name: 'journal.pdf' }, OWNER);
+  // The terminal: the day's payments, and the 500 refunded to the same card.
+  sn = 0;
+  const csv = [terminalCsv(), tap('2026-08-02 11:00:00', '500.00', { pan: '411111******0001', type: 'Refund' })].join('\n');
+  await routes.uploadTerminal(env, { text: csv, name: 'tams.csv' }, OWNER);
+  const t = raw.prepare("SELECT kind, amount FROM terminal_txn WHERE type = 'Refund'").get();
+  assert.deepEqual([t.kind, t.amount], ['card-reversal', -50000], 'a refund is money going back, never a payment');
+  // The bank: one prepayment arrived, the other did not; the safe's deposit; MoMo going back; a chargeback.
+  raw.exec("INSERT INTO safe_entry (id, kind, day, amount, by_name, at) VALUES (1, 'banked', '2026-08-01', 70000, 'x', 'now'), (2, 'banked', '2026-08-02', 9900, 'x', 'now')");
+  await routes.uploadBank(env, { rows: [...statement(),
+    ['T7', '1', 'C', 'Y', serial('2026-07-30'), serial('2026-07-30', '10:00:00'), 300, 'NIP TRF FROM A GUEST', 'R7', 'N'],
+    ['T8', '1', 'C', 'Y', serial('2026-08-02'), serial('2026-08-02', '10:00:00'), 700, 'CASH DEP BY THE OFFICE', 'R8', 'N'],
+    ['T9', '1', 'D', 'Y', serial('2026-08-02'), serial('2026-08-02', '11:00:00'), 20, 'GTB/TESTHOTEL/DEBIT WALLET/REF5555555502/08/2026 11:00:00', 'R9', 'N'],
+    ['T10', '1', 'D', 'Y', serial('2026-08-02'), serial('2026-08-02', '12:00:00'), 279, 'CHARGEBACK 411111****0003', 'R10', 'N'],
+    ['T11', '1', 'D', 'Y', serial('2026-08-02'), serial('2026-08-02', '12:00:00'), 15, 'SMS ALERT CHARGES', 'R11', 'N'],
+    ['T12', '1', 'C', 'Y', serial('2026-08-30'), serial('2026-08-30', '12:00:00'), 1, 'LATER', 'R12', 'N'],
+  ], name: 'bank.xlsx' }, OWNER);
+  const out = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const of = (kind) => out.exceptions.filter((x) => x.kind === kind);
+
+  const refund = of('reversal').find((x) => x.event.source === 'terminal');
+  assert.deepEqual([refund.amount, refund.event.last4, refund.original.amount], [-50000, '0001', 50000], 'the refund, with the payment it gave back');
+  assert.deepEqual(of('reversal').filter((x) => x.event.kind === 'momo').map((x) => x.amount), [-2000], 'MoMo going back is a reversal');
+  const cb = of('chargeback')[0];
+  assert.deepEqual([cb.amount, cb.severity, cb.event.last4, cb.original.amount], [-27900, 'critical', '0003', 27900], 'a chargeback, with the payment it took back');
+  assert.deepEqual(of('prepaid-not-banked').map((x) => [x.seq, x.amount]), [[300561, 45000]], 'the 300 arrived; the 450 did not');
+  assert.deepEqual(of('deposit-not-banked').map((x) => x.amount), [9900], 'the 700 deposit is in the bank; the 99 is not');
+  assert.deepEqual(of('back-office').map((x) => [x.seq, x.amount, x.slot != null]), [[300562, 2500, true]], 'cash taken on the back office, which the drawer never held');
+  assert.equal(out.totals.bankCharges, 1500);
+  assert.equal(out.totals.bankCredits.unclaimed, 0, 'every credit in these days claimed');
 });
 
 test('the day an ASSD line is on, so an approval can open its shift', async () => {

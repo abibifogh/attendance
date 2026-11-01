@@ -36,6 +36,7 @@ import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
 import * as assistant from './routes/assistant.js';
 import * as duty from './routes/duty.js';
+import * as audit from './lib/audit.js';
 import { meterDb, keep, speedView } from './lib/speed.js';
 import * as npPickup from './routes/nppickup.js';
 import * as approvals from './routes/approvals.js';
@@ -137,6 +138,8 @@ const ROUTES = [
     return mgmt.saveMailSettings(env, ctx.body, { origin: ctx.url.origin });
   }],
   // The Saturday report: who sends it (an admin's to set), and where this week's stands.
+  // The audit trail: every change, who made it and how it ended. An admin's to read; nobody's to change.
+  ['GET', '/api/audit', 'session', adminOnly(async (env, ctx) => ({ events: await audit.trail(env.DB, { subject: ctx.query.subject || null, limit: ctx.query.limit }) }))],
   ['GET', '/api/duty', 'session', adminOnly((env, ctx) => duty.dutyView(env, ctx.account))],
   ['POST', '/api/duty', 'session', adminOnly((env, ctx) => duty.saveDuty(env, ctx.body, ctx.account))],
   ['GET', '/api/duty/mine', 'session', (env, ctx) => duty.dutyMine(env, ctx.account)],
@@ -258,7 +261,7 @@ const ROUTES = [
   ['GET', '/api/shifts/refunds', 'shifts', area('bank', 1, (env) => shiftRoutes.refundsOwed(env))],
   ['POST', '/api/shifts/refunds/paid', 'shifts', area('bank', 2, (env, ctx) => shiftRoutes.refundPaid(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/movement', 'shifts', movement],
-  ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
+  ['POST', '/api/shifts/link', 'shifts', onKeys((env, ctx) => waitsForAdmin(env, ctx, shiftRoutes.saveLink(env, ctx.body, ctx.account, { pending: isSupervisor(ctx), suspense: suspense.addSuspense }), `${ctx.account?.name || 'A supervisor'} reconciled ${(ctx.body?.keys || []).length} exceptions together.`))],
   ['POST', '/api/shifts/unlink', 'shifts', anyOf(['bank', 'moves'], 2, async (env, ctx) => {
     // An admin undoing a reconciliation whose leftover is on staff accounts takes that off too.
     const left = isSupervisor(ctx) ? false : await till.undoLeftOf(env, ctx.body?.id, ctx.account);
@@ -295,7 +298,7 @@ const ROUTES = [
   // Closing reports from HIVE, what staff answered, and the settings.
   ['GET', '/api/till', 'shifts', (env, ctx) => till.overview(env, ctx.query, ctx.account)],
   ['GET', '/api/till/checks', 'shifts', (env, ctx) => till.checkList(env, ctx.query, ctx.account)],
-  ['POST', '/api/till/resolve', 'shifts', (env, ctx) => till.resolve(env, ctx.body, ctx.account)],
+  ['POST', '/api/till/resolve', 'shifts', (env, ctx) => waitsForAdmin(env, ctx, till.resolve(env, ctx.body, ctx.account), `${ctx.account?.name || 'A supervisor'} accepted somebody's answer.`)],
   ['POST', '/api/till/reopen', 'shifts', (env, ctx) => till.reopen(env, ctx.body, ctx.account)],
   ['POST', '/api/till/move', 'shifts', (env, ctx) => till.moveReport(env, ctx.body, ctx.account)],
   ['GET', '/api/till/slots', 'shifts', (env, ctx) => till.slotsFor(env, ctx.query, ctx.account)],
@@ -484,8 +487,14 @@ const LOCKED = {
   '/api/shifts/form-match/apply': {}, '/api/shifts/receipts': {}, '/api/shifts/receipts-read': {}, '/api/shifts/answer': {}, '/api/shifts/answer-many': {},
   '/api/shifts/payment-home': {}, '/api/shifts/place': {}, '/api/suspense/add': {}, '/api/shifts/refunds/paid': {}, '/api/shifts/movement': {}, '/api/shifts/link': {}, '/api/shifts/unlink': { link: 'id' },
   '/api/till/resolve': {}, '/api/till/reopen': { report: 'reportId' }, '/api/till/move': { report: 'reportId' }, '/api/till/owner': {},
-  '/api/till/approve': { link: 'link' }, '/api/till/charge': {}, '/api/till/charge-left': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
+  '/api/till/approve': { link: 'link', resolution: 'resolution' }, '/api/till/charge': {}, '/api/till/charge-left': {}, '/api/till/charge/undo': { move: 'id' }, '/api/till/check': {}, '/api/till/check/undo': {},
   '/api/np/review': {}, '/api/np/reread': {}, '/api/np/move': {}, '/api/np/reading': {}, '/api/np/upload': {}, '/api/np/check': {}, '/api/np/answer': {},
+  // Decided from the Approvals page, the suspense account and the safe: refused on a locked or checked day too.
+  '/api/approvals/decide': { approval: true, link: 'link', resolution: 'resolution' },
+  '/api/suspense/match': { suspense: 'ids' }, '/api/suspense/safe': { suspense: 'id' }, '/api/suspense/undo': { suspense: 'id' },
+  '/api/safe/envelopes/receive': {}, '/api/safe/envelopes/undo': {}, '/api/safe/entry': {}, '/api/safe/entry/:id/po': { entry: 'id' },
+  '/api/safe/entry/:id/remove': { entry: 'id' }, '/api/safe/dismiss': {}, '/api/safe/count': {}, '/api/safe/close': {},
+  '/api/safe/:id/taken': { closure: 'id' }, '/api/safe/:id/undo': { closure: 'id' },
 };
 for (const route of ROUTES) {
   if (route[0] === 'POST' && LOCKED[route[1]]) route[3] = locked(route[3], LOCKED[route[1]], route[1]);
@@ -498,8 +507,9 @@ for (const route of ROUTES) {
 function locked(handler, ids = {}, path = '') {
   const checking = path === '/api/till/check' || path === '/api/till/check/undo';
   return async (env, ctx) => {
-    await lock.assertOpen(env, await lock.daysOf(env, ctx.body, { dayOfKey: shiftRoutes.dayOfKey, ids }));
-    if (!checking) await lock.assertShiftsOpen(env, ctx.body, { whereIs: shiftRoutes.whereIs, ids });
+    const body = await lock.expandIds(env, { ...(ctx.params || {}), ...(ctx.body || {}) }, ids);
+    await lock.assertOpen(env, await lock.daysOf(env, body, { dayOfKey: shiftRoutes.dayOfKey, ids }));
+    if (!checking) await lock.assertShiftsOpen(env, body, { whereIs: shiftRoutes.whereIs, ids });
     return handler(env, ctx);
   };
 }
@@ -608,7 +618,18 @@ export default {
           : {};
       }
 
-      const result = await handler(env, { request, query, body, params, url, account, execution });
+      // Every change is recorded before it happens, and how it ended after
+      // (lib/audit.js): a change that cannot be recorded does not happen.
+      const changing = request.method !== 'GET' && request.method !== 'HEAD' && !audit.NOT_AUDITED.has(routePath);
+      const auditId = changing ? await audit.asked(plainDb, { method: request.method, path: routePath, params, body, account, permission }) : null;
+      let result;
+      try {
+        result = await handler(env, { request, query, body, params, url, account, execution });
+      } catch (err) {
+        if (auditId) await audit.ended(plainDb, auditId, { ok: false, message: err?.message, status: err?.status ?? 500, path: routePath, method: request.method });
+        throw err;
+      }
+      if (auditId) await audit.ended(plainDb, auditId, { ok: true, path: routePath, method: request.method });
       response = result instanceof Response ? result : json(result);
     } catch (err) {
       response = errorResponse(err);

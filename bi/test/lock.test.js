@@ -94,6 +94,17 @@ test('through the front door: an admin locks; nobody changes a locked day, admin
   assert.equal((await call(1, 'POST', '/api/np/move', { day: '2026-08-05', shift: 'day', toDay: '2026-08-02', toShift: 'night' })).status, 423, 'nor onto a locked day');
   const open = await call(1, 'POST', '/api/shifts/answer', { key: 'drawer:2026-08-03:morning', answer: 'Explained' });
   assert.notEqual(open.status, 423, 'the day after is open');
+
+  // Decided elsewhere, by an id: the Approvals page, the suspense account, the safe book.
+  await run(db, `INSERT INTO shift_answer (key, answer, by_name, at, status) VALUES ('drawer:2026-08-01:night', 'Explained', 'Sam Supervisor', 'now', 'pending')`);
+  assert.equal((await call(1, 'POST', '/api/approvals/decide', { system: 'insight', kind: 'answer', id: 'drawer:2026-08-01:night', decision: 'approve' })).status, 423, 'an approval on a locked day');
+  await run(db, `INSERT INTO suspense (id, keys, day, slot, what, amount, answered, by_name, at) VALUES (5, '["drawer:2026-08-01:night"]', '2026-08-01', 'night', 'x', -500, 1, 'x', 'now'),
+    (6, '["drawer:2026-08-04:night"]', '2026-08-04', 'night', 'y', 500, 1, 'x', 'now')`);
+  assert.equal((await call(1, 'POST', '/api/suspense/safe', { id: 5, day: '2026-08-05' })).status, 423, 'a suspense entry of a locked day');
+  assert.equal((await call(1, 'POST', '/api/suspense/match', { ids: [5, 6], note: 'x' })).status, 423, 'matched with a locked day’s');
+  assert.equal((await call(1, 'POST', '/api/suspense/undo', { id: 5 })).status, 423);
+  await run(db, "INSERT INTO safe_entry (id, kind, day, amount, by_name, at) VALUES (8, 'banked', '2026-08-02', 1000, 'x', 'now')");
+  assert.equal((await call(1, 'POST', '/api/safe/entry/8/remove', {})).status, 423, 'a safe line of a locked day');
 });
 
 test('a checked shift is locked on its own: by its day and slot, a key naming it, or one of its ASSD lines; unchecked, it opens', async () => {

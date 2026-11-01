@@ -4,10 +4,12 @@ import { toMinor } from '../lib/money.js';
  * Reading the bank statement — GTBank's Finacle "customer statement" export.
  *
  * The browser reads the spreadsheet and posts the rows as arrays under the
- * statement's own header; this turns them into the four kinds of row that
- * matter to a shift and ignores everything else. Salaries, suppliers and
- * transfers are not a shift's business and are not stored at all: the fewer
- * names this database holds, the better.
+ * statement's own header; this turns them into the kinds of row that matter
+ * to a shift. Card and MoMo rows are kept as they are. Every other credit, and
+ * the bank's own charges and chargebacks, are kept without their words (see
+ * `otherKind`). Salaries, suppliers and transfers out are not a shift's
+ * business and are not stored at all: the fewer names this database holds,
+ * the better.
  *
  * - **card**: a settled card payment. The particular carries the masked card,
  *   the day it was tapped, the approval code and the terminal:
@@ -107,6 +109,39 @@ export function statementMoney(value) {
   return toMinor(Number(text));
 }
 
+/**
+ * Everything else, kept without its words: the kind of row, its day and
+ * amount, and a fingerprint of its text so the same row loaded twice is one.
+ * Money in, all of it: a guest's bank transfer for a prepaid stay, cash
+ * banked from the safe, anything else, so each can be matched and nothing
+ * coming in is thrown away. Money out only when it is the bank's own: its
+ * charges and fees, and chargebacks. Salaries, suppliers and transfers out
+ * are still not kept: they are not a shift's business.
+ */
+const CASH_DEPOSIT = /CASH\s*DEP|DEPOSIT\s*(BY|FROM)?\s*CASH|CSH\s*DEP|TELLER\s*DEP/i;
+const TRANSFER_IN = /TRF|TRANSFER|NIP|RTGS|ACH|GHIPSS|GIP\b|INSTANT\s*PAY|INWARD|REMITTANCE|SWIFT/i;
+const BANK_CHARGE = /\bCHG\b|CHARGE|\bFEE|COMMISSION|LEVY|\bSMS\b|MAINT|STAMP\s*DUTY|\bVAT\b|E-?LEVY/i;
+const CHARGEBACK = /CHARGE\s*-?\s*BACK|CHGBK|CHG\s*BK|DISPUTE/i;
+export function otherKind(particular, partType) {
+  const p = String(particular || '');
+  if (partType === 'C') return CASH_DEPOSIT.test(p) ? 'cash-deposit' : TRANSFER_IN.test(p) ? 'transfer-in' : 'other-credit';
+  if (CHARGEBACK.test(p)) return 'chargeback';
+  if (BANK_CHARGE.test(p)) return 'bank-charge';
+  return null;
+}
+
+/** A fingerprint of a row's words: the same row is the same row, and the words themselves are not kept. */
+export function fingerprint(text) {
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (const ch of String(text)) {
+    const c = ch.charCodeAt(0);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x5bd1e995) >>> 0;
+  }
+  return `${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}`;
+}
+
 /** One particular → what kind of row it is, and what it says. */
 export function classify(particular, partType) {
   const p = String(particular || '').trim();
@@ -123,14 +158,16 @@ export function classify(particular, partType) {
     if (/^comm_/i.test(p)) return { kind: 'commission', ...info };
     return { kind: partType === 'D' ? 'card-reversal' : 'card', ...info };
   }
-  if (partType === 'C') {
-    const stamp = MOMO_STAMP.exec(p);
-    if (stamp) {
-      return { kind: 'momo', reference: stamp[1], stampedAt: `${stamp[4]}-${stamp[3]}-${stamp[2]} ${stamp[5]}` };
-    }
-    if (MOMO_BATCH.test(p)) return { kind: 'momo', reference: p.split('/')[1] || null, stampedAt: null };
+  // MoMo in, and MoMo going back out (a reversal or a refund to the wallet): the same text, as a debit.
+  const stamp = MOMO_STAMP.exec(p);
+  if (stamp) {
+    return { kind: partType === 'D' ? 'momo-reversal' : 'momo', reference: stamp[1], stampedAt: `${stamp[4]}-${stamp[3]}-${stamp[2]} ${stamp[5]}` };
   }
-  return { kind: 'other' };
+  if (MOMO_BATCH.test(p)) return { kind: partType === 'D' ? 'momo-reversal' : 'momo', reference: p.split('/')[1] || null, stampedAt: null };
+  const other = otherKind(p, partType);
+  // A chargeback names the card it takes back: its masked digits are kept, to find the payment.
+  const masked = other === 'chargeback' ? /(\d{6})\*+(\d{4})/.exec(p) : null;
+  return other ? { kind: other, anonymous: true, ...(masked ? { first6: masked[1], last4: masked[2] } : {}) } : { kind: 'other' };
 }
 
 /**
@@ -188,7 +225,9 @@ export function parseStatement(rows) {
 
     const postedAt = finacle ? sheetTime(raw[cols.postedAt]) : null;
     const day = tranAt.slice(0, 10);
-    const base = `${day}|${tranId}|${partType}${amount}|${particular}`;
+    // A row kept without its words: its id carries their fingerprint, never the words.
+    const words = what.anonymous ? `h:${fingerprint(particular)}` : particular;
+    const base = `${day}|${tranId}|${partType}${amount}|${words}`;
     const n = (seen.get(base) || 0) + 1;
     seen.set(base, n);
     kept.push({
@@ -197,8 +236,8 @@ export function parseStatement(rows) {
       day,
       // A MoMo row's own stamp is the moment the guest paid; the posting time
       // is when the bank got round to it. Cards have neither — only the day.
-      at: what.kind === 'momo' ? (what.stampedAt || postedAt) : null,
-      atExact: what.kind === 'momo' && Boolean(what.stampedAt),
+      at: /^momo/.test(what.kind) ? (what.stampedAt || postedAt) : null,
+      atExact: /^momo/.test(what.kind) && Boolean(what.stampedAt),
       postedAt,
       amount,
       cardDay: what.cardDay || null,
@@ -206,7 +245,7 @@ export function parseStatement(rows) {
       last4: what.last4 || null,
       approval: what.approval || null,
       terminal: what.terminal || null,
-      reference: what.reference || (finacle ? String(raw[cols.ref] ?? '').trim() : tranId) || null,
+      reference: what.anonymous ? words : what.reference || (finacle ? String(raw[cols.ref] ?? '').trim() : tranId) || null,
     });
   }
   return { rows: kept, counts, flaggedAmount, layout: cols.layout };

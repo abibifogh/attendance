@@ -139,6 +139,31 @@ test('small differences are left alone when asked', () => {
   assert.equal(issuesFor({ shifts, reports: [], threshold: 0 }).length, 1);
 });
 
+test('the blind count: what they counted in HIVE against the drawer’s count is a difference of its own', () => {
+  const shift = { day: '2026-08-01', slot: 'night', user: 'A', register: { variance: 0, closing: 50000 } };
+  const report = { id: 1, day: '2026-08-01', slot: 'night', userId: 7, name: 'Ama Test', cash: 48000, toSafe: false, envelopes: [], expenses: [], rentals: {} };
+  const out = issuesFor({ shifts: [shift], reports: [report] });
+  const x = out.find((i) => i.kind === 'declared');
+  assert.deepEqual([x.key, x.amount, x.userId], ['declared:2026-08-01:night', -2000, 7]);
+  assert.match(x.text, /You counted GH₵ 480\.00; ASSD's closing count was GH₵ 500\.00/);
+  assert.equal(issuesFor({ shifts: [shift], reports: [{ ...report, cash: 50000 }] }).some((i) => i.kind === 'declared'), false, 'the same count: nothing');
+  assert.equal(issuesFor({ shifts: [shift], reports: [report], threshold: 2000 }).some((i) => i.kind === 'declared'), false, 'within the threshold');
+});
+
+test('the blind count on the Shifts screen: HIVE’s count against the drawer’s, with who counted', async () => {
+  const { env, hive } = await setUp();
+  const read = async () => (await routes.shifts(env, { from: '2026-08-01', to: '2026-08-01' }, OWNER)).exceptions.filter((e) => e.kind === 'declared-cash');
+  const before = await read();
+  const row = hive.raw.prepare("SELECT cash FROM till_report WHERE day = '2026-08-01' AND slot = 'morning'").get();
+  hive.raw.prepare("UPDATE till_report SET cash = cash + 500 WHERE day = '2026-08-01' AND slot = 'morning'").run();
+  const after = await read();
+  const x = after.find((e) => e.slot === 'morning');
+  assert.ok(x, 'raised');
+  assert.deepEqual([x.key, x.declared, x.by], ['declared:2026-08-01:morning', row.cash + 500, 'Ama Test']);
+  assert.equal(x.amount, x.declared - x.closing);
+  assert.equal(before.some((e) => e.slot === 'morning' && e.amount === x.amount), false);
+});
+
 test('where each stands: answered, sent back, settled', () => {
   const issue = { key: 'drawer:2026-08-01:morning', userId: 7 };
   const at = (t) => `2026-08-02 ${t}`;
@@ -202,6 +227,42 @@ test('a person’s list over the link, and settling it', async () => {
     assert.equal(list.cleared, 0);
     // And it is decided, so it is no longer waiting in HIVE.
     assert.deepEqual((await till.linkToDecide(env)).issues, []);
+  } finally {
+    global.Date = RealDate;
+    Date.now = realNow;
+  }
+});
+
+test('a supervisor’s accept settles nothing alone: a note, a checked shift, and an admin who is not them', async () => {
+  const { env, hive } = await setUp();
+  const realNow = Date.now;
+  Date.now = () => Date.parse('2026-08-03T09:00:00Z');
+  const RealDate = Date;
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [RealDate.parse('2026-08-03T09:00:00Z')])); } static now() { return RealDate.parse('2026-08-03T09:00:00Z'); } };
+  try {
+    const told = [];
+    const fetchImpl = async (request) => { told.push(new URL(request.url).pathname); return Response.json({ ok: true }); };
+    let list = await till.linkIssues(env, { userId: 8 });
+    const key = list.issues[0].key;
+    hive.raw.prepare(`INSERT INTO till_answer (key, user_id, how, text, at) VALUES (?, 8, 'explain', 'Bought water for the rooms', '2026-08-03 08:00:00')`).run(key);
+    const accept = (body, who) => till.resolve(env, { key, userId: 8, outcome: 'accept', ...body }, who, { fetchImpl });
+    await assert.rejects(accept({}, SUPERVISOR), /Say why/);
+    await assert.rejects(accept({ note: 'Receipt seen' }, SUPERVISOR), /not been checked yet/);
+    await till.checkShift(env, { day: '2026-08-01', slot: 'afternoon' }, OWNER, { fetchImpl });
+    const out = await accept({ note: 'Receipt seen' }, SUPERVISOR);
+    assert.equal(out.pending, true);
+    list = await till.linkIssues(env, { userId: 8 });
+    assert.equal(list.issues[0].status, 'answered', 'not settled while it waits');
+    await assert.rejects(accept({ note: 'Again' }, SUPERVISOR), /already waits/);
+    const waiting = (await till.pendingAnswers(env)).find((a) => a.type === 'resolution');
+    assert.deepEqual([waiting.keys, waiting.note, waiting.by], [[key], 'Receipt seen', 'Sam Supervisor']);
+    await assert.rejects(till.approve(env, { resolution: waiting.id, ok: true }, { name: 'Sam Supervisor', isOwner: true }), /Somebody else approves/);
+    told.length = 0;
+    await till.approve(env, { resolution: waiting.id, ok: true }, OWNER, { fetchImpl });
+    assert.deepEqual(told, ['/api/link/till/tell'], 'the person is told once an admin approves');
+    list = await till.linkIssues(env, { userId: 8 });
+    assert.equal(list.issues.length, 0, 'settled, off their list');
+    assert.equal((await till.pendingAnswers(env)).some((a) => a.type === 'resolution'), false);
   } finally {
     global.Date = RealDate;
     Date.now = realNow;
@@ -302,7 +363,7 @@ test('exceptions reconciled together count as answered, and come back when undon
   const keys = ['not-recorded:a', 'not-found:b', 'handover:c'];
   await assert.rejects(routes.saveLink(env, { keys: ['one'] }, OWNER), /at least two/);
   await routes.saveLink(env, { keys, note: 'The same 203 paid on the 2nd and keyed on the 4th' }, OWNER);
-  await assert.rejects(routes.saveLink(env, { keys: ['not-found:b', 'x:y'] }, OWNER), /already reconciled/);
+  await assert.rejects(routes.saveLink(env, { keys: ['not-found:b', 'x:y'], note: 'Again' }, OWNER), /already reconciled/);
   const row = (await env.DB.prepare('SELECT * FROM shift_link').all()).results[0];
   assert.deepEqual(JSON.parse(row.keys), keys);
   await routes.removeLink(env, { id: row.id });
@@ -853,6 +914,32 @@ test('what two reconciled differences do not net to goes on a staff account, and
   assert.equal((await till.issuesBetween(env, '2026-08-01', '2026-08-02')).issues.some((i) => i.userId === 8 && i.kind === 'moved'), false, 'off Kofi’s list');
 });
 
+test('agreed means it nets: what is left after reconciling goes in suspense or on a staff account, worked out here', async () => {
+  const { env } = await setUp();
+  const suspense = await import('../src/routes/suspense.js');
+  const head = '"SN","Date","PAN","MTI","Terminal","Type","TransactionType","Amount","STAN","MCC","TransactionFee","RRN","MID","Merchant","Currency","Responsecode","Status","AgentId","PhoneNumber","ApprovalCode","IsCNP"';
+  const tap = (n, at, amount) => `"${n}","${at}","=""411111******000${n}""","0200","=""TERM0001""","000000","Purchase","${amount}","=""10000${n}""","7011","D00000000","=""90000000000${n}""","=""MID""","TEST HOTEL","936","=""00""","Approved or completed successfully","=""""","=""""","=""A1B2C${n}""","NO"`;
+  await routes.uploadTerminal(env, { text: [head, tap(1, '2026-08-01 09:00:00', '40.00'), tap(2, '2026-08-01 09:30:00', '25.00')].join('\n'), name: 'tams.csv' }, OWNER);
+  const view = await routes.shifts(env, { from: '2026-08-01', to: '2026-08-02' }, OWNER);
+  const open = view.exceptions.filter((e) => e.slot && e.severity !== 'info' && till.flowOf(e) != null && !e.answer && !e.link);
+  let pair = null;
+  for (const a of open) for (const b of open) if (!pair && a !== b && till.flowOf(a) + till.flowOf(b) !== 0) pair = [a, b];
+  const net = till.flowOf(pair[0]) + till.flowOf(pair[1]);
+  const keys = pair.map((x) => x.key);
+  await assert.rejects(routes.saveLink(env, { keys, note: 'One story' }, OWNER), /put the rest in suspense or on a staff account/);
+  await assert.rejects(routes.saveLink(env, { keys, note: 'One story' }, SUPERVISOR, { pending: true }), /an admin's/);
+  await assert.rejects(routes.saveLink(env, { keys, rest: 'suspense' }, OWNER, { suspense: suspense.addSuspense }), /say why/);
+  await assert.rejects(routes.saveLink(env, { keys, rest: 'suspense', note: 'x', amount: net + 1 }, OWNER, { suspense: suspense.addSuspense }), /has changed/);
+  const out = await routes.saveLink(env, { keys, rest: 'suspense', note: 'Kept apart', amount: net }, OWNER, { suspense: suspense.addSuspense });
+  assert.deepEqual([out.net, out.entry.amount], [net, net], 'the rest in suspense, as worked out here');
+  // One difference put in suspense: its own amount, not the browser's.
+  const one = open.find((x) => !keys.includes(x.key));
+  if (one) {
+    await assert.rejects(suspense.addSuspense(env, { key: one.key, amount: 1 }, OWNER), /It comes to/);
+    assert.equal((await suspense.addSuspense(env, { key: one.key }, OWNER)).entry.amount, till.flowOf(one));
+  }
+});
+
 test('a keying slip nets as what ASSD has over what the terminal took', () => {
   assert.equal(till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -2000);
   assert.equal(till.flowOf({ kind: 'not-recorded', amount: 1000 }) + till.flowOf({ kind: 'keying', amount: 4000, difference: 2000 }), -1000);
@@ -1070,7 +1157,7 @@ test('whatever an admin decides another way takes a supervisor’s waiting answe
   assert.deepEqual(await waiting(), []);
   const hist = async (key) => (await notes.history(env, { key }, OWNER)).items.map((i) => i.text);
   assert.deepEqual((await hist('a:1')).slice(1), ['Sam Supervisor’s answer “Explained” set aside: answered by an admin instead', 'Answered “Not a problem”']);
-  assert.match((await hist('b:2'))[0], /“Reconciled together” set aside: answered by an admin instead/);
+  assert.ok((await hist('b:2')).some((t) => /“Reconciled together” set aside: answered by an admin instead/.test(t)), 'set aside, with the reconciliation it set aside kept in the history');
 
   // An admin reconciles it with others: the same.
   await routes.saveAnswer(env, { key: 'd:4', answer: 'Explained' }, SUPERVISOR, { pending: true });
@@ -1115,7 +1202,7 @@ test('an answer waiting for an admin whose difference is gone leaves Waiting for
   await routes.saveAnswer(env, { key: still.key, answer: 'Explained' }, SUPERVISOR, { pending: true });
   // Gone since: a card ASSD showed that has since been found, on a day read.
   await routes.saveAnswer(env, { key: 'not-found:2026-08-01:999:0', answer: 'Explained', note: 'Paid at 1:53 am' }, SUPERVISOR, { pending: true });
-  await routes.saveLink(env, { keys: ['paid-more:2026-08-01:night:1', 'paid-less:2026-08-01:night:2'] }, SUPERVISOR, { pending: true });
+  await routes.saveLink(env, { keys: ['paid-more:2026-08-01:night:1', 'paid-less:2026-08-01:night:2'], note: 'One payment' }, SUPERVISOR, { pending: true });
   // Not judged: a day not read, and a key that names no day.
   await routes.saveAnswer(env, { key: 'drawer:2026-05-01:morning', answer: 'Explained' }, SUPERVISOR, { pending: true });
   await routes.saveAnswer(env, { key: 'odd:key', answer: 'Explained' }, SUPERVISOR, { pending: true });

@@ -41,6 +41,10 @@ const PAIR_ANSWERS = ['Keyed in ASSD now', 'Staff reminded', 'Explained', 'Not t
 /** A guest who paid more: owed back, kept for later, keyed short, or two payments after all. */
 const REFUND_DUE = 'Refund due to the guest';
 const PAID_MORE_ANSWERS = [REFUND_DUE, 'Deposit for a later stay', 'Keyed short in ASSD', 'Not the same payment'];
+/** Money that went back to a card or wallet, or a chargeback: what became of it. */
+const BACK_ANSWERS = ['Refunded to the guest', 'Disputed with the bank', 'Chargeback accepted', 'Not our payment'];
+/** A match made only because the sums agree. */
+const PROBABLE_ANSWERS = ['Confirmed: the same money', 'Not the same money', 'Checked by hand'];
 /** A guest who paid less: owes the rest, paid it another way, ASSD keyed too high, or two payments after all. */
 const PAID_LESS_ANSWERS = ['Guest owes, chasing', 'Rest paid another way', 'Keyed too high in ASSD', 'Not the same payment'];
 /** Quick reasons for putting a difference on somebody's account; the box takes the rest. */
@@ -78,6 +82,13 @@ const KIND = {
   'laundry-mismatch': ['The laundry did not agree', 'L'],
   'movement-unlabelled': ['Cash moved out with no label', '?'],
   'keyed-no-cash': ['Keyed as cash, but the drawer did not move', '≡'],
+  'declared-cash': ['The cash counted in HIVE did not match the drawer’s count', '≠'],
+  chargeback: ['A chargeback: the bank took a card payment back', '↺'],
+  'prepaid-not-banked': ['Prepaid by bank transfer, not in the bank', '?'],
+  'deposit-not-banked': ['Cash banked from the safe, not in the bank', '?'],
+  'back-office': ['Money taken on the back office, not in the drawer', '!'],
+  probable: ['Matched only because the amounts add up', '≈'],
+  'search-cut': ['Too many to try every combination', '…'],
   'expense-no-po': ['Expenses with no PO', '#'],
   'receipts-swapped': ['Receipts swapped for cash', '✓'],
   'receipts-unclear': ['Receipts handed in: all, or only some?', '?'],
@@ -2476,7 +2487,19 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       case 'duplicate': return [`Keyed twice in this shift (also ASSD ${x.pair}) and paid once on the terminal.`, ...othersSay(x)].join(' ');
       case 'not-recorded': return `${e.kind === 'momo' ? 'MoMo received' : 'Approved on the terminal'} at ${when(e.at, e.day)}${e.last4 ? `, card …${e.last4}` : ''}. ASSD has no payment of this amount.`;
       case 'never-settled': return `Approved on the terminal ${when(e.at)}, card …${e.last4}, approval ${e.approval}. No bank credit six days on.`;
-      case 'reversal': return `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)}).${x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD in these days.'}`;
+      case 'reversal': return `${e.source === 'terminal' ? `The terminal gave ${money(Math.abs(x.amount))} back to ${e.kind === 'momo' ? 'a wallet' : `card …${e.last4}`} ${when(e.at)}`
+        : e.kind === 'momo' ? `${money(Math.abs(x.amount))} MoMo went back out ${e.at ? when(e.at) : `on ${shortDay(e.day)}`}` : `The bank took ${money(Math.abs(x.amount))} back from card …${e.last4} (tapped ${shortDay(e.day)})`}.`
+        + `${x.original ? ` It gives back the payment of ${money(x.original.amount)} taken ${when(x.original.at)}.` : ''}`
+        + `${x.sameAs ? ' The terminal already shows it: the same money, told once.' : x.pairedWith ? ' It answers a refund keyed in ASSD.' : ' No refund of that amount is keyed in ASSD near it: say what became of it.'}`;
+      case 'chargeback': return `The bank took ${money(Math.abs(x.amount))} back as a chargeback${e.last4 ? ` from card …${e.last4}` : ''} on ${shortDay(x.day)}.`
+        + `${x.original ? ` It takes back the payment of ${money(x.original.amount)} taken ${when(x.original.at)}.` : ' No payment of that amount to that card is on the terminal report.'} Dispute it with the bank, or say it is accepted.`;
+      case 'prepaid-not-banked': return `ASSD has ${money(x.amount)} prepaid by bank transfer (ASSD ${x.seq}${x.ref ? `, reservation ${x.ref}` : ''}), and no credit of that amount is on the bank statement from two weeks before to three days after.`;
+      case 'deposit-not-banked': return `${money(x.amount)} was banked from the safe on ${shortDay(x.day)}${x.ref ? ` (${x.ref})` : ''}, and no credit of that amount reached the bank within four days.`;
+      case 'back-office': return `${money(Math.abs(x.amount))} was ${x.amount > 0 ? 'taken' : 'paid out'} on the back office (ASSD ${x.seq}, ${x.by || 'somebody'}): ${(x.lines || []).map((l) => `${l.label} ${money(l.amount)}`).join(', ')}. The drawer never held it: say where it is.`;
+      case 'probable': return x.how === 'together'
+        ? `ASSD lines ${(x.lines || []).map((a) => money(a)).join(' + ')} were matched to one payment of ${money(x.amount)} because the sums agree, and nothing else: confirm they are one guest’s.`
+        : `ASSD's ${money(x.amount)} was matched to payments of ${(x.events || []).map((ev) => money(ev.amount)).join(' + ')} because they add up, and nothing else: confirm they were paid in parts.`;
+      case 'search-cut': return `This shift had ${x.lines ? `${x.lines} open lines` : ''}${x.lines && x.payments ? ' and ' : ''}${x.payments ? `${x.payments} payments near a line` : ''}: more than every combination could be tried for. Some may pair up in ways not looked at: check by hand.`;
       case 'refund': return x.pairedWith ? 'A card refund keyed in ASSD. The bank reversal for it is on the statement.'
         : x.unbacked ? `A card refund of ${money(Math.abs(x.amount))} keyed in ASSD (ASSD ${x.seq}), and no reversal on the bank statement six days on. If no money went back to a guest’s card, ASSD shows ${money(Math.abs(x.amount))} less card money than was taken: say why it was keyed.`
           : 'A card refund keyed in ASSD. No matching reversal on the bank statement yet.';
@@ -2490,6 +2513,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         + `${(x.spans || []).flatMap((p) => p.lines).map((l) => `ASSD ${l.seq} ${signed(l.amount)}`).join(', ')}, ${signed(x.amount)} in all.`
         + ` By the drawer’s own counts that money ${x.amount > 0 ? 'never came in' : 'never went out'}, so ASSD shows ${money(Math.abs(x.amount))} ${x.amount > 0 ? 'more' : 'less'} cash than the drawer had (${flowText(flowOf(x))}): stock put right through the till, or counts copied from the last one. Say which.`
         + ' It is part of this shift’s drawer difference: reconciled with that, it takes back the part it explains, and what is left is what it does not.';
+      case 'declared-cash': return `${x.by || 'The person on the shift'} counted ${money(x.declared)} and wrote it in HIVE; ${x.closingFrom === 'typed' ? 'the recount' : 'ASSD’s closing count'} found ${money(x.closing)}, ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than theirs. Say which count was right.`;
       case 'handover-gap': return `The first count of this shift found ${money(Math.abs(x.amount))} ${x.amount < 0 ? 'less' : 'more'} than ${nameOf(x.from)}’s closing count.`;
       case 'movement-matched': return `${x.reason === 'duplicate'
         ? `ASSD ${x.seq} (${money(x.amount)}) was matched as a duplicate of ASSD ${x.pair} and is left out of the drawer.`
@@ -2624,6 +2648,10 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (x.kind === 'movement-twice') return a;
     // Cash keyed as taken while the drawer did not move: ASSD shows money that never came in.
     if (x.kind === 'keyed-no-cash') return -x.amount;
+    // Money gone back out, or expected in and not there: ASSD shows money that is not there.
+    if (['chargeback', 'prepaid-not-banked', 'deposit-not-banked'].includes(x.kind)) return -a;
+    // Taken on the back office: money ASSD shows that the drawer never held.
+    if (x.kind === 'back-office') return -x.amount;
     return null;
   }
   /**
@@ -3490,7 +3518,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
             : h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change'), said)
           // Its own two buttons are the answer to a count read two ways.
           : ['receipts-unclear', 'receipts-carried'].includes(x.kind) ? said
-            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : x.kind === 'paid-less' ? PAID_LESS_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
+            : [h('div.sh-answers', note, (x.kind === 'laundry-card' ? PAIR_ANSWERS : x.kind === 'paid-more' ? PAID_MORE_ANSWERS : x.kind === 'paid-less' ? PAID_LESS_ANSWERS
+              : ['reversal', 'chargeback'].includes(x.kind) ? BACK_ANSWERS : ['probable', 'search-cut'].includes(x.kind) ? PROBABLE_ANSWERS : ANSWERS).map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)),
               movable(x) ? h('button.sh-movebtn', { type: 'button', 'aria-expanded': String(moving === x.key), onclick: () => { moving = moving === x.key ? null : x.key; paint(); } }, 'Put on a staff account') : null,
               suspenseBtn(x, note),
               said,
@@ -3885,7 +3914,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     if (can.approvals && sources.till) {
       for (const a of sources.till.answerApprovals || []) {
         out.push({
-          id: `aa:${a.type}:${a.id}`, kind: 'admin', title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : `Answered “${a.answer}”`,
+          id: `aa:${a.type}:${a.id}`, kind: 'admin', title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : a.type === 'resolution' ? 'Accepted a staff answer' : `Answered “${a.answer}”`,
           sub: `by ${a.by}`, amount: '', chip: ['none', 'Approve'], tone: 'none', age: daysAgo(a.at), counts: true,
           render: () => till.answerApprovalCard(a, () => after('Done.'), { open: openWhere, brief: shiftBrief }),
         });
@@ -4232,22 +4261,24 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     const flows = netFlows(chosen);
     const known = flows.every((f) => f != null);
     const net = flows.reduce((t, f) => t + (f || 0), 0);
-    const note = h('input', { type: 'text', maxlength: '600', placeholder: net === 0 && known ? 'What happened (optional)' : 'What happened (needed: they do not net to nothing)' });
+    const note = h('input', { type: 'text', maxlength: '600', placeholder: net === 0 && known ? 'What happened (optional)' : 'What happened (needed)' });
     const said = h('span.small');
     return h('div.sh-pickbar',
       h('div', h('strong', `${chosen.length} ticked`),
         h('span', known ? ` · net ${net === 0 ? money(0) : flowText(net)}` : ' · net not worked out for every kind'),
         h('div.small', chosen.map((x, i) => `${(KIND[x.kind] || [x.kind])[0]} ${flowText(flows[i]) || money(Math.abs(x.amount ?? 0))}${besideOwnDrawer(x, chosen) ? ' (explains part of its own drawer)' : ''}`).join(' · '))),
       note,
-      h('button.btn.primary', {
+      // Agreed means the money nets: what is left goes in suspense or on a staff account, never just explained away.
+      known && net !== 0 ? null : h('button.btn.primary', {
         type: 'button',
         disabled: chosen.length < 2,
         onclick: async (e) => {
-          if ((!known || net !== 0) && !note.value.trim()) { note.focus(); said.textContent = 'Say what happened: these do not net to nothing.'; return; }
+          if (!known && !note.value.trim()) { note.focus(); said.textContent = 'Say what happened: not all of these have a direction.'; return; }
           e.target.disabled = true;
           try { await reconcile(chosen.map((x) => x.key), note.value.trim()); } catch (err) { said.textContent = err.message; e.target.disabled = false; }
         },
-      }, chosen.length < 2 ? 'Tick at least two' : known && net !== 0 ? 'Reconcile, the difference explained' : 'Reconcile together'),
+      }, chosen.length < 2 ? 'Tick at least two' : 'Reconcile together'),
+      known && net !== 0 && !admin ? h('span.small', ` They leave ${flowText(net)}: an admin reconciles these, with the rest in suspense or on a staff account.`) : null,
       // An admin's: reconciled together, and what they do not net to parked in suspense.
       // An admin's: reconciled together, and what they do not net to on staff accounts.
       admin && known && net !== 0 && chosen.length >= 2 ? h('button.btn', {
@@ -4260,11 +4291,12 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         type: 'button',
         title: 'Reconcile them, and put the difference left in the suspense account',
         onclick: async (e) => {
+          if (!note.value.trim()) { note.focus(); said.textContent = 'Say why they are reconciled: they do not net to nothing.'; return; }
           e.target.disabled = true;
           const first_ = chosen[0];
           try {
-            await api('/shifts/link', { method: 'POST', body: { keys: chosen.map((x) => x.key), note: note.value.trim() || `${flowText(net)} left, to suspense` } });
-            const out = await api('/suspense/add', { method: 'POST', body: { keys: chosen.map((x) => x.key), amount: net, reconciled: true, what: `Left after reconciling ${chosen.length} together`, day: first_.day, slot: first_.slot, note: note.value.trim() } });
+            // One step: reconciled, and what is left put in suspense by the server, which works it out itself.
+            const out = await api('/shifts/link', { method: 'POST', body: { keys: chosen.map((x) => x.key), note: note.value.trim(), rest: 'suspense', amount: net, what: `Left after reconciling ${chosen.length} together`, day: first_.day, slot: first_.slot } });
             picked.clear(); pickedAs.clear();
             await load(banner('good', `Reconciled together; the ${flowText(net)} left is in suspense as ${out.entry.ref}.`));
           } catch (err) { said.textContent = err.message; e.target.disabled = false; }
