@@ -35,6 +35,7 @@ import { renderHrFaq } from './views/hr-faq.js';
 import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttMyTill, renderAttMyTillIssues, renderMyTillReports } from './views/att-my-till.js';
 import { renderAttAdvances } from './views/att-advances.js';
+import { renderLateCharges } from './views/late-charges.js';
 import { renderTillShortages } from './views/till-shortages.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
 import { renderAttLunch } from './views/att-lunch.js';
@@ -220,6 +221,7 @@ const ROUTES = [
   { group: 'money', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
   { group: 'money', tab: 'Advances', seg: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
   { group: 'money', tab: 'Advances', seg: 'Till shortages', part: 'att-advances', path: 'till-shortages', label: 'Advances', permission: 'hr_pay', render: renderTillShortages, live: ['pay'] },
+  { group: 'money', tab: 'Advances', seg: 'Late charges', part: 'att-advances', path: 'late-charges', label: 'Advances', permission: 'hr_pay', render: renderLateCharges, live: ['pay', 'attendance'] },
   { group: 'money', tab: 'Medical', path: 'att-medical', label: 'Medical', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
   { group: 'money', tab: 'Till', path: 'till-reports', label: 'Till', permission: 'till_reports', render: renderTillReports },
 

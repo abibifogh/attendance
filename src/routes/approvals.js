@@ -387,6 +387,40 @@ const KINDS = {
       : run('POST', `/api/hr/submissions/${id}/reject`, { note: said })),
   },
 
+  late: {
+    label: 'Late charge',
+    permission: 'hr_pay',
+    link: '#/late-charges',
+    async list(run) {
+      const data = await run('GET', '/api/late-charges');
+      // Only an administrator keeps or waives one, so only they are asked.
+      if (!data?.canDecide) return [];
+      const cash = (n) => `${data.rule?.currency || 'GHS'} ${Number(n)}`;
+      return (data.charges ?? []).filter((c) => c.status === 'open' && !c.closed).map((c) => ({
+        id: c.id,
+        title: `Late charge · ${c.staff.name}`,
+        sub: `${c.shift ? `${c.shift.name} ${c.shift.from}` : 'Shift'} · in ${c.clockIn}, ${c.minutes} min late · ${cash(c.amount)}`,
+        who: c.staff.name,
+        askedAt: c.day,
+        details: [
+          ['Day', c.day],
+          ['Shift', c.shift ? `${c.shift.name} ${c.shift.from}–${c.shift.to}` : null],
+          ['Clocked in', `${c.clockIn}, ${c.minutes} minutes late`],
+          ['This month', c.countThisMonth === 1 ? 'The first' : `${c.countThisMonth} late charges`],
+          ['They said', c.reason ? [c.reason.label, c.reason.text].filter(Boolean).join(' · ') : 'Nothing yet'],
+          ['Comes off', `${data.monthName} pay, unless waived`],
+        ],
+        decisions: [
+          yes('Keep'),
+          no('Waive', { note: note(true) }),
+        ],
+      }));
+    },
+    decide: (run, id, { decision, note: said }) => run('POST', '/api/late-charges/decide', {
+      ids: [id], action: decision === 'approve' ? 'keep' : 'waive', note: said,
+    }),
+  },
+
   query: {
     label: 'Sign-off question',
     permission: 'att_manage',

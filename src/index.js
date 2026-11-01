@@ -20,6 +20,7 @@ import * as handbook from './routes/handbook.js';
 import * as hrFaq from './routes/hr-faq.js';
 import * as authLock from './routes/auth-lock.js';
 import { watchShifts } from './lib/shift-watch.js';
+import { syncLateCharges, watchLateCharges } from './lib/late-charges.js';
 import { watchTills } from './lib/till-watch.js';
 import { watchAbsences } from './lib/absence-watch.js';
 import { watchLeavePlans } from './lib/leave-plans.js';
@@ -55,6 +56,7 @@ import * as signoff from './routes/signoff.js';
 import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
+import * as lateCharges from './routes/late-charges.js';
 import * as approvals from './routes/approvals.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
@@ -216,6 +218,9 @@ export const ROUTES = [
   // asks for a planner's permission and would leave this page faceless.
   ['GET', '/api/directory/photo/:id', null, directory.directoryPhoto],
   ['GET', '/api/me/week', 'att_me', mine.myWeek],
+  ['GET', '/api/me/late-charges', 'att_me', lateCharges.myLateCharges],
+  ['POST', '/api/me/late-charges/reason', 'att_me', lateCharges.myLateReason],
+  ['POST', '/api/me/late-rule/accept', 'att_me', lateCharges.acceptLateRule],
 
   // My till: closing a front-desk shift, and answering for the shifts that did
   // not agree. Insight does the checking over the till link; these keep what
@@ -380,6 +385,11 @@ export const ROUTES = [
   // Shortages on checked shifts: recover from pay, or not. Above :id patterns.
   ['GET', '/api/advances/till-decisions', 'hr_pay', advance.tillToDecide],
   ['POST', '/api/advances/till-decisions', 'hr_pay', advance.tillDecide],
+  ['GET', '/api/late-charges', 'hr_pay', lateCharges.listLateCharges],
+  ['POST', '/api/late-charges/decide', 'hr_pay', lateCharges.decideLateCharges],
+  ['GET', '/api/late-charges/rule', 'hr_pay', lateCharges.lateRuleGet],
+  ['POST', '/api/late-charges/rule', 'hr_pay', lateCharges.lateRuleSave],
+  ['POST', '/api/late-charges/exempt', 'hr_pay', lateCharges.lateExempt],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   // Correcting the record rather than the arrangement. Admin only, checked
@@ -1132,6 +1142,20 @@ export default {
       });
       if (watched.nudged) console.log(`Attendance: ${watched.nudged} told their shift has started`);
       if (watched.reminded) console.log(`Attendance: ${watched.reminded} reminded to clock out`);
+
+      // Late charges: warn while it can still be avoided, then charge whoever
+      // clocked in at or past the minute, and keep every open charge in step
+      // with the record (a corrected clock-in or an excused day takes it away).
+      const lateWarned = await watchLateCharges(env.DB, { timezone, ctx: { env, executionContext } })
+        .catch((err) => { console.error('Late charge watch failed', err); return {}; });
+      if (lateWarned.warned || lateWarned.charged) {
+        console.log(`Late charges: ${lateWarned.warned ?? 0} warned, ${lateWarned.charged ?? 0} told they are charged`);
+      }
+      const lateSynced = await syncLateCharges(env.DB, { timezone, ctx: { env, executionContext } })
+        .catch((err) => { console.error('Late charge sync failed', err); return {}; });
+      if (lateSynced.created || lateSynced.voided || lateSynced.reopened) {
+        console.log(`Late charges: ${lateSynced.created ?? 0} new, ${lateSynced.voided ?? 0} taken away, ${lateSynced.reopened ?? 0} back`);
+      }
 
       // And the closing report at the front desk: twenty minutes before a
       // reception shift ends, and again twenty minutes after if it is not in.

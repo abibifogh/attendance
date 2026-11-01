@@ -2,6 +2,19 @@ import { state } from '../app.js';
 import { fmtNum, h, money } from '../util.js';
 import { PAGE_H, PAGE_W } from './letter-paper.js';
 
+/** "2, 6 and 8 Nov": the days late charges came off for. */
+function lateDays(charges = []) {
+  const days = [...charges].map((c) => String(c.day ?? '')).filter(Boolean).sort();
+  if (!days.length) return null;
+  const mon = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
+  const parts = days.map((d, i) => {
+    const n = String(Number(d.slice(8, 10)));
+    const last = i === days.length - 1 || mon(days[i + 1]) !== mon(d);
+    return last ? `${n} ${mon(d)}` : n;
+  });
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
 /**
  * The payslip, as a piece of paper.
  *
@@ -129,11 +142,16 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
         short > over ? row(till.length > 1 ? 'Till shortages' : 'Till shortage', cash(short - over), both) : null,
         over > short ? row('Till surplus paid', `−${cash(over - short)}`, both || 'Money over on your account, handed back untaxed') : null,
         over > 0 && over === short ? row('Till', cash(0), both) : null,
+        // Late charges, each day it was for under the line.
+        (line.lateCharges ?? []).length
+          ? row(`Late arrivals (${line.lateCharges.length})`, cash(line.lateCharge ?? 0), lateDays(line.lateCharges))
+          : null,
       ];
     })(),
   ].filter(Boolean);
 
-  const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0) - (Number(line.tillCredit) || 0);
+  const took = (line.ssnit?.employee ?? 0) + line.paye.total + (line.loanTotal ?? 0) - (Number(line.tillCredit) || 0)
+    + (Number(line.lateCharge) || 0);
 
   return h('div.slip-page', { style: { width: `${PAGE_W}px`, height: `${PAGE_H}px` } },
     h('div.slip-fit',

@@ -4,6 +4,7 @@ import { fmtDay, fmtDayShort, fmtNum, h, mount, shiftDay, toast } from '../util.
 import { card, emptyState } from './components.js';
 import { whatToRemember } from './dept-view.js';
 import { installNudge } from './install-help.js';
+import { myLateBlock } from './my-late.js';
 import { MAX_UNAVAILABLE_DAYS, busiestWeek } from '../availability-rules.js';
 import {
   asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
@@ -105,6 +106,10 @@ export async function renderAttMe(params = {}) {
     ),
 
     data.onShift ? onShiftCard(data) : countdownCard(data),
+
+    // A late charge: the rule to accept, and any recent charge with where it
+    // stands and a place to say why.
+    myLateBlock(),
 
     // The week the whole page covers: their own shifts and, further down, who
     // else in their department is on. Buttons that say which way they go,

@@ -30,6 +30,28 @@ import { TIERS, tierSplit } from './statutory.js';
  */
 
 /**
+ * Which late charges fit what the payslip would pay without them: oldest
+ * first, whole charges only. The rest wait for the next payroll.
+ */
+export function fitLate(charges = [], room = 0) {
+  const sorted = [...charges].sort((a, b) => String(a.day ?? '').localeCompare(String(b.day ?? ''))
+    || (Number(a.chargeId ?? 0) - Number(b.chargeId ?? 0)));
+  const taken = [];
+  const waiting = [];
+  let used = 0;
+  for (const c of sorted) {
+    const amount = round2(c.amount);
+    if (round2(used + amount) <= Math.max(0, round2(room))) {
+      taken.push({ ...c, amount });
+      used = round2(used + amount);
+    } else {
+      waiting.push({ ...c, amount });
+    }
+  }
+  return { taken, waiting, total: used };
+}
+
+/**
  * One line, given every figure. `topUp` is a taxable allowance worked out
  * rather than agreed, which is what a take-home target is delivered through.
  */
@@ -42,6 +64,7 @@ function oneLine({
   penalties = [],
   loans = [],
   tillCredits = [],
+  lateCharges = [],
   annualBasic = null,
   bonusPaidThisYear = 0,
   bonusIsNet = true,
@@ -151,7 +174,13 @@ function oneLine({
   // tax and untaxed. They meet any till shortage coming off the same payslip
   // first, because what is short and what is over are the same till.
   const tillCredit = round2(tillCredits.reduce((n, c) => n + round2(c.amount), 0));
-  const net = round2(gross - contributions.employee - tax - loanDue + tillCredit);
+  // Late charges, after everything else and only as far as there is pay to
+  // take them from: oldest first, whole charges, and what does not fit waits
+  // for the month after rather than taking anybody's pay below nothing.
+  const beforeLate = round2(gross - contributions.employee - tax - loanDue + tillCredit);
+  const late = fitLate(lateCharges, beforeLate);
+  const lateCharge = late.total;
+  const net = round2(beforeLate - lateCharge);
   const cost = round2(gross + contributions.employer);
 
   // ---- how it reads on a payslip ---------------------------------------
@@ -280,6 +309,9 @@ function oneLine({
     loanTotal: loanDue,
     tillCredits: tillCredits.map((c) => ({ ...c, amount: round2(c.amount) })),
     tillCredit,
+    lateCharges: late.taken,
+    lateCharge,
+    lateWaiting: late.waiting,
     net,
     employerCost: cost,
     rates: { label: standing.label, ssnitEmployee: rates.ssnitEmployee, ssnitEmployer: rates.ssnitEmployer },
@@ -369,7 +401,7 @@ export function computeLine(given) {
   const wanted = terms.takeHome;
   if (wanted == null || wanted === '') return finish(oneLine({ ...terms, topUp: 0 }));
 
-  const clean = { ...terms, penalties: [], loans: [], tillCredits: [] };
+  const clean = { ...terms, penalties: [], loans: [], tillCredits: [], lateCharges: [] };
   const reach = (pence) => oneLine({ ...clean, topUp: pence / 100 }).net;
 
   // WHAT THE TARGET IS DEPENDS ON WHAT THE TAKE-HOME MEANS.
@@ -444,6 +476,7 @@ export function totalsOf(lines) {
     paye: add(null, (l) => l.paye.total),
     loans: add('loanTotal'),
     tillCredit: add(null, (l) => l.tillCredit ?? 0),
+    lateCharge: add(null, (l) => l.lateCharge ?? 0),
     net: add('net'),
     cost: add('employerCost'),
   };

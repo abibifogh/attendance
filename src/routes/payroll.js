@@ -8,6 +8,7 @@ import { companyLogoBytes } from './people.js';
 import { sayMonth } from '../lib/email-design.js';
 import { paidInMonth } from '../lib/leaving.js';
 import { balanceOf, dueThisMonth, startsOn, tillMonthFor, whyNotDue } from '../lib/advances.js';
+import { deferLateCharges } from '../lib/late-charges.js';
 import {
   computeLine, partMonth, totalsOf,
 } from '../lib/payroll.js';
@@ -148,7 +149,7 @@ async function gather(ctx, month, { open = true } = {}) {
   const run = await runFor(ctx.db, month, actorOf(ctx), { open, company });
 
   const [everybody, profiles, allowances, schemes, members, scores, penalties, severances,
-    advances, entries, slips, credits]
+    advances, entries, slips, credits, lates]
     = await Promise.all([
       ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on, company_id FROM att_staff ORDER BY name').all()
         // A database from before there were companies has no column to read.
@@ -179,6 +180,9 @@ async function gather(ctx, month, { open = true } = {}) {
       ctx.db.prepare('SELECT * FROM pay_slip WHERE run_id = ?').bind(run.id).all(),
       // Till surpluses paid with this month's pay.
       ctx.db.prepare("SELECT * FROM till_credit WHERE month = ? AND status = 'due' ORDER BY id").bind(month).all()
+        .catch(() => ({ results: [] })),
+      // Late charges coming off this month's pay: kept, or not looked at yet.
+      ctx.db.prepare("SELECT * FROM late_charge WHERE month = ? AND status IN ('open', 'kept') ORDER BY day, id").bind(month).all()
         .catch(() => ({ results: [] })),
     ]);
 
@@ -239,6 +243,7 @@ async function gather(ctx, month, { open = true } = {}) {
     advances: (advances.results ?? []).filter((a) => ours.has(a.staff_id)),
     entriesBy,
     creditsBy: group((credits.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
+    latesBy: group((lates.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
     slipBy: new Map((slips.results ?? []).map((s) => [s.staff_id, s])),
     paidBy: new Map((staff.results ?? []).map((person) => {
       const closed = (earlier.results ?? []).find((r) => r.staff_id === person.id);
@@ -360,6 +365,10 @@ function linesFrom(data, month) {
       loans,
       tillCredits: (data.creditsBy?.get(person.id) ?? []).map((c) => ({
         creditId: c.id, amount: Number(c.amount), reason: c.reason ?? null, day: c.till_day ?? null, slot: c.till_slot ?? null,
+      })),
+      lateCharges: (data.latesBy?.get(person.id) ?? []).map((c) => ({
+        chargeId: c.id, amount: Number(c.amount), day: c.day, clockIn: c.clock_in ?? null,
+        minutes: Number(c.minutes_late) || 0, shift: c.shift_name ?? null, status: c.status,
       })),
       annualBasic: round2(profile.basic * 12),
       bonusPaidThisYear: data.paidBy.get(person.id) ?? 0,
@@ -1287,7 +1296,7 @@ export async function exportBook(ctx) {
   // of its own here as well, so a month can be reconciled against an outside
   // sheet without anybody having to work out where the difference went.
   const payHead = ['Name', 'Department', 'Basic', 'Allowances', 'Bonus', 'Tax carried on bonus', 'Gross',
-    'SSNIT', 'PAYE', 'Advance', 'Net pay', 'Employer SSNIT', 'Cost'];
+    'SSNIT', 'PAYE', 'Advance', 'Late charges', 'Net pay', 'Employer SSNIT', 'Cost'];
   const payRows = lines.map((line) => [
     line.staff?.name ?? '',
     line.staff?.department ?? '',
@@ -1299,6 +1308,7 @@ export async function exportBook(ctx) {
     money(line.ssnit?.employee),
     money(line.paye?.total),
     money(round2((line.loanTotal ?? 0) - (line.tillCredit ?? 0))),
+    money(line.lateCharge ?? 0),
     money(line.net),
     money(line.ssnit?.employer),
     money(line.employerCost),
@@ -1307,12 +1317,12 @@ export async function exportBook(ctx) {
     totalMoney(totals.basic), totalMoney(totals.allowancesOnSlip ?? totals.allowances),
     totalMoney(totals.bonusNet), totalMoney(totals.carriedOnBonus ?? 0), totalMoney(totals.gross),
     totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(round2((totals.loans ?? 0) - (totals.tillCredit ?? 0))),
-    totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
+    totalMoney(totals.lateCharge ?? 0), totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
 
   const payroll = {
     name: 'Payroll',
     freeze: 4,
-    widths: [26, 16, 11, 12, 11, 13, 12, 10, 11, 11, 12, 13, 12],
+    widths: [26, 16, 11, 12, 11, 13, 12, 10, 11, 11, 11, 12, 13, 12],
     rows: [
       [{ v: `${employer} — payroll for ${month}`, s: S.title }],
       [`${lines.length} on the payroll`, '', '', '', '', `In ${data.currency}`],
@@ -2689,6 +2699,11 @@ export async function closeRun(ctx) {
       line.ssnit.employee, line.ssnit.employer, line.paye.total, line.loanTotal,
       line.net, line.employerCost,
     ).run();
+
+    // Late charges that did not fit this month's take-home wait for the next.
+    if (line.lateWaiting?.length) {
+      await deferLateCharges(ctx.db, line.lateWaiting.map((c) => c.chargeId), month);
+    }
 
     // And the repayments, against the advances they came off. Skipped where
     // the month has already been answered by hand, which the unique index

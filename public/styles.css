@@ -8339,3 +8339,71 @@ button.lp-row:disabled { cursor: default; }
 .publish-change-who { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .publish-change-what s { margin-right: .1rem; }
 @media (max-width: 620px) { .publish-change { grid-template-columns: auto minmax(0, 1fr); } .publish-change-what { grid-column: 2; } }
+
+/* ---- Money › Advances › Late charges ---- */
+.late-sub { margin: .25rem 0 0; max-width: 46rem; }
+.late-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin: .9rem 0; }
+.late-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: .8rem 1rem; display: flex; flex-direction: column; gap: .15rem; }
+.late-tile strong { font-size: 1.5rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.late-tile span { font-size: .8rem; color: var(--text-dim); }
+.late-tile.is-open { background: color-mix(in srgb, #f59e0b 10%, var(--surface)); border-color: color-mix(in srgb, #f59e0b 35%, var(--border)); }
+.late-tile.is-open strong { color: #b45309; }
+.late-tile.is-taken strong { color: var(--bad); }
+.late-tile.is-waived strong { color: var(--good); }
+.late-layout { margin-top: 1rem; }
+.late-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; min-width: 0; }
+.late-chips { display: flex; flex-wrap: wrap; gap: .4rem; padding: .75rem 1rem; }
+.late-chip { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: .32rem .75rem; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.late-chip.on { background: var(--text); border-color: var(--text); color: var(--surface); }
+.late-chip-n { opacity: .65; font-variant-numeric: tabular-nums; }
+.late-list { overflow-x: auto; }
+.late-row { display: grid; grid-template-columns: 2rem minmax(9rem, 1.2fr) minmax(8rem, 1fr) 8.5rem minmax(9rem, 1.4fr) 6.5rem minmax(9.5rem, auto); gap: .75rem; align-items: center; padding: .65rem 1rem; border-top: 1px solid var(--border); font-size: .86rem; min-width: 760px; }
+.late-head { background: var(--surface-2); font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); padding-top: .45rem; padding-bottom: .45rem; }
+.late-row.is-kept, .late-row.is-waived { background: color-mix(in srgb, var(--surface-2) 55%, var(--surface)); }
+.late-face { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-size: .7rem; font-weight: 800; }
+.late-who, .late-shift, .late-amount { display: flex; flex-direction: column; min-width: 0; }
+.late-who small, .late-shift small, .late-amount small { color: var(--text-dim); font-size: .74rem; }
+.late-pill { display: inline-flex; font-size: .72rem; font-weight: 750; border-radius: 999px; padding: .05rem .5rem; background: color-mix(in srgb, #f59e0b 18%, var(--surface)); color: #b45309; white-space: nowrap; }
+.late-why { font-size: .82rem; line-height: 1.35; }
+.late-why.is-none { color: var(--text-faint); }
+.late-amount strong { color: var(--bad); }
+.late-amount strong.is-waived { color: var(--text-faint); text-decoration: line-through; }
+.late-actions { display: flex; gap: .35rem; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+.late-keep { background: #f0a94c; border-color: #f0a94c; color: #1d1406; }
+.late-by { color: var(--text-dim); font-size: .74rem; text-align: right; max-width: 12rem; }
+.late-side { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.late-note { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: .85rem 1rem; font-size: .84rem; color: var(--text-dim); line-height: 1.5; }
+.late-note strong { color: var(--text); display: block; margin-bottom: .2rem; }
+.late-note p { margin: .3rem 0; }
+@media (max-width: 900px) { .late-side { grid-template-columns: 1fr; } .late-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Settings › Pay & tax › Late charges */
+.late-setup-grid { display: grid; gap: .6rem; max-width: 34rem; }
+.late-setup .late-switch { display: flex; flex-direction: row; gap: .65rem; align-items: flex-start; text-align: left; }
+.late-setup .late-switch input[type=checkbox] { width: 1.1rem; height: 1.1rem; flex: none; margin: .2rem 0 0; }
+.late-setup .late-exempt select { width: auto; max-width: 22rem; }
+.late-switch span { display: flex; flex-direction: column; }
+.late-setup-h { font-size: .95rem; margin: 1.1rem 0 .4rem; }
+.late-exempt { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.late-exempt-chip { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--border); border-radius: 999px; padding: .2rem .35rem .2rem .7rem; font-size: .84rem; }
+.late-exempt-chip button { border: 0; background: transparent; cursor: pointer; color: var(--text-dim); }
+
+/* My shifts: the late charge */
+.my-late { display: flex; flex-direction: column; gap: .6rem; margin: .6rem 0; }
+.my-late:empty { display: none; }
+.my-late-accept { border-color: color-mix(in srgb, #f59e0b 35%, var(--border)); }
+.my-late-accept p { margin: .35rem 0 .6rem; color: var(--text-dim); font-size: .88rem; line-height: 1.45; }
+.my-late-card { display: flex; flex-direction: column; gap: .35rem; }
+.my-late-card.is-open, .my-late-card.is-kept { background: color-mix(in srgb, #f59e0b 9%, var(--surface)); border-color: color-mix(in srgb, #f59e0b 35%, var(--border)); }
+.my-late-card.is-waived { background: var(--good-soft); }
+.my-late-top { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+.my-late-amt { color: var(--bad); white-space: nowrap; }
+.my-late-amt.is-waived { color: var(--text-faint); text-decoration: line-through; }
+.my-late-state { margin: 0; font-size: .86rem; color: var(--text-dim); }
+.my-late-state.is-waived { color: var(--good); }
+.my-late-why { display: flex; flex-direction: column; gap: .45rem; margin-top: .3rem; padding-top: .55rem; border-top: 1px solid var(--border); }
+.my-late-label { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.my-late-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.my-late-chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: .4rem .8rem; font-size: .84rem; font-weight: 600; cursor: pointer; min-height: 2.25rem; }
+.my-late-chip.on { background: var(--text); border-color: var(--text); color: var(--surface); }
+.my-late-tally { display: flex; justify-content: space-between; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .6rem .9rem; font-size: .88rem; }

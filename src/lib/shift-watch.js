@@ -221,7 +221,12 @@ export async function watchShifts(db, { timezone = 'UTC', ctx = null } = {}) {
     if (!await claim(db, staffId, found.day, `late:${slot}`)) continue;
 
     const late = Math.round(found.minutesIn);
-    await createNotice(db, {
+    // The late charge's own warning already told them at the start; the first
+    // of these would be the same news twice. The later ones still go.
+    const toldOfCharge = slot === 0 ? await db.prepare(
+      "SELECT 1 AS told FROM att_nudge WHERE staff_id = ?1 AND day = ?2 AND kind LIKE 'charge:%'",
+    ).bind(staffId, found.day).first().catch(() => null) : null;
+    if (!toldOfCharge) await createNotice(db, {
       kind: 'attendance.not_clocked_in',
       level: 'warn',
       title: slot === 0

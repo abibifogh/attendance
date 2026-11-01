@@ -151,7 +151,10 @@ and collectively, the "Parties") covenant and agree as follows:
 4.3 The Company shall deduct from the Employee's remuneration only such sums as
     are required or permitted by law, namely income tax under the pay-as-you-earn
     system and the Employee's statutory pension contribution, together with any
-    sum to which the Employee has consented in writing.
+    sum to which the Employee has consented in writing, and the late arrival
+    charge set out in the Staff Handbook (at present GHS 20 for each shift on
+    which the Employee clocks in fifteen (15) minutes or more after its scheduled
+    start), which the Company may waive and to which the Employee consents.
 
 5. PENSION AND SOCIAL SECURITY
 
@@ -448,7 +451,10 @@ and collectively, the "Parties") covenant and agree as follows:
 4.2 Compensation shall be paid by the Company monthly, by bank transfer, less
     income tax under the pay-as-you-earn system and the Employee's statutory
     social security contribution. No other deduction shall be made without the
-    written consent of the Employee or a requirement of law.
+    written consent of the Employee or a requirement of law, save that the
+    Employee consents to the late arrival charge set out in the Staff Handbook
+    (at present GHS 20 for clocking in fifteen minutes or more after a shift
+    starts), which the Company may waive.
 
 5. THE STAFF HANDBOOK
 

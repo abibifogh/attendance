@@ -42,6 +42,19 @@ export function cashOf(currency = 'GHS') {
   };
 }
 
+/** "2, 6 and 8 Nov": the days late charges came off for. */
+export function lateDays(charges = []) {
+  const days = [...charges].map((c) => String(c.day ?? '')).filter(Boolean).sort();
+  if (!days.length) return null;
+  const mon = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
+  const parts = days.map((d, i) => {
+    const n = String(Number(d.slice(8, 10)));
+    const last = i === days.length - 1 || mon(days[i + 1]) !== mon(d);
+    return last ? `${n} ${mon(d)}` : n;
+  });
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
 /** The deductions column, the same lines the screen draws. */
 export function deductionRows(line, cash, rates = {}) {
   const rows = [];
@@ -61,7 +74,9 @@ export function deductionRows(line, cash, rates = {}) {
   if (short > over) rows.push([till.length > 1 ? 'Till shortages' : 'Till shortage', cash(short - over), both]);
   if (over > short) rows.push(['Till surplus paid', `-${cash(over - short)}`, both || 'Money over on your account, handed back untaxed']);
   if (over > 0 && over === short) rows.push(['Till', cash(0), both]);
-  const took = (line.ssnit?.employee ?? 0) + (line.paye?.total ?? 0) + (line.loanTotal ?? 0) - over;
+  const late = line.lateCharges ?? [];
+  if (late.length) rows.push([`Late arrivals (${late.length})`, cash(line.lateCharge ?? 0), lateDays(late)]);
+  const took = (line.ssnit?.employee ?? 0) + (line.paye?.total ?? 0) + (line.loanTotal ?? 0) - over + (Number(line.lateCharge) || 0);
   return { rows, took: round2(took) };
 }
 

@@ -408,6 +408,14 @@ IF YOU WILL BE LATE
 Tell your supervisor as soon as you know, not when you arrive. Somebody is
 holding your section until you get there.
 
+THE LATE CHARGE
+Clocking in fifteen minutes or more after your shift starts costs GHS 20, taken
+from your pay in the next payroll unless a manager waives it. It is charged
+once per shift, however late. Your phone tells you five minutes into the shift
+if nothing has been recorded, and again at fifteen. You can say why in My
+shifts, and a manager reads it before deciding. A clock-in corrected to on
+time, or a day excused, takes the charge away.
+
 SWAPPING A SHIFT
 If swaps are turned on, you can offer a shift you cannot work to the colleagues
 who could cover it, from the Swaps screen. Nothing changes on the rota until a
@@ -481,7 +489,9 @@ WHAT COMES OFF
 PAYE income tax, at the rates the Ghana Revenue Authority sets.
 Your SSNIT contribution of 5.5 per cent, with the property paying 13 per cent on
 top of your salary.
-Anything you have agreed to in writing: a salary advance being repaid, a loan.
+Anything you have agreed to in writing: a salary advance being repaid, a loan,
+or the late charge (GHS 20 for clocking in fifteen minutes or more after your
+shift starts, unless a manager waives it; see Hours, the rota and clocking in).
 Nothing else is deducted without your written agreement, except where the law
 requires it. Section 70 of the Labour Act, 2003 (Act 651) is the rule here.
 

@@ -7,6 +7,7 @@ import { renderCompanies } from './companies.js';
 import { renderPeopleForm } from './people-form.js';
 import { renderChecklistSetup } from './onboarding.js';
 import { renderLunchSetup } from './att-lunch.js';
+import { renderLateRuleSetup } from './late-charges.js';
 import { renderLeavePlanSetup } from './leave-plans.js';
 
 /**
@@ -85,6 +86,7 @@ export const SECTIONS = [
     key: 'pay', label: 'Pay & tax', hint: 'PAYE, SSNIT',
     panels: [
       { key: 'tax', label: 'Tax and SSNIT', need: 'att_setup', render: setup('tax'), words: 'paye bands ssnit tier bonus rate gra' },
+      { key: 'late', label: 'Late charges', need: 'hr_pay', render: () => renderLateRuleSetup(), words: 'late charge fine deduction minutes clock in lateness' },
     ],
   },
   {
