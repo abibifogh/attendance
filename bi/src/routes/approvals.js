@@ -56,7 +56,8 @@ export function keyWords(key) {
 
 const MOVED = { duplicate: 'is keyed twice', reverses: 'puts back another movement' };
 
-async function insightList(env) {
+/** Insight's own items waiting for an admin; Today shows a supervisor what they sent up. */
+export async function insightList(env) {
   const [answers, moves, drawer] = await Promise.all([
     till.pendingAnswers(env), till.pendingMovements(env), newpo.drawerAsks(env),
   ]);

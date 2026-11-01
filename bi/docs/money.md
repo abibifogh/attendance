@@ -44,7 +44,7 @@ it buy, by part of the business.
   A cash PO Odoo does not know at all is named under it.
 - **What to chase** is not repeated here: it is in Shifts → **Inbox → POs**.
 
-## The to-do list
+## POs to chase
 
 Shifts → **Inbox → POs**, for admins and supervisors (an answered item waits
 under **Waiting for admin**). Two checks raise items each

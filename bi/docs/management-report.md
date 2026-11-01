@@ -66,10 +66,12 @@ digest**, an admin's:
   Sent after 10:00 but before 14:00 is late, and nothing comes off. The last
   weeks show under the setting: when it was sent and by whom, or what came off.
   An admin who must undo a deduction removes it on the month's payroll in HIVE.
-- **Morning digest.** At **07:00** each supervisor gets their own Assistant
-  list by email (what waits on their yes or no, what is going wrong), with the
-  admins copied. Nothing waiting, no email; on the Saturday morning the person
-  on duty is reminded of the report in it too.
+- **Morning digest.** At **07:00** each supervisor gets their Today list by
+  email, in the same order (Overdue, Due today, Later, with who gave each and
+  how late), with the admins copied. It is their only reminder: their to-dos
+  are not emailed one by one each morning any more. Nothing waiting, no email;
+  on the Saturday morning the person on duty is reminded of the report in it
+  too.
 
 Everything runs on an hourly schedule (`0 * * * *`, Accra's clock is UTC);
 each step is kept in a log (`mgmt_duty_log`), so an hour run twice does

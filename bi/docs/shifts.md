@@ -295,8 +295,10 @@ answers on the exception and its placements.
 Every exception has **＋ To-do** above its notes. An admin or a supervisor
 writes what to do, picks who it is for (an Insight admin or supervisor,
 themselves included) and the day it is due. Whoever it is for is emailed when
-it is made, and each morning after, with the daily summary, until it is done;
-past the due day the email and the Inbox say it is overdue. The card shows
+it is made. From then it is on their **Today**, by its due day, with **Done**
+and **Open shift**, and in a supervisor's 07:00 email; an admin, who does not
+get that email, is reminded each morning instead. Past the due day, Today, the
+email and To sort out say it is overdue. The card shows
 its open to-dos ("To-do for …, due …").
 
 To-dos are in Front desk › Shifts › To sort out › **To-do**. An admin sees all of them; a

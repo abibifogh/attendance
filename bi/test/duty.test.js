@@ -58,7 +58,10 @@ test('an admin chooses who sends the Saturday report; it is shared with them; on
 test('the morning digest: each supervisor’s own list, the admins copied; nothing waiting, nothing sent', async () => {
   const { env, raw, sent } = setUp();
   raw.exec(`INSERT INTO money_todo (key, kind, ref, day, amount, assignee_id, assignee_name, state, sent_back, opened_at) VALUES
-    ('nopo:1', 'nopo', 'B001', '2026-11-01', 50000, 21, 'Kofi Test', 'open', 'Which shift?', '2026-11-02 08:00:00')`);
+    ('nopo:1', 'nopo', 'B001', '2026-11-01', 50000, 21, 'Kofi Test', 'open', 'Which shift?', '2026-11-02 08:00:00');
+    INSERT INTO shift_task (key, about, day, slot, what, for_id, for_name, due, made_by_id, made_by, made_at) VALUES
+    ('drawer:2026-11-02:night', 'Mon 2 Nov night', '2026-11-02', 'night', 'Call Efua Test about the drawer', 21, 'Kofi Test', '2026-11-03', 1, 'Test Owner', '2026-11-02 09:00:00'),
+    ('drawer:2026-11-04:night', NULL, NULL, NULL, 'Count the laundry tokens', 21, 'Kofi Test', '2026-11-09', 1, 'Test Owner', '2026-11-04 09:00:00')`);
   const out = await duty.sendDigests(env, { now: at('2026-11-05T07:00:00Z') });
   assert.equal(out.sent, 1);
   assert.deepEqual(out.quiet, ['Ama Test'], 'Ama has nothing waiting');
@@ -66,8 +69,12 @@ test('the morning digest: each supervisor’s own list, the admins copied; nothi
   const mail = sent.find((x) => x.path === '/api/link/mail').body;
   assert.equal(mail.to, 'kofi@example.test');
   assert.deepEqual(mail.cc, ['owner@example.test']);
-  assert.equal(mail.subject, 'Your table this morning: 1 thing, 1 first');
-  assert.match(mail.html, /1 to-do sent back to you/);
+  assert.equal(mail.subject, 'Kofi, 3 things today — 1 overdue');
+  assert.match(mail.html, /1 PO item sent back to you/);
+  // The same order as Today: overdue (with who gave it and how late), due today, later.
+  const order = ['Overdue', 'Call Efua Test about the drawer', 'from Test Owner', '2 days late', 'Due today', '1 PO item sent back to you', 'Later', 'Count the laundry tokens', 'due Mon 9 Nov'];
+  const where = order.map((w) => mail.text.indexOf(w));
+  assert.ok(where.every((i, n) => i >= 0 && (n === 0 || i > where[n - 1])), mail.text);
   assert.equal(mail.kind, 'insight_digest');
 
   await duty.saveDuty(env, { digest: false }, OWNER);
