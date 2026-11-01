@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { adminShiftsBetween, isAdminShift, sendAdminShifts } from '../src/lib/maintenance-shifts.js';
+import { adminShiftsBetween, isAdminShift, sendAdminShifts, sendDeskShifts } from '../src/lib/maintenance-shifts.js';
 
 /**
  * "For those required to send weekly plan, check their shift in hive, if they
@@ -114,4 +114,53 @@ test('it goes once a day, with the nightly run, not every hour', () => {
   assert.match(src.slice(guard, at), /^if \(env\.MAINTENANCE_LINK && nightly\) \{/);
   assert.match(src, /const nightly = String\(event\?\.cron \?\? ''\)\.startsWith\('30 0'\)/);
   assert.match(readFileSync('wrangler.toml', 'utf8'), /crons = \["30 0 \* \* \*"/);
+});
+
+/* "The at the desk info should be picked from hive's rota." The reception
+   shifts go too, by name, from yesterday (a night shift is still on at 00:30)
+   to two weeks ahead. */
+function deskSetup() {
+  const { raw, db } = setup();
+  for (const [id, no, name, dept] of [[4, 'FO-01', 'Akosua Mensah', 'Reception'], [5, '  ', 'Yaw Boateng', 'Reception'], [6, 'HK-01', 'Esi Housekeeping', 'Housekeeping']]) {
+    raw.prepare(`INSERT INTO att_staff (id, employee_no, name, hired_on, department) VALUES (?, ?, ?, '2020-01-01', ?)`).run(id, no, name, dept);
+  }
+  const shift = (name, a, b, dept) => Number(raw.prepare('INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, department) VALUES (?, ?, ?, 60, ?)')
+    .run(name, a, b, dept).lastInsertRowid);
+  const fo = shift('Front Office AM TEST', '06:00', '14:00', 'Reception');
+  const night = shift('Night Desk TEST', '22:00', '06:00', 'Reception');
+  const hk = shift('Rooms TEST', '07:00', '15:00', 'Housekeeping');
+  const adm = shift('Admin 3 TEST', '08:00', '17:00', 'Reception');
+  const put = (staff, day, sh) => raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (?, ?, ?, 1)').run(staff, day, sh);
+  put(5, '2026-11-04', night);  // last night's desk, still on at 00:30
+  put(4, '2026-11-05', fo);     // this morning's desk
+  put(6, '2026-11-05', hk);     // not the desk
+  put(4, '2026-11-06', adm);    // an Admin shift filed under Reception: not the desk
+  put(4, '2026-11-25', fo);     // beyond two weeks
+  return { raw, db };
+}
+
+test('the front desk rota: reception shifts only, by name, from last night to two weeks ahead', async () => {
+  const { db } = deskSetup();
+  const calls = [];
+  const out = await sendDeskShifts({ DB: db, MAINTENANCE_LINK: LINK }, {
+    today: '2026-11-05',
+    fetchImpl: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response('{"saved":2}', { status: 200 }); },
+  });
+  assert.equal(calls[0].url, 'https://abcdefgh.supabase.co/rest/v1/rpc/mx_hive_desk_put');
+  assert.equal(calls[0].body.p_key, KEY);
+  assert.equal(calls[0].body.p_from, '2026-11-04', 'from yesterday: a night shift is still on');
+  assert.equal(calls[0].body.p_to, '2026-11-18');
+  assert.deepEqual(calls[0].body.p_shifts.map((s) => `${s.day} ${s.name} ${s.employee_no} ${s.starts_at}-${s.ends_at}`), [
+    '2026-11-04 Yaw Boateng null 22:00-06:00',
+    '2026-11-05 Akosua Mensah FO-01 06:00-14:00',
+  ], 'not housekeeping, not an Admin shift, nothing beyond two weeks; no number is fine');
+  assert.equal(out.sent, 2);
+});
+
+test('the front desk rota goes with the Admin shifts, once a day', () => {
+  const src = readFileSync('src/index.js', 'utf8');
+  const at = src.indexOf('sendDeskShifts(env)');
+  assert.ok(at > 0 && src.indexOf('sendDeskShifts(env)', at + 1) === -1);
+  const guard = src.lastIndexOf('if (env.MAINTENANCE_LINK && nightly) {', at);
+  assert.ok(guard > 0 && !src.slice(guard, at).includes('\n      }\n'), 'inside the nightly block');
 });

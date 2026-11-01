@@ -58,7 +58,7 @@ import * as advance from './routes/advances.js';
 import * as approvals from './routes/approvals.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
-import { sendAdminShifts } from './lib/maintenance-shifts.js';
+import { sendAdminShifts, sendDeskShifts } from './lib/maintenance-shifts.js';
 import * as payAccess from './routes/payroll-access.js';
 import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
@@ -1269,6 +1269,9 @@ export default {
           return { sent: 0, unmatched: [] };
         });
         if (shifts.unmatched.length) console.log(`Admin shifts: not matched: ${shifts.unmatched.join('; ')}`);
+        // And who is on the front desk, so Maintenance's front desk page
+        // names them without asking.
+        await sendDeskShifts(env).catch((err) => console.error('Front desk rota to Maintenance failed', err));
       }
 
       if (!nightly) return;
