@@ -67,6 +67,23 @@ const SOURCES = [
 const GIVEN = { id: 'given', label: 'To-dos given to you', read: readGiven, area: 'given', tag: 'To-do' };
 const PROOF = { id: 'proof', label: 'Proof asked of you', read: readProofAsked, area: 'given', tag: 'Proof asked' };
 const ENVELOPES = { id: 'envelopes', label: 'Envelopes to receive', read: readEnvelopes, area: 'safe', tag: 'Safe' };
+/** Their own open jobs in Maintenance and tasks in Team Tasks, once Maintenance is linked. */
+const APPS = { id: 'apps', label: 'Maintenance and Team Tasks', read: readAppTasks, area: 'maintenance', tag: 'Maintenance' };
+
+/** How the other apps are called: replaced in tests. */
+export const io = { fetch: (...a) => fetch(...a) };
+
+/**
+ * The Maintenance database's `tasks` function, which answers for Team Tasks
+ * too: MAINTENANCE_TASKS_URL, or next to its approvals function. Signed with
+ * the secret Insight shares with Maintenance.
+ */
+const tasksUrl = (env) => env.MAINTENANCE_TASKS_URL
+  || (env.MAINTENANCE_APPROVALS_URL ? String(env.MAINTENANCE_APPROVALS_URL).replace(/\/approvals\/?$/, '/tasks') : null);
+const appsLinked = (env) => Boolean(env.SSO_SECRET_MAINTENANCE && tasksUrl(env));
+const askTasks = (env, body) => mgmt.ask({ url: tasksUrl(env), secret: env.SSO_SECRET_MAINTENANCE, path: '/tasks', body, fetchImpl: io.fetch, what: 'Maintenance' })
+  .catch((err) => { throw new Error(/management report/.test(err.message) ? 'Maintenance does not list tasks for Insight yet: its tasks function is not deployed.' : err.message); });
+const APP_LABEL = { maintenance: 'Maintenance', teamtasks: 'Team Tasks' };
 
 /**
  * The last list read for each admin, for a minute: the summary and Ask come
@@ -96,13 +113,14 @@ async function requireMember(account) {
  */
 export async function sourcesFor(env, account) {
   const role = roleOf(account);
-  if (role === 'admin') return [GIVEN, PROOF, ...SOURCES, ENVELOPES];
+  const apps = appsLinked(env) && account?.email ? [APPS] : [];
+  if (role === 'admin') return [GIVEN, PROOF, ...apps, ...SOURCES, ENVELOPES];
   const access = await accessOf(env, account);
   const reports = await reportsOf(env, account).catch(() => []);
   const out = [];
   if (reports.includes('brief')) out.push(SOURCES.find((x) => x.id === 'findings'));
   if (role === 'supervisor') {
-    out.push(GIVEN, PROOF);
+    out.push(GIVEN, PROOF, ...apps);
     out.push({ id: 'mytodos', label: 'POs to chase', read: readMyTodos, area: 'buying', tag: 'POs' });
     if ((access.check || 0) >= 2) out.push({ id: 'checks', label: 'Shifts to check', read: readUnchecked, area: 'shifts', tag: 'Shift' });
     if ((access.answers || 0) >= 2) out.push({ id: 'staffanswers', label: 'Staff answers from HIVE', read: readStaffAnswers, area: 'shifts', tag: 'Staff answer' });
@@ -409,6 +427,37 @@ async function readGiven(env, account, now) {
       { label: 'Done', task: t.id, primary: true },
     ].filter(Boolean),
   }));
+}
+
+/** Their open Maintenance jobs and Team Tasks, found by their email, each with Done where the app allows it from here. */
+async function readAppTasks(env, account, now) {
+  const { items } = await askTasks(env, { action: 'list', email: account.email });
+  return (items || []).map((x) => {
+    const app = APP_LABEL[x.system] || 'Maintenance';
+    return {
+      tab: 'fix', key: `app:${x.system}:${x.id}`, area: x.system === 'teamtasks' ? 'teamtasks' : 'maintenance', tag: app,
+      sev: x.urgent ? 'warn' : 'info', title: x.title, why: x.why || null, from: x.from || null,
+      due: x.due || null, age: daysSince(x.at, now), advice: x.whyNot || null, blocked: x.whyNot || null,
+      actions: [
+        x.canDone ? { label: 'Done', app: { system: x.system, id: x.id }, primary: true } : null,
+        x.link ? { label: `Open in ${app}`, href: x.link, external: true, primary: !x.canDone } : null,
+      ].filter(Boolean),
+    };
+  });
+}
+
+/** Done on a Maintenance job or a Team Tasks task, from Today: the app marks it done, as the person. */
+export async function appDone(env, body, account) {
+  await requireMember(account);
+  if (!appsLinked(env)) throw badRequest('Maintenance is not linked to Insight yet.');
+  if (!account?.email) throw badRequest('Your Insight account has no email, so Maintenance cannot tell who you are.');
+  const system = String(body?.system || '');
+  const id = String(body?.id || '');
+  if (!APP_LABEL[system]) throw badRequest('Which app?');
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw badRequest('Which one?');
+  const out = await askTasks(env, { action: 'done', email: account.email, system, id });
+  recent.delete(account.id ?? 'owner');
+  return { ok: true, said: out.said || 'Done' };
 }
 
 /** Proof an admin asked of this person's answers, due the day it was asked. */

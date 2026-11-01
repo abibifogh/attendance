@@ -17,7 +17,7 @@ import { state } from '../app.js';
  */
 const WHEN = [['overdue', 'Overdue'], ['today', 'Due today'], ['later', 'Later']];
 const AREAS = [
-  ['given', 'Given to you'], ['shifts', 'Shifts'], ['safe', 'Safe'], ['niceplace', 'Nice Place'],
+  ['given', 'Given to you'], ['maintenance', 'Maintenance'], ['teamtasks', 'Team Tasks'], ['shifts', 'Shifts'], ['safe', 'Safe'], ['niceplace', 'Nice Place'],
   ['approvals', 'Approvals'], ['buying', 'Buying'], ['checks', 'Checks'], ['report', 'Report'], ['other', 'Other'],
 ];
 const SHOWN = 6;
@@ -108,14 +108,14 @@ export async function renderAssistant(root) {
           x.amount ? h('span.num', `${money(x.amount, { places: 0 })}${x.amountNote ? ` ${x.amountNote}` : ''}`) : null,
           due ? h(`span.today-due.w-${x.when}`, due) : null,
           said ? h('span.today-said', `✓ ${said}`) : null),
-        x.advice && !said && !x.due ? h('div.today-adv', x.advice) : null,
+        x.advice && !said && (!x.due || x.blocked) ? h('div.today-adv', x.advice) : null,
         note),
       h('div.today-acts', said ? null : (x.actions || []).map((a) => action(x, a, note))));
   }
 
   function action(x, a, note) {
     const cls = `btn.sm${a.primary ? '.primary' : '.soft'}`;
-    if (a.href) return h(`a.${cls}`, { href: a.href }, a.label);
+    if (a.href) return h(`a.${cls}`, a.external ? { href: a.href, target: '_blank', rel: 'noopener' } : { href: a.href }, a.label);
     if (a.shift) {
       return h(`button.${cls}`, {
         type: 'button',
@@ -141,6 +141,7 @@ export async function renderAssistant(root) {
       }
     };
     if (a.task) return h(`button.${cls}`, { type: 'button', onclick: send(`/shifts/tasks/${a.task}/done`, {}, () => 'Done') }, a.label);
+    if (a.app) return h(`button.${cls}`, { type: 'button', onclick: send('/assistant/app-done', a.app, (out) => out.said || 'Done') }, a.label);
     if (a.decide) return h(`button.${cls}`, { type: 'button', onclick: send('/approvals/decide', a.decide, (out) => `${out.said || a.label}${out.as ? ` as ${out.as}` : ''}`) }, a.label);
     return null;
   }

@@ -403,6 +403,7 @@ const ROUTES = [
   ['GET', '/api/assistant/brief', 'session', (env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by }))],
   ['POST', '/api/assistant/ask', 'session', (env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true })],
   ['POST', '/api/assistant/bills', 'session', adminOnly((env, ctx) => assistant.setBills(env, ctx.body, ctx.account))],
+  ['POST', '/api/assistant/app-done', 'session', (env, ctx) => assistant.appDone(env, ctx.body, ctx.account)],
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],
   // A PO made here, paid from a shift's drawer: only once an admin allows it.

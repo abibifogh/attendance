@@ -6,8 +6,8 @@ import { roleOf, accessOf } from './till.js';
 
 /**
  * Today: each person's one list. Everything that is theirs, from every page
- * Insight has (to-dos given to them, proof asked, shifts to check, staff
- * answers, envelopes, Nice Place, POs to chase and, for an admin, approvals
+ * Insight has (to-dos given to them, their Maintenance jobs and Team Tasks,
+ * proof asked, shifts to check, staff answers, envelopes, Nice Place, POs to chase and, for an admin, approvals
  * and the rest), placed by when it wants doing: overdue, today, later. Each
  * line has the button that does it, or opens where it is done.
  *
@@ -32,6 +32,7 @@ export const DID = {
   '/api/approvals/decide': 'Decided an approval',
   '/api/shifts/tasks': 'Gave a to-do',
   '/api/shifts/tasks/:id/done': 'Finished a to-do',
+  '/api/assistant/app-done': 'Finished a Maintenance job or a task',
   '/api/shifts/movement': 'Corrected a cash movement',
   '/api/safe/envelopes/receive': 'Marked envelopes received',
   '/api/np/pickups/record': 'Made a Nice Place pickup',

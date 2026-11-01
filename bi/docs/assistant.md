@@ -27,11 +27,34 @@ covers everything, anybody else's only what their access already shows them.
   report went), *One email a day* (supervisors), *Done today*, and **Ask
   Insight**.
 
+## Maintenance jobs and Team Tasks
+
+Once Maintenance is linked (`SSO_SECRET_MAINTENANCE`, and
+`MAINTENANCE_APPROVALS_URL` or `MAINTENANCE_TASKS_URL`), Today also lists
+everybody's own open **Maintenance jobs** (given to them, Assigned or In
+progress) and **Team Tasks** (given to them, not done), found by their email,
+with chips of their own. Each has **Done** and **Open in Maintenance / Team
+Tasks** (straight to that job or task, in a new tab).
+
+**Done marks it done in that app**, as the person, keeping the app's rules:
+
+- a job goes to *Done*, waiting for review; its history says "from Insight",
+  and its reviewer and the coordinators are told, as the app tells them;
+- a task is signed off with its steps; its history says so, and the others it
+  is given to are told.
+
+Some are opened, not done, and say why: a job that needs a photo of the
+finished work and has none, a job in a locked period (for anybody but a
+Maintenance admin), and a repeating task (Team Tasks sets the next one when it
+is ticked there). The rules live in the Maintenance repository
+(`db/maintenance/supabase/functions/tasks/`). They are in the 07:00 email too.
+
 ## When something is due
 
 | Line | Due |
 |---|---|
 | A to-do given to you | The day it was given for |
+| A Maintenance job, a Team Tasks task | Its due day in the app (none: by urgency) |
 | Proof asked of you | The day it was asked |
 | A shift to check | The day after the shift |
 | A staff answer from HIVE, an approval | The day after it was given |
@@ -99,3 +122,4 @@ would answer what the list cannot. It reads only; it changes nothing.
 - `GET /api/assistant`: Today: the list (each line with `when`, `due`, `late`, `area`), counts, the Saturday report card, what was sent up, the week, done today, and what was read (`src/routes/today.js`).
 - `GET /api/assistant/brief`: the summary in words.
 - `POST /api/assistant/ask` `{ question }`: an answer.
+- `POST /api/assistant/app-done` `{ system: 'maintenance' | 'teamtasks', id }`: Done on a job or task, sent to Maintenance's `tasks` function as the person.
