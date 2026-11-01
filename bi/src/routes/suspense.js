@@ -1,7 +1,7 @@
 import { all, first, run } from '../lib/db.js';
 import { badRequest, str } from '../lib/http.js';
 import { isDay, todayIn } from '../lib/dates.js';
-import { saveAnswer } from './shifts.js';
+import { saveAnswer, netOf } from './shifts.js';
 import { logEvent } from './notes.js';
 
 /**
@@ -29,10 +29,20 @@ const view = (r) => {
 };
 
 /** Put in suspense: one difference (answered "In suspense"), or the net of some reconciled together. */
-export async function addSuspense(env, body, account) {
+export async function addSuspense(env, body, account, { amount: worked = null } = {}) {
   const keys = (Array.isArray(body?.keys) ? body.keys : [body?.key]).map((k) => String(k || '').trim()).filter(Boolean);
   if (!keys.length) throw badRequest('Which difference?');
-  const amount = Math.round(Number(body?.amount));
+  // The amount is the differences' own, worked out here: what the browser
+  // says is only checked against it, never taken.
+  let amount = worked;
+  if (amount == null) {
+    if (body?.reconciled) throw badRequest('What is left after reconciling goes in suspense with the reconciliation itself.');
+    const { chosen, net, known } = await netOf(env, keys);
+    if (chosen.some((x) => !x)) throw badRequest('One of those is not there any more: the shift may agree now. Reload and try again.');
+    amount = known ? net : (keys.length === 1 ? chosen[0].amount : null);
+    if (amount == null) throw badRequest('Not all of these have a direction of their own: put them in suspense one by one.');
+    if (body?.amount != null && Math.round(Number(body.amount)) !== amount) throw badRequest(`It comes to ${amount < 0 ? '−' : '+'}GH₵${(Math.abs(amount) / 100).toFixed(2)} now. Reload and try again.`);
+  }
   if (!Number.isFinite(amount) || amount === 0) throw badRequest('Put in suspense: an amount other than nothing.');
   const what = str(body?.what, 'What it is', { max: 200 }) || 'A difference';
   const note = str(body?.note, 'Note', { max: 600 }) || null;
@@ -75,7 +85,15 @@ export async function matchSuspense(env, body, account) {
   const group = Math.min(...ids);
   await env.DB.batch(ids.map((id) => env.DB.prepare("UPDATE suspense SET status = 'matched', group_id = ?2, cleared_note = ?3, cleared_by = ?4, cleared_at = ?5 WHERE id = ?1")
     .bind(id, group, note, who(account), now())));
-  return { ok: true, net };
+  // Agreed means it nets: what the match leaves stays in the account, open,
+  // as an entry of its own, so it is never cleared by being matched.
+  let left = null;
+  if (net !== 0) {
+    const keys = [...new Set(rows.flatMap((r) => { try { return JSON.parse(r.keys || '[]'); } catch { return []; } }))];
+    left = await first(env.DB, `INSERT INTO suspense (keys, day, slot, what, amount, note, answered, by_name, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8) RETURNING *`,
+      JSON.stringify(keys), rows[0].day, rows[0].slot, `Left after matching ${ids.map((id) => `S${id}`).join(', ')}`, net, note, who(account), now());
+  }
+  return { ok: true, net, left: left ? view(left) : null };
 }
 
 /** Moved to the safe: a line in (plus) or out (minus) on the day given, until the safe is next counted. */

@@ -11,6 +11,8 @@ import { reconcile, settlement, placeShifts, sameLogin, slotIndex, GROUPS, SLOTS
 import { listSources, secretNameFor } from '../connectors/index.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { logEvent } from './notes.js';
+import { netFlows } from '../shifts/flow.js';
+import { viaOf } from './prepaid.js';
 
 /**
  * The Shifts screen's server side.
@@ -103,12 +105,14 @@ export async function uploadBank(env, body, account) {
   const days = parsed.rows.map((r) => r.day).sort();
   const kinds = {};
   for (const r of parsed.rows) kinds[r.kind] = (kinds[r.kind] || 0) + 1;
-  const note = `${kinds.card || 0} card credits, ${kinds.momo || 0} MoMo, ${kinds['card-reversal'] || 0} reversals, `
-    + `${kinds.commission || 0} commission rows.`
+  const many = (k) => kinds[k] || 0;
+  const note = `${many('card')} card credits, ${many('momo')} MoMo, ${many('card-reversal') + many('momo-reversal')} reversals, `
+    + `${many('commission')} commission rows, ${many('transfer-in') + many('cash-deposit') + many('other-credit')} other credits `
+    + `and ${many('bank-charge') + many('chargeback')} bank charges or chargebacks (kept without their words).`
     + (parsed.counts.flagged
       ? ` ${parsed.counts.flagged} rows the bank itself marked deleted or unposted were ignored (${(parsed.flaggedAmount / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}).`
       : '')
-    + ` ${parsed.counts.other + (Number(body?.leftOut) || 0)} other rows (salaries, suppliers, transfers) were not kept.`
+    + ` ${parsed.counts.other + (Number(body?.leftOut) || 0)} payments out (salaries, suppliers, transfers) were not kept.`
     + (lockedOut ? ` ${lockedOut} rows on locked days (up to ${lock.through}) were left as they were.` : '');
   await logUpload(env, 'bank', body?.name, days[0] ?? null, days[days.length - 1] ?? null, parsed.rows.length, note, account);
   return { ok: true, kind: 'bank', rows: parsed.rows.length, from: days[0] ?? null, to: days[days.length - 1] ?? null, note };
@@ -751,12 +755,50 @@ export async function setAside(env, keys, how, account) {
  * Reconcile two or more exceptions together: one story that showed up as
  * several differences. Each of them counts as answered while the group stands.
  */
-export async function saveLink(env, body, account, { pending = false } = {}) {
+/**
+ * What some differences come to together, as they stand now: each found by
+ * its key on the shifts of its own days, and netted the way the Shifts screen
+ * nets them (shifts/flow.js). `known` is false when one has no direction of
+ * its own, or is no longer there.
+ */
+export async function netOf(env, keys) {
+  const days = (await Promise.all(keys.map((k) => dayOfKey(env, k)))).filter(Boolean).sort();
+  if (!days.length) return { chosen: keys.map(() => null), flows: keys.map(() => null), net: null, known: false };
+  const from = days[0];
+  const to = days[days.length - 1];
+  if (daysBetween(from, to).length > 62) throw badRequest('Two months apart at most.');
+  const data = await shifts(env, { from, to }, { isOwner: true });
+  const chosen = keys.map((k) => (data.exceptions || []).find((e) => e.key === k) || null);
+  const flows = chosen.some((x) => !x) ? chosen.map(() => null) : netFlows(chosen);
+  const known = flows.every((f) => f != null);
+  return { chosen, flows, net: known ? flows.reduce((t, f) => t + f, 0) : null, known };
+}
+
+/**
+ * Reconcile differences that are one story together. Agreed means the money
+ * nets: differences that come to nothing together are reconciled by anybody
+ * who may (a supervisor's waiting for an admin). What does not net is never
+ * cleared and forgotten: an admin says why, and what is left goes in the
+ * suspense account (`rest: 'suspense'`), or on staff accounts (`rest:
+ * 'staff'`, which moveLeftToStaff does itself). Differences with no
+ * direction of their own (explanations of a count) need a note.
+ */
+export async function saveLink(env, body, account, { pending = false, rest = null, suspense = null } = {}) {
   const keys = [...new Set((Array.isArray(body?.keys) ? body.keys : []).map((k) => String(k ?? '').trim()).filter(Boolean))];
   if (keys.length < 2) throw badRequest('Choose at least two exceptions to reconcile together.');
   if (keys.length > 30) throw badRequest('Thirty at most in one reconciliation.');
   if (keys.some((k) => k.length > 200)) throw badRequest('That is not an exception.');
   const note = str(body?.note, 'Note', { max: 600 });
+  const leftTo = rest || (body?.rest === 'suspense' ? 'suspense' : null);
+  const { net, known } = await netOf(env, keys);
+  if (!known && !note) throw badRequest('Not all of these have a direction of their own: say what happened.');
+  if (known && net !== 0) {
+    const left = `${net < 0 ? '−' : '+'}GH₵${(Math.abs(net) / 100).toFixed(2)}`;
+    if (pending) throw badRequest(`They leave ${left}: reconciling with something left over is an admin's, with the rest in suspense or on a staff account.`);
+    if (!leftTo) throw badRequest(`They leave ${left}: put the rest in suspense or on a staff account, so it is not lost.`);
+    if (!note) throw badRequest(`They leave ${left}: say why they are reconciled.`);
+    if (body?.amount != null && Number(body.amount) !== net) throw badRequest(`What is left has changed: it is ${left} now. Reload and try again.`);
+  }
   // An admin's reconciliation decides instead of whatever waits for approval on them.
   if (!pending) await setAside(env, keys, 'reconciled together by an admin instead', account);
   for (const row of await all(env.DB, "SELECT id, keys FROM shift_link WHERE COALESCE(status, 'applied') <> 'rejected'")) {
@@ -767,7 +809,16 @@ export async function saveLink(env, body, account, { pending = false } = {}) {
   // A supervisor's reconciliation waits for an admin before it clears anything.
   await run(env.DB, 'INSERT INTO shift_link (keys, note, by_name, at, status) VALUES (?1, ?2, ?3, ?4, ?5)',
     JSON.stringify(keys), note, who(account), now(), pending ? 'pending' : 'applied');
-  return { ok: true, pending };
+  for (const k of keys) {
+    // eslint-disable-next-line no-await-in-loop
+    await logEvent(env, k, `${pending ? 'Reconciled together, waiting for an admin' : 'Reconciled together'} (${keys.length})${known ? `, net ${net === 0 ? 'nothing' : `${net < 0 ? '−' : '+'}GH₵${(Math.abs(net) / 100).toFixed(2)}`}` : ''}${note ? `: ${note}` : ''}`, who(account));
+  }
+  // What is left goes in suspense, worked out here, never taken from the browser.
+  let entry = null;
+  if (known && net !== 0 && leftTo === 'suspense' && suspense) {
+    entry = (await suspense(env, { keys, reconciled: true, what: body?.what || `Left after reconciling ${keys.length} together`, day: body?.day, slot: body?.slot, note }, account, { amount: net })).entry;
+  }
+  return { ok: true, pending, net: known ? net : null, entry };
 }
 
 /** Undo a reconciliation: each exception in it is open again. A supervisor may only take back their own, still waiting. */
@@ -1105,12 +1156,87 @@ export async function shifts(env, query, account) {
   // A card reversal that answers a refund keyed in ASSD is a refund, not a loss.
   const exceptions = [...result.exceptions.filter((x) => !x.day || inRange(x.day)),
     ...settled.exceptions.filter((x) => inRange(x.day))];
-  // The reversal comes days after the refund, so look past the days shown.
-  for (const rev of settled.exceptions.filter((x) => x.kind === 'reversal')) {
-    const refund = exceptions.find((x) => x.kind === 'refund' && x.amount === rev.amount && !x.pairedWith);
+  // Money going back that the terminal or MoMo shows (a refund, a reversal,
+  // a void), and chargebacks the bank took: each a difference, with the
+  // payment it took back where one can be found.
+  const backRows = [
+    ...terminal.filter((t) => t.approved && /-reversal$/.test(t.kind) && inRange(t.day)).map((t) => ({
+      key: `reversal:t:${t.rrn}`, kind: 'reversal', day: t.day, amount: -Math.abs(t.amount), last4: t.last4,
+      event: { id: `t:${t.rrn}`, kind: t.kind.replace('-reversal', ''), amount: -Math.abs(t.amount), at: t.at, day: t.day, last4: t.last4, approval: t.approval, source: 'terminal', exact: true },
+    })),
+    ...bank.filter((b) => b.kind === 'momo-reversal' && inRange(b.day)).map((b) => ({
+      key: `reversal:${b.id}`, kind: 'reversal', day: b.day, amount: -b.amount, last4: null,
+      event: { id: `b:${b.id}`, kind: 'momo', amount: -b.amount, at: b.at, day: b.day, source: 'bank', exact: Boolean(b.at_exact) },
+    })),
+    ...bank.filter((b) => b.kind === 'chargeback' && inRange(b.day)).map((b) => ({
+      key: `chargeback:${b.id}`, kind: 'chargeback', day: b.day, amount: -b.amount, last4: b.last4 || null,
+      event: { id: `b:${b.id}`, kind: 'card', amount: -b.amount, at: null, day: b.day, last4: b.last4 || null, source: 'bank', exact: false },
+    })),
+  ];
+  for (const r of backRows) {
+    exceptions.push({ key: r.key, kind: r.kind, group: 'settlement', severity: r.kind === 'chargeback' ? 'critical' : 'warning',
+      day: r.day, slot: null, user: null, amount: r.amount, event: r.event });
+  }
+  // The bank's own reversal of one the terminal already shows is the same money: told once.
+  for (const rev of exceptions.filter((x) => x.kind === 'reversal' && x.event?.source === 'bank' && x.event?.kind === 'card')) {
+    const same = exceptions.find((x) => x.kind === 'reversal' && x.event?.source === 'terminal' && x.amount === rev.amount
+      && x.event.last4 && x.event.last4 === rev.event.last4 && Math.abs(dayNumber(x.day) - dayNumber(rev.day)) <= SETTLE_DAYS);
+    if (same) { rev.sameAs = same.key; rev.severity = 'info'; rev.group = 'explained'; }
+  }
+  // The payment each took back: the same card and amount, approved before it.
+  for (const x of exceptions.filter((e) => ['reversal', 'chargeback'].includes(e.kind) && !e.sameAs && e.event?.last4)) {
+    // eslint-disable-next-line no-await-in-loop
+    const o = await first(env.DB, `SELECT rrn, at, day, amount, last4 FROM terminal_txn WHERE approved = 1 AND kind = 'card' AND last4 = ?1 AND amount = ?2
+      AND day <= ?3 AND day >= ?4 ORDER BY day DESC LIMIT 1`, x.event.last4, Math.abs(x.amount), x.day, addDays(x.day, -120)).catch(() => null);
+    if (o) x.original = { rrn: o.rrn, at: o.at, day: o.day, amount: o.amount };
+  }
+  // A reversal that answers a refund keyed in ASSD is a refund, not a loss:
+  // the same amount, and the same card where both say which. The reversal
+  // comes days after the refund, so look past the days shown.
+  const reversals = [...exceptions.filter((x) => x.kind === 'reversal' && !x.sameAs),
+    ...settled.exceptions.filter((x) => x.kind === 'reversal' && !exceptions.includes(x))];
+  for (const rev of reversals) {
+    const refund = exceptions.find((x) => x.kind === 'refund' && x.amount === rev.amount && !x.pairedWith
+      && Math.abs(dayNumber(x.day) - dayNumber(rev.day)) <= SETTLE_DAYS + 2);
     if (refund) { refund.pairedWith = rev.key; rev.pairedWith = refund.key; rev.severity = 'info'; }
   }
   unbackedRefunds(exceptions, todayIn('UTC'));
+
+  // Money in that the bank shows and ASSD expects: a guest's prepayment by
+  // bank transfer (on any register), and cash banked from the safe. Each is
+  // matched to a credit of the same amount near its day; one with none, once
+  // the statement reaches far enough, is a difference. Credits nothing
+  // claimed are counted, not thrown away.
+  const credits = await all(env.DB, `SELECT * FROM bank_card_txn WHERE kind IN ('transfer-in', 'other-credit', 'cash-deposit') AND day BETWEEN ?1 AND ?2`,
+    addDays(from, -14), addDays(to, 10)).catch(() => []);
+  const claimed = new Set();
+  const nearest = (amount, day, kinds, before, after) => credits
+    .filter((c) => !claimed.has(c.id) && kinds.includes(c.kind) && c.amount === amount && c.day >= addDays(day, -before) && c.day <= addDays(day, after))
+    .sort((a, b) => Math.abs(dayNumber(a.day) - dayNumber(day)) - Math.abs(dayNumber(b.day) - dayNumber(day)))[0] || null;
+  const banked = (day, after) => coverage.bankTo && dayNumber(coverage.bankTo) - dayNumber(day) >= after;
+  for (const e of entries) {
+    const lines = (e.payments || []).filter((p) => p.method === 'prepaid' && viaOf(p.label) === 'bank' && p.date && inRange(p.date));
+    const net = lines.reduce((t, p) => t + p.amount, 0);
+    if (net <= 0) continue;
+    const day = lines[0].date;
+    const hit = nearest(net, day, ['transfer-in', 'other-credit'], 14, 3);
+    if (hit) { claimed.add(hit.id); continue; }
+    if (!banked(day, 3)) continue;
+    exceptions.push({ key: `prepaid:${e.seq}`, kind: 'prepaid-not-banked', group: 'settlement', severity: 'warning',
+      day, slot: null, user: e.user, seq: e.seq, amount: net, ref: e.ref || null, event: null });
+  }
+  const deposits = await all(env.DB, "SELECT id, day, amount, ref FROM safe_entry WHERE kind = 'banked' AND day BETWEEN ?1 AND ?2", from, to).catch(() => []);
+  for (const d of deposits) {
+    const hit = nearest(d.amount, d.day, ['cash-deposit', 'other-credit', 'transfer-in'], 1, 4);
+    if (hit) { claimed.add(hit.id); continue; }
+    if (!banked(d.day, 4)) continue;
+    exceptions.push({ key: `deposit:${d.id}`, kind: 'deposit-not-banked', group: 'settlement', severity: 'warning',
+      day: d.day, slot: null, user: null, amount: d.amount, ref: d.ref || null, event: null });
+  }
+  const unclaimed = credits.filter((c) => !claimed.has(c.id) && inRange(c.day));
+  const bankCredits = { unclaimed: unclaimed.length, total: unclaimed.reduce((t, c) => t + c.amount, 0),
+    byKind: Object.fromEntries(['transfer-in', 'cash-deposit', 'other-credit'].map((k) => [k, unclaimed.filter((c) => c.kind === k).reduce((t, c) => t + c.amount, 0)])) };
+  const charges = bank.filter((b) => b.kind === 'bank-charge' && inRange(b.day)).reduce((t, b) => t + b.amount, 0);
 
   // The laundry, shift by shift: what the laundry system took in each shift's
   // hours against the laundry line ASSD has in that shift. ASSD records the
@@ -1340,9 +1466,30 @@ export async function shifts(env, query, account) {
   // The drawer's own exceptions: a count that did not agree, a hand-over
   // where the next count differed from the last, and a movement keyed wrong
   // and put back.
+  // What staff counted and wrote in HIVE, for the blind count below.
+  const declaredRows = env.ATT_DB
+    ? await all(env.ATT_DB, 'SELECT day, slot, cash, name FROM till_report WHERE reopened_at IS NULL AND day BETWEEN ?1 AND ?2', from, to).catch(() => []) : [];
+  const declaredOf = new Map(declaredRows.map((r) => [`${r.day}|${r.slot}`, r]));
   for (const s of ordered.filter((x) => inRange(x.day))) {
     const r = register.get(s.index);
     const base = { day: s.day, slot: s.slotName, user: s.user, event: null };
+    // The blind count: the cash the person counted and wrote in HIVE against
+    // the drawer's closing count. A difference of its own, whatever the drawer
+    // equation says, until somebody says which count was right.
+    const declared = declaredOf.get(`${s.day}|${s.slotName}`);
+    if (declared && r.closing != null && !s.open && Number(declared.cash) !== r.closing) {
+      exceptions.push({
+        ...base, key: `declared:${s.day}:${s.slotName}`, kind: 'declared-cash', group: 'drawer', severity: 'warning',
+        amount: Number(declared.cash) - r.closing, declared: Number(declared.cash), closing: r.closing, closingFrom: r.closingFrom, by: declared.name || null,
+      });
+    }
+    // Money taken on another register (the back office), which the drawer never held.
+    for (const b of s.backOfficeMoney || []) {
+      exceptions.push({
+        ...base, key: `backoffice:${b.seq}`, kind: 'back-office', group: 'drawer', severity: 'warning',
+        seq: b.seq, amount: b.amount, by: b.user, lines: b.lines,
+      });
+    }
     if (r.variance) {
       exceptions.push({
         ...base, key: `drawer:${s.day}:${s.slotName}`, kind: r.variance < 0 ? 'drawer-short' : 'drawer-over',
@@ -1595,12 +1742,17 @@ export async function shifts(env, query, account) {
   for (let i = exceptions.length - 1; i >= 0; i -= 1) if (gone.has(exceptions[i].key)) exceptions.splice(i, 1);
 
   // Cash keyed while the drawer did not move explains the drawer's
-  // difference; it asks for nothing of its own. While the drawer difference
-  // waits for an answer it is shown beside it; once that is answered, or when
-  // the drawer agrees, it is an explanation and leaves the shift as it was.
+  // difference; it asks for nothing of its own once that difference is
+  // settled with money that nets: the drawer agrees, or its difference was
+  // reconciled with others (which nets, or puts the rest in suspense or on a
+  // staff account), put on a staff account, or put in suspense. A drawer
+  // answered only in words ("Explained") does not settle it: it stays to be
+  // answered for itself.
+  const nettedAnswers = new Set(['Reconciled together', 'Put on a staff account', 'In suspense']);
   for (const x of exceptions.filter((e) => e.kind === 'keyed-no-cash')) {
     const drawer = exceptions.find((e) => e.key === `drawer:${x.day}:${x.slot}`);
-    if (drawer && !drawer.answer) continue;
+    const netted = !drawer || Boolean(drawer.moved) || (drawer.link && !drawer.proposed) || nettedAnswers.has(drawer.answer?.answer);
+    if (!netted) continue;
     x.severity = 'info';
     x.group = 'explained';
   }
@@ -1762,6 +1914,9 @@ export async function shifts(env, query, account) {
     drawerOut: placed.reduce((t, s) => t + s.drawerOut, 0),
     received: days.reduce((t, d) => t + d.totals.received, 0),
     commission: days.reduce((t, d) => t + d.totals.commission, 0),
+    // The bank's own charges, and money in that nothing here has claimed yet.
+    bankCharges: charges,
+    bankCredits,
     counted: placed.filter((s) => register.get(s.index)?.variance != null).length,
     variance: placed.reduce((t, s) => t + (register.get(s.index)?.variance || 0), 0),
     open: exceptions.filter((x) => !x.answer && x.severity !== 'info').length,
@@ -1858,7 +2013,7 @@ const MONEY_KEYS = new Set([
   'odooTotal', 'safe', 'short', 'over', 'flaggedAmount', 'collected', 'charged', 'paid', 'balance',
   'open', 'close', 'in', 'moved', 'swapped', 'direct', 'putBack', 'fromSheet', 'poTotal', 'gap',
   'receiptsIn', 'receiptsOut', 'receiptsMoved', 'receiptsSwapped', 'directExpenses', 'left', 'still',
-  'receiptsBefore', 'receiptsAfter', 'notesBefore', 'notesAfter',
+  'receiptsBefore', 'receiptsAfter', 'notesBefore', 'notesAfter', 'declared', 'bankCharges',
 ]);
 
 /** The same object with every amount taken out. Agrees, short and over survive as a sign. */
@@ -1877,7 +2032,7 @@ export function withoutMoney(value) {
 // The drawer's own exceptions (cash, receipts, POs, laundry): acted on with
 // "Correct cash movements" as well as with the bank. Card and bank lines need the bank.
 const CASH_KEYS = ['drawer:', 'handover:', 'unlabelled:', 'receipts:', 'receipts-read:', 'receipts-carried:', 'nopo:', 'pogap:',
-  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:', 'nocash:'];
+  'laundry:', 'laundry-card:', 'movement:', 'movement-twice:', 'movement-reversal:', 'matched:', 'labelled:', 'nocash:', 'declared:', 'backoffice:'];
 export const isCashKey = (key) => {
   const k = String(key || '');
   // "Not related" names the two it keeps apart.

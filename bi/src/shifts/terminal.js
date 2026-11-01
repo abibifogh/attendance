@@ -15,6 +15,9 @@ import { toMinor } from '../lib/money.js';
  * are kept as the text they arrived as.
  */
 
+/** Transaction types that give money back rather than take it. */
+const BACK = /refund|reversal|reverse|void|return|cancel/i;
+
 /** Codes the portal uses for an approved purchase. */
 const APPROVED = new Set(['00']);
 
@@ -100,14 +103,18 @@ export function parseTerminalCsv(text) {
     const masked = /^(\d{6})\*+(\d{4})$/.exec(pan);
     const code = get('Responsecode');
     const type = get('TransactionType') || 'Purchase';
+    // Money going back to a card or wallet is never a payment: a refund, a
+    // reversal or a void is kept as such, as money out.
+    const back = BACK.test(type);
+    const wallet = /mobile/i.test(type);
     rows.push({
       rrn,
       at,
       day: at.slice(0, 10),
       terminal: get('Terminal'),
       type,
-      kind: /mobile/i.test(type) ? 'momo' : 'card',
-      amount,
+      kind: `${wallet ? 'momo' : 'card'}${back ? '-reversal' : ''}`,
+      amount: back ? -Math.abs(amount) : amount,
       first6: masked ? masked[1] : null,
       last4: masked ? masked[2] : null,
       stan: get('STAN'),

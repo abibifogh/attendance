@@ -11,6 +11,7 @@ import { formLive, poExtras } from './advances.js';
 import { openForHive } from './proof.js';
 import { madeHere } from './newpo.js';
 import { logEvent } from './notes.js';
+import { netFlows } from '../shifts/flow.js';
 
 /**
  * Closing a shift in HIVE, as this app sees it.
@@ -191,8 +192,9 @@ async function people(env) {
   } catch { return new Map(); }
 }
 
+/** Decisions that count: a supervisor's accept waiting for an admin does not settle anything yet. */
 async function resolutions(env) {
-  try { return await all(env.DB, 'SELECT * FROM till_resolution ORDER BY id'); } catch { return []; }
+  try { return await all(env.DB, "SELECT * FROM till_resolution WHERE COALESCE(status, 'applied') = 'applied' ORDER BY id"); } catch { return []; }
 }
 
 // ------------------------------------------------------------- the issues --
@@ -681,7 +683,9 @@ export async function pendingAnswers(env, present = null) {
   if (done.length) await setAside(env, done, 'reconciled together by an admin', { name: 'Insight' }).catch(() => 0);
   const answers = await all(env.DB, "SELECT * FROM shift_answer WHERE status = 'pending' ORDER BY at").catch(() => []);
   const links = await all(env.DB, "SELECT * FROM shift_link WHERE status = 'pending' ORDER BY at").catch(() => []);
+  const accepts = await all(env.DB, "SELECT * FROM till_resolution WHERE status = 'pending' ORDER BY at").catch(() => []);
   return [
+    ...accepts.map((r) => ({ type: 'resolution', id: r.id, keys: [r.key], answer: 'Accept their answer', note: r.note, by: r.by_name, at: r.at, userId: Number(r.hive_user_id) })),
     ...answers.map((a) => ({ type: 'answer', id: a.key, keys: [a.key], answer: a.answer, note: a.note, by: a.by_name, at: a.at })),
     ...links.map((l) => {
       let keys = [];
@@ -788,6 +792,19 @@ export async function resolve(env, body, account, { fetchImpl } = {}) {
   if (!issue) throw badRequest('That is no longer on their list. It may have been settled, or the shift now agrees.');
   if (issue.status === 'settled') throw badRequest('That has already been settled.');
 
+  // A supervisor who accepts somebody's answer settles nothing alone: they
+  // say why, on a shift that has been checked, and it waits for an admin.
+  if (outcome === 'accept' && roleOf(account) !== 'admin') {
+    if (!note) throw badRequest('Say why you accept it: an admin reads it before it is settled.');
+    if (!issue.checked) throw badRequest('That shift has not been checked yet. Check it first: an answer is accepted only once the amount is final.');
+    const waiting = await first(env.DB, "SELECT id FROM till_resolution WHERE key = ?1 AND hive_user_id = ?2 AND status = 'pending'", key, userId).catch(() => null);
+    if (waiting) throw badRequest('Accepting it already waits for an admin.');
+    await run(env.DB, `INSERT INTO till_resolution (key, hive_user_id, outcome, amount, note, by_name, at, status)
+      VALUES (?1, ?2, 'accept', NULL, ?3, ?4, ?5, 'pending')`, key, userId, note, who(account), now());
+    await logEvent(env, key, `${who(account)} accepted the answer, waiting for an admin: ${note}`, who(account));
+    return { ok: true, outcome, pending: true };
+  }
+
   let advanceId = null;
   const amount = issue.amount < 0 ? -issue.amount : 0;
   if (outcome === 'recover') {
@@ -884,7 +901,7 @@ export function movedIssues(m) {
 
 /** The latest decision on something on somebody's list, when it settled it for good. */
 async function settledAs(env, key, userId = null) {
-  const row = await first(env.DB, `SELECT outcome, by_name FROM till_resolution WHERE key = ?1 ${userId == null ? '' : 'AND hive_user_id = ?2'} ORDER BY id DESC LIMIT 1`,
+  const row = await first(env.DB, `SELECT outcome, by_name FROM till_resolution WHERE key = ?1 AND COALESCE(status, 'applied') = 'applied' ${userId == null ? '' : 'AND hive_user_id = ?2'} ORDER BY id DESC LIMIT 1`,
     ...(userId == null ? [key] : [key, userId])).catch(() => null);
   return row && FINAL.has(row.outcome) ? row : null;
 }
@@ -944,46 +961,7 @@ export async function moveToStaff(env, body, account, { fetchImpl } = {}) {
   return placeOnAccounts(env, { key, kind: x.kind, day, slot, user: x.user, amount, given: body?.shares, reason, account, fetchImpl });
 }
 
-/**
- * Which way an exception's money goes, in minor units: plus is money in that
- * ASSD does not show, minus is money ASSD shows that is not there. Null when
- * its kind has no amount that nets against others. As the Shifts screen has it.
- */
-export function flowOf(x) {
-  if (x?.amount == null) return null;
-  const a = Math.abs(x.amount);
-  if (['not-recorded', 'bank-only', 'double-charge', 'paid-more', 'refund'].includes(x.kind)) return a;
-  if (['not-found', 'failed', 'zero', 'never-settled', 'reversal', 'duplicate', 'paid-less'].includes(x.kind)) return -a;
-  // The laundry is ASSD less the laundry system, as it stands: it pulls against the
-  // drawer or card difference that is the same money seen from the other side.
-  if (['drawer-over', 'drawer-short', 'handover-gap', 'laundry-mismatch'].includes(x.kind)) return x.amount;
-  // A card paid at the laundry and not in ASSD: money in that ASSD does not show.
-  if (x.kind === 'laundry-card') return a;
-  // Cash out of the drawer with no label, or as expenses with no PO: ASSD shows it gone, nothing says where.
-  if (['movement-unlabelled', 'expense-no-po'].includes(x.kind)) return -a;
-  // Expenses less the POs: more paid out than the POs show is minus, POs above what was paid out is plus.
-  if (x.kind === 'expense-po-gap') return -x.amount;
-  // A slip of the finger: ASSD has more (or less) than the terminal took.
-  if (['keying', 'transposition', 'decimal'].includes(x.kind)) return x.difference == null ? null : -x.difference;
-  if (x.kind === 'movement-twice') return a;
-  // Cash keyed as taken while the drawer did not move: ASSD shows money that never came in.
-  if (x.kind === 'keyed-no-cash') return -x.amount;
-  return null;
-}
-
-/**
- * Each exception's flow when reconciled with the others chosen. Cash keyed
- * while the drawer did not move, and a movement out keyed twice, are part of
- * their own shift's drawer difference: chosen with it, each takes back the
- * part of it that it explains, so what is left is what nothing explains.
- * With differences on other shifts each counts as it is.
- */
-export const EXPLAINS_DRAWER = ['keyed-no-cash', 'movement-twice'];
-export const besideOwnDrawer = (x, chosen) => EXPLAINS_DRAWER.includes(x.kind)
-  && chosen.some((o) => ['drawer-short', 'drawer-over'].includes(o.kind) && o.day === x.day && o.slot === x.slot);
-export function netFlows(chosen) {
-  return chosen.map((x) => (besideOwnDrawer(x, chosen) ? -flowOf(x) : flowOf(x)));
-}
+export { flowOf, netFlows, besideOwnDrawer, EXPLAINS_DRAWER } from '../shifts/flow.js';
 
 /**
  * Reconcile differences that are one story together, and put what they do
@@ -1015,7 +993,7 @@ export async function moveLeftToStaff(env, body, account, { fetchImpl } = {}) {
     key: null, kind: 'left', day: home.day, slot: home.slot, user: home.user, amount: net, given: body?.shares, reason, account, fetchImpl,
     // Reconciled once the shares are good, and the leftover is keyed by the reconciliation.
     before: async (shares) => {
-      await saveLink(env, { keys, note: `${net < 0 ? '−' : '+'}${ghs(net)} left, put on ${shares.map((y) => y.name).join(' and ')}: ${reason}`.slice(0, 600) }, account);
+      await saveLink(env, { keys, note: `${net < 0 ? '−' : '+'}${ghs(net)} left, put on ${shares.map((y) => y.name).join(' and ')}: ${reason}`.slice(0, 600) }, account, { rest: 'staff' });
       const link = await first(env.DB, "SELECT id FROM shift_link WHERE keys = ?1 AND COALESCE(status, 'applied') = 'applied' ORDER BY id DESC LIMIT 1", JSON.stringify(keys));
       return `left:${link?.id ?? keys[0]}`;
     },
@@ -1254,8 +1232,26 @@ export async function slotsFor(env, query, account) {
 }
 
 /** Approve or reject a supervisor's correction to a cash movement. */
-export async function approve(env, body, account) {
+export async function approve(env, body, account, { fetchImpl } = {}) {
   await requireAdmin(account);
+  // A supervisor's accept: approved, it settles the difference as accepted
+  // and the person is told; rejected, it stays on their list, and the row is kept.
+  if (body?.resolution != null) {
+    const id = Number(body.resolution);
+    const row = await first(env.DB, "SELECT * FROM till_resolution WHERE id = ?1 AND status = 'pending'", id);
+    if (!row) throw badRequest('That is no longer waiting: it was decided already.');
+    if (row.by_name === who(account)) throw forbidden('Somebody else approves what you proposed.');
+    await run(env.DB, 'UPDATE till_resolution SET status = ?2, decided_by = ?3, decided_at = ?4 WHERE id = ?1', id, body.ok ? 'applied' : 'rejected', who(account), now());
+    await logEvent(env, row.key, body.ok ? `Accepting the answer approved (proposed by ${row.by_name})` : `Accepting the answer rejected: back on the list`, who(account));
+    if (body.ok) {
+      await setAside(env, [row.key], 'settled on the person’s list instead (accepted)', account).catch(() => 0);
+      await hiveCall({
+        binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/till/tell',
+        body: { userIds: [Number(row.hive_user_id)], kind: 'till.settled', title: 'Settled', body: 'Your answer was accepted.' },
+      }).catch(() => null);
+    }
+    return { ok: true };
+  }
   // An answer, or a set reconciled together: approving clears the exceptions;
   // rejecting puts them back on the list, as if never answered.
   if (body?.answer != null || body?.link != null) {

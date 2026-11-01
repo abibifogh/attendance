@@ -48,6 +48,9 @@ const SPLIT_MINUTES = 45;
 const DOUBLE_MINUTES = 30;
 /** How long a card payment may take to reach the bank before its absence is a finding. */
 export const SETTLE_DAYS = 6;
+/** How many open lines, and how many payments, are tried in every combination. */
+export const COMBINE_LINES = 24;
+export const COMBINE_PARTS = 20;
 
 // ------------------------------------------------------------------ time --
 
@@ -328,10 +331,13 @@ export function reconcile(shifts, events, declines = [], options = {}) {
     }
   }
 
-  // 2. Several lines, one payment.
+  // 2. Several lines, one payment. Only so many can be tried in every
+  // combination; a shift with more is said to have been cut short.
   for (const s of out) {
     for (const k of [2, 3]) {
-      const open = s.lines.filter((l) => !l.events.length && l.amount > 0).slice(0, 24);
+      const all = s.lines.filter((l) => !l.events.length && l.amount > 0);
+      if (all.length > COMBINE_LINES) s.searchCut = { ...(s.searchCut || {}), lines: all.length };
+      const open = all.slice(0, COMBINE_LINES);
       for (const combo of combinations(open, k)) {
         if (combo.some((l) => l.events.length)) continue;
         const total = sum(combo);
@@ -347,10 +353,11 @@ export function reconcile(shifts, events, declines = [], options = {}) {
   for (const s of out) {
     for (const line of s.lines) {
       if (line.events.length || line.amount <= 0) continue;
-      const parts = timed
+      const near = timed
         .filter((e) => free(e) && e.amount < line.amount && inside(e, s, false))
-        .sort((a, b) => a.minute - b.minute)
-        .slice(0, 20);
+        .sort((a, b) => a.minute - b.minute);
+      if (near.length > COMBINE_PARTS) s.searchCut = { ...(s.searchCut || {}), payments: near.length };
+      const parts = near.slice(0, COMBINE_PARTS);
       let done = false;
       for (const k of [2, 3, 4]) {
         for (const combo of combinations(parts, k)) {
@@ -403,6 +410,27 @@ export function reconcile(shifts, events, declines = [], options = {}) {
   const unexplained = (s) => s.lines.filter((l) => !l.events.length && !l.exception);
 
   for (const s of out) {
+    // Matched only because the amounts add up (lines paid together, or a line
+    // paid in parts): probable, not certain, until somebody confirms it.
+    const seen = new Set();
+    for (const line of s.lines.filter((l) => ['together', 'parts'].includes(l.how))) {
+      const id = line.how === 'together' ? (line.together || []).join('+') : line.key;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const lines = line.how === 'together' ? s.lines.filter((l) => (line.together || []).includes(l.key)) : [line];
+      exceptions.push({
+        key: `probable:${line.key}`, kind: 'probable', group: GROUP.probable, severity: SEVERITY.probable,
+        day: s.day, slot: s.slotName, user: s.user, seq: line.seq, how: line.how,
+        amount: sum(lines), lines: lines.map((l) => l.amount), seqs: lines.map((l) => l.seq), events: line.events.map(publicEvent), event: null,
+      });
+    }
+    // More open lines or payments than every combination could be tried for.
+    if (s.searchCut) {
+      exceptions.push({
+        key: `search-cut:${s.day}:${s.slotName}`, kind: 'search-cut', group: GROUP['search-cut'], severity: SEVERITY['search-cut'],
+        day: s.day, slot: s.slotName, user: s.user, amount: null, event: null, ...s.searchCut,
+      });
+    }
     // Nothing to match, and a refund.
     for (const line of s.lines) {
       if (line.amount === 0) raise('zero', s, line, null);
@@ -448,9 +476,11 @@ export function reconcile(shifts, events, declines = [], options = {}) {
     for (const line of unexplained(s).filter((l) => l.amount > 0)) {
       const near = timed.filter((x) => free(x) && x.amount === line.amount && !inside(x, s, false)
         && x.minute >= s.window.from - 24 * 60 && x.minute < s.window.to + 24 * 60);
-      if (!near.length) continue;
-      const gap = (x) => (x.minute < s.window.from ? s.window.from - x.minute : x.minute - s.window.to);
-      const e = near.reduce((a, b) => (gap(b) < gap(a) ? b : a));
+      // Only when it is the one payment of that amount within a day either
+      // side: with two or more, which is the guest's is a guess, and the line
+      // stays "not found" and the payments "not recorded" for a person to pair.
+      if (near.length !== 1) continue;
+      const e = near[0];
       const other = out.find((o) => e.minute >= o.window.start && e.minute < o.window.end) || null;
       e.by = line.key;
       line.events = [e];
@@ -684,11 +714,14 @@ export const GROUPS = [
     help: 'Approved on the terminal or received by MoMo during the shift, and not in ASSD. A deposit for a later stay, a payment keyed as cash, or an omission.' },
   { id: 'settlement', title: 'Did not reach the bank, or went back out', severity: 'warning',
     help: 'Approved card payments with no bank credit after six days, card reversals, and refunds keyed in ASSD.' },
+  { id: 'probable', title: 'Matched only because the amounts add up — confirm', severity: 'warning',
+    help: 'Lines paid together, or one line paid in parts, matched because their sums agree and nothing else: probable, not certain. Confirm each, or say they are not the same money. Also here: a shift with more open lines or payments than every combination could be tried for, to check by hand.' },
   { id: 'explained', title: 'Explained by the matcher — check the explanation', severity: 'info',
     help: 'Differences the rules could account for: the same money split differently, keyed on the next shift, a mistake and its correction, a cash movement keyed wrong and put back, a card credit from outside the terminal report.' },
 ];
 
 const GROUP = {
+  probable: 'probable', 'search-cut': 'probable',
   failed: 'failed',
   'not-found': 'missing', zero: 'missing',
   'double-charge': 'double',
@@ -704,7 +737,9 @@ const SEVERITY = {
   failed: 'critical', 'not-found': 'critical', zero: 'warning', 'double-charge': 'critical',
   transposition: 'warning', decimal: 'warning', keying: 'warning', 'paid-more': 'warning', 'paid-less': 'critical', duplicate: 'warning',
   'not-recorded': 'warning', 'never-settled': 'warning', reversal: 'warning', refund: 'info',
-  regrouped: 'info', 'other-shift': 'info', corrected: 'info', 'bank-only': 'info',
+  regrouped: 'info', 'other-shift': 'warning', corrected: 'info', 'bank-only': 'info',
+  // Matched by sums alone, and searches cut short: to be confirmed by a person.
+  probable: 'warning', 'search-cut': 'warning',
 };
 
 export { clock as timeOfDay };

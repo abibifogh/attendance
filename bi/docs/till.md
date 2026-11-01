@@ -43,7 +43,7 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
 | Question | Why it is still asked |
 | --- | --- |
 | Was your opening float correct? (and by how much, and why, if not) | Only they know what they were handed. |
-| Cash in the drawer now, one total | Checked against ASSD's own closing count. |
+| Cash in the drawer now, one total | Counted blind (ASSD's count is never shown to them) and checked against ASSD's own closing count. A difference above the small-differences limit goes on their list as *The cash you counted did not match ASSD's count*. |
 | Did you move cash to the safe? If yes: each envelope's number (digits only) and amount | Compared with what ASSD labelled safe. Both are required once they say Yes. |
 | Each expense: the PO number | One box: type a PO number, or several at once ("P00412, 415, 420"), and tap **Add**. Each is looked up in Odoo (read-only) straight away and listed with its supplier, its amount (the PO's own total, which cannot be typed over) and a chip: **✓ Counted** (approved in Odoo and reported on the expense form), **Advance** (still waiting for approval: cash given out before the purchase, counted at the requisition's amount, in this person's name), **Report on form** (approved but not on the expense form yet: it stops the report until it is), or **Cancelled** (remove it). A PO paid on another shift is **Already claimed**. Above the box, **From the last shift** lists what earlier shifts left, and each one holds up **Sign and send** (the **To close:** line says what): an advance not yet approved and reported, a **Refund** (the PO was bought for less: put the money in the drawer and tap **Done**), or a **Deficit** (bought for more: **Done** if it was paid from this drawer, or **Not on my shift**). Refunds and deficits are shown for POs paid in the last five days; older ones go to the admins in Insight. See [Advances](advances.md). |
 | Padlocks at the start and the end | Fewer means a padlock was rented, so ASSD should have a deposit (article 405); more means one came back, so ASSD should have a refund. |
@@ -161,7 +161,9 @@ wait. The same goes for a supervisor's answer to an exception and for
 exceptions a supervisor reconciles together: they show as "Waiting for an
 admin" and stay on the list until an admin approves them (Front desk › Shifts › To sort out → Waiting for admin,
 or Approve on the exception itself). Reject puts them back. An admin's own
-answers clear at once. Admins chosen under Who is told hear about each one.
+answers clear at once. A supervisor's **Accept their answer** to a staff
+answer needs a note and a checked shift, waits for an admin the same way,
+and cannot be approved by the supervisor who proposed it. Admins chosen under Who is told hear about each one.
 
 Supervisors never see the totals at the top of Shifts.
 

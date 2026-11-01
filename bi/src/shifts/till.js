@@ -28,6 +28,7 @@ export const KINDS = {
   unexplained: 'Cash left the drawer with no envelope or PO',
   overclaimed: 'Envelopes and POs add up to more than left the drawer',
   rental: 'A rental count did not agree with ASSD',
+  declared: 'The cash you counted did not match ASSD’s count',
   noreport: 'No closing report',
   moved: 'Put on their account by an admin',
 };
@@ -177,6 +178,17 @@ export function issuesFor({ shifts, reports, pos = [], rentals = [], people = ne
       out.push({
         ...base, key: `drawer:${s.day}:${s.slot}`, kind: 'drawer', amount: variance,
         text: `ASSD's closing count was ${cedis(c.assdClosing ?? 0)}, ${cedis(variance)} ${variance < 0 ? 'less' : 'more'} than the drawer should have held.`,
+      });
+    }
+
+    // The blind count: what they counted and wrote in HIVE against ASSD's own
+    // closing count. Either can be wrong; it is a difference of its own until
+    // somebody says which.
+    if (c.staffCash != null && c.assdClosing != null && c.staffCash !== c.assdClosing && big(c.staffCash - c.assdClosing)) {
+      const gap = c.staffCash - c.assdClosing;
+      out.push({
+        ...base, key: `declared:${s.day}:${s.slot}`, kind: 'declared', amount: gap,
+        text: `You counted ${cedis(c.staffCash)}; ASSD's closing count was ${cedis(c.assdClosing)}, ${cedis(gap)} ${gap < 0 ? 'less' : 'more'} than yours.`,
       });
     }
 

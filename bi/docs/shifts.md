@@ -206,8 +206,13 @@ of +GH₵10 the bar says net −GH₵10. An admin has three ways on:
   and the leftover goes on each person's list, on the shift of the first,
   and they are told in HIVE.
 - **Reconcile, −GH₵10 to suspense** parks it (above).
-- **Reconcile, the difference explained** reconciles them with a note, and
-  nothing is left anywhere.
+
+Agreed means the money nets. Differences that leave something cannot be
+reconciled with only a note: what is left goes in suspense or on a staff
+account, so it is still counted somewhere until somebody settles it. Both
+need a note. A supervisor ticking ones that leave something is told an admin
+reconciles these. Differences whose direction is not known yet (one has no
+sign) can still be reconciled together with a note.
 
 Undoing the reconciliation (an admin's Undo) takes the leftover off the staff
 accounts too; taking it off the accounts undoes the reconciliation.
@@ -223,8 +228,10 @@ bottom; the bar shows what the ticked ones net to (an amount that pulls the
 other way, such as laundry the laundry system took that ASSD does not show,
 is shown with a −; cash moved out with no label, expenses with no PO and
 expenses above their POs are −, POs above the expenses and a laundry card
-payment not in ASSD are +), and a note is required
-when they do not net to nothing. Any number can be reconciled together, and
+payment not in ASSD are +; a chargeback, a prepaid stay or a safe deposit the
+bank does not show, and money on another register are −). **Reconcile
+together** is offered only when they net to nothing; when they leave
+something, the rest goes in suspense or on a staff account (below). Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
 the other way sits within a week, it is offered under **Possibly the same
 money** with a one-tap reconcile. **Undo** opens them all again. An admin can
@@ -236,6 +243,29 @@ settled on its shift: the drawer box turns green and says so, the shift no
 longer asks for a look on its account, and the difference leaves its person's
 **To sort out** list in HIVE. Its size is still shown, because it is still
 what ASSD counted.
+
+### A supervisor's accept waits for an admin
+
+A supervisor may answer **Accept their answer** to a staff member's answer
+from HIVE only with a note, and only once the shift's money has been looked
+at (the shift is marked checked). Even then nothing is settled: it shows
+under Waiting for admin as **Accepted a staff answer**, and the difference
+stays open until an admin approves it. The supervisor who proposed it cannot
+approve it. Once approved, the staff member hears in HIVE that their answer
+was accepted. An admin's own accept settles at once.
+
+### Who did what (the audit trail)
+
+Every change anybody asks Insight to make is written down before it runs:
+who asked (their name, or "Owner (shared password)"), when, what and on
+which shift or difference, and then whether it was done or refused, and why.
+If that record cannot be written, the change does not run. The record
+cannot be edited or deleted, by anybody, admins included. Passwords, PINs,
+codes and tokens are never written into it; files are written as their size.
+
+Admins read it at `/api/audit` (all of it, newest first, or `?subject=` for
+one difference's key, one ASSD line or one shift's `day|slot`). Reading
+pages is not recorded.
 
 ### Notes and history
 
@@ -318,7 +348,13 @@ days, admins included. Refused, with who locked it:
 - payments moved between shifts, differences put on staff accounts (or taken off);
 - checks and taking them back, a refund marked paid back;
 - closing reports reopened, moved or given another owner;
-- Nice Place readings (moved onto or off a locked day too).
+- Nice Place readings (moved onto or off a locked day too);
+- approving or rejecting a supervisor's answer, correction or reconciliation
+  on a locked day;
+- suspense entries on a locked day: putting in, matching, moving to the safe,
+  undoing;
+- the big safe's lines and counts on a locked day (added, changed, removed,
+  closed or reopened).
 
 A locked shift says so at the top. Its differences show where they stood and
 have nothing to press, and they are not in the Inbox. Notes and to-dos are not
@@ -356,7 +392,7 @@ sent. Loading the same file twice changes nothing.
 | --- | --- | --- |
 | ASSD detail journal | ASSD → Business Reports → *Detail Journal of every Transaction*, printed to PDF | Run it **one day past** the last shift you want. ASSD prints only the lines dated inside the benefit-date range, so a journal that ends on the 7th stops inside the 7th's last shift. |
 | Card terminal report | The bank's merchant portal (TAMS), exported as CSV | Every tap, approved or declined, to the second. This is what card payments are matched on. |
-| GTBank statement | GTBank internet banking → account statement → the "Excel" download (an .xls file). The Finacle XLSX export also works. | Card settlements, card reversals, commission and MoMo. The same bank row gets the same identity in either format, so loading both never counts it twice. In the Finacle export, rows the bank marked deleted or unposted are ignored. |
+| GTBank statement | GTBank internet banking → account statement → the "Excel" download (an .xls file). The Finacle XLSX export also works. | Card settlements, card reversals, commission and MoMo (MoMo taken back out is a MoMo reversal). Every other credit (cash deposits, transfers in) and every bank charge or chargeback is kept too, **without its words**: only its date, amount and a fingerprint of the text, so it can be matched without the payer's name leaving the browser. Payments out (salaries, suppliers) are still never sent. The same bank row gets the same identity in either format, so loading both never counts it twice. In the Finacle export, rows the bank marked deleted or unposted are ignored. |
 
 A weekly load is enough for the week's reconciliation. A newer journal that
 overlaps an older one replaces the overlapping days and keeps the rest.
@@ -366,6 +402,7 @@ overlaps an older one replaces the overlapping days and keeps the rest.
 | What | Who | When |
 | --- | --- | --- |
 | A recount of the drawer | Anybody who reads the numbers | Optional. ASSD's own closing count is used unless one is typed, for a spot check or when ASSD's count is wrong. |
+| The cash in the drawer at closing (HIVE) | Whoever closes the shift | Counted blind: HIVE never shows them ASSD's count. When their count and ASSD's closing count differ by more than the small-differences limit, the shift shows **The cash you counted did not match ASSD's count**, with both, and it goes on their list. |
 | Expense-sheet total and Odoo PO numbers | Admin | Per shift with expenses. **Save and read from Odoo** fetches vendor, total and state for each PO. Nothing in Odoo is changed. |
 | A correction to a cash movement | Anybody who reads the numbers | When a movement was labelled wrong, moved twice, or put back on another shift. |
 | An answer to an exception | Admin | When one appears. |
@@ -562,11 +599,23 @@ In order:
 Approved terminal payments are then joined to the bank statement by approval
 code and card, to check each one arrived.
 
+Steps 2 and 3 match on sums alone: two lines that add up to a payment, or a
+payment in parts that adds up to a line. That is often right and sometimes a
+coincidence, so each such match is shown under **Matched only because the
+amounts add up — confirm** (Confirmed: the same money, Not the same money,
+Checked by hand). On a busy shift the search for sums stops after 24 lines or
+20 payments; the shift then says the search was cut short, and what is left
+over should be checked by hand.
+
+A payment taken on one shift and keyed on another is matched across shifts
+only within 24 hours either way, and only when it is the one payment of that
+amount in those 24 hours. It is shown as a warning to confirm, not a note.
+
 ## The exception groups
 
 | Group | What it means |
 | --- | --- |
-| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. Also here: **Keyed as cash, but the drawer did not move**: cash sales, returns or Items Corrections keyed between two Money Counts that found the same notes (to within GH₵1), with no movement and no change in receipts between them, and coming to more than GH₵1. By the drawer's own counts that money never came in or went out: stock put right through the till, or a count copied from the last one. It lists every stretch and line, and the drawer difference says how much of the cash it counts was keyed that way. It explains the drawer's difference, so it carries no amount of its own in the month table, and it asks for an answer only while the drawer difference does: once that is answered, or when the drawer agrees, it is shown as an explanation and leaves the shift's colour as it was. Its amount carries a sign, as reconciling needs: cash keyed as taken that never came in is − (ASSD shows money that is not there), keyed as paid out and never left is +. It is part of its own shift's drawer difference: ticked with that, it takes back the part it explains (a −GH₵280 keyed this way against a −GH₵300 drawer short leaves −GH₵20), and **Moved out of the drawer twice** does the same against its drawer's over. With differences on other shifts each counts as it is. |
+| The drawer did not agree with its count | The closing count differed from what should have been in the drawer, or the next person's first count differed from the last closing count. Also here: the same amount moved out twice on a shift that counted over, and money put back that matches a movement out on another shift, each with a button to match them. Also here: **Keyed as cash, but the drawer did not move**: cash sales, returns or Items Corrections keyed between two Money Counts that found the same notes (to within GH₵1), with no movement and no change in receipts between them, and coming to more than GH₵1. By the drawer's own counts that money never came in or went out: stock put right through the till, or a count copied from the last one. It lists every stretch and line, and the drawer difference says how much of the cash it counts was keyed that way. It explains the drawer's difference, so it carries no amount of its own in the month table, and it asks for an answer only while the drawer difference does: once that difference is settled with money (reconciled with others, put on a staff account or in suspense), or when the drawer agrees, it is shown as an explanation. An answer like Explained on the drawer is not enough: the money is still out, so this stays a warning and leaves the shift's colour as it was. Its amount carries a sign, as reconciling needs: cash keyed as taken that never came in is − (ASSD shows money that is not there), keyed as paid out and never left is +. It is part of its own shift's drawer difference: ticked with that, it takes back the part it explains (a −GH₵280 keyed this way against a −GH₵300 drawer short leaves −GH₵20), and **Moved out of the drawer twice** does the same against its drawer's over. With differences on other shifts each counts as it is. |
 | Recorded as paid, but the payment failed | The terminal declined the amount and never approved it afterwards, yet ASSD has it as paid by card. |
 | Recorded as card or MoMo, no payment found | Nothing of that amount arrived near the shift. |
 | The same card charged twice | Two approved charges to one card, same amount, within 30 minutes, and ASSD has one. |
@@ -576,7 +625,11 @@ code and card, to check each one arrived.
 | Keyed twice in ASSD | The same amount twice in one shift, paid once. |
 | Money received that ASSD does not show | Approved on the terminal or received by MoMo during the shift, and not in ASSD. |
 | Did not reach the bank, or went back out | No bank credit six days after approval, a card reversal, or a refund keyed in ASSD. A refund pairs itself with a bank reversal of the same amount, even one on a later day. A refund with no reversal six days on is a difference to answer, not a note: if no money went back to a guest's card (stock put right as a card return, say), ASSD shows that much less card money than was taken. It counts as + in the month table. |
-| Explained by the matcher | The same money split differently, paid on one shift and keyed on another within a day, a line and its reversal, a cash movement keyed wrong and put back, or a bank credit with no terminal record. Shown so the explanation can be checked. |
+| Matched only because the amounts add up — confirm | See above: matches made on sums alone, and shifts where the search was cut short. |
+| Money on another register | An ASSD entry on a register other than the front desk's (001) whose payments do not cancel out: money that moved through the back office. It is part of the drawer's story. |
+| The cash you counted did not match ASSD's count | The staff member's own blind count in HIVE differs from ASSD's closing count. |
+| A chargeback, a prepaid stay or a deposit the bank does not show | Critical for a chargeback: the bank took card money back. It names the original card payment when one matches (same card ending and amount, in the 120 days before). A stay prepaid by bank transfer with no bank credit of that amount from two weeks before to three days after, and cash marked banked from the safe with no deposit or credit within four days, are differences too. A MoMo reversal on the statement, and a refund, reversal or void on the terminal, are money that went back. Each takes Refunded to the guest, Disputed with the bank, Chargeback accepted, or Not our payment. A card reversal on the bank that repeats one already on the terminal is shown once. |
+| Explained by the matcher | The same money split differently, paid on one shift and keyed on another within a day (a warning to confirm, see above), a line and its reversal, a cash movement keyed wrong and put back, or a bank credit with no terminal record. Shown so the explanation can be checked. |
 
 The last shift in a journal is shown as far as the journal goes. Money taken
 after the export ran is not reported as missing from ASSD.

@@ -579,7 +579,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     };
     return h('div.tl-issue.warn',
       h('div.tl-issue-head', h('strong', a.by), h('span.tl-small', String(a.at).slice(0, 16))),
-      h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : `Answered “${a.answer}” for:`),
+      h('p.tl-text', a.type === 'link' ? `Reconciled ${a.keys.length} exceptions together:` : a.type === 'resolution' ? 'Accepted the staff member’s answer, for:' : `Answered “${a.answer}” for:`),
       h('ul.tl-keys', a.keys.map((k) => h('li', describeKey(k),
         open ? [' · ', h('button.sh-link', { type: 'button', onclick: (e) => open(k, e.target) }, 'Open the shift')] : null,
         // The shift itself, in brief, so the answer can be judged here.

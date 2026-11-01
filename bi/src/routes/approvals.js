@@ -63,8 +63,8 @@ async function insightList(env) {
   const items = [];
   for (const a of answers) {
     items.push({
-      kind: a.type, id: String(a.id), kindLabel: a.type === 'link' ? 'Reconciled together' : 'Answer',
-      title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : `Answered “${a.answer}”`,
+      kind: a.type, id: String(a.id), kindLabel: a.type === 'link' ? 'Reconciled together' : a.type === 'resolution' ? 'Accepted an answer' : 'Answer',
+      title: a.type === 'link' ? `Reconciled ${a.keys.length} together` : a.type === 'resolution' ? 'Accepted a staff answer' : `Answered “${a.answer}”`,
       sub: `${keyWords(a.keys[0])}${a.keys.length > 1 ? ` and ${a.keys.length - 1} more` : ''} · by ${a.by}`,
       who: a.by, askedAt: a.at, amount: null,
       details: [
@@ -121,6 +121,7 @@ async function insightDecide(env, { kind, id, decision, note }, account) {
   const ok = decision === 'approve';
   if (kind === 'answer') await till.approve(env, { answer: id, ok }, account);
   else if (kind === 'link') await till.approve(env, { link: Number(id), ok }, account);
+  else if (kind === 'resolution') await till.approve(env, { resolution: Number(id), ok }, account);
   else if (kind === 'correction') await till.approve(env, { seq: Number(id), ok }, account);
   else if (kind === 'drawer-po') await newpo.decideDrawer(env, { name: id, allow: ok, note }, account);
   else throw badRequest('Insight does not know that kind of approval.');

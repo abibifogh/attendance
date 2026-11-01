@@ -45,8 +45,12 @@ const FINACLE_COLUMNS = ['TRAN ID', 'PART TRAN SRL NUM', 'PART TRAN TYPE', 'PSTD
   'TRAN AMT', 'TRAN PARTICULAR', 'REF NUM', 'DEL FLG'];
 // Card credits, commission and MoMo, as the bank writes them; MoMo from a
 // wallet has words between the slashes (GTB/<name>/DEBIT WALLET/<ref><time>),
-// so only with the time on the end. Everything else stays on this computer.
+// so only with the time on the end. Besides those, every credit (a guest's
+// transfer, cash banked from the safe) and the bank's own charges and
+// chargebacks go, and the server keeps them without their words. Salaries,
+// suppliers and transfers out stay on this computer.
 const WANTED = /^(comm_)?\d{6}\*{4,}\d{4}_|^GTB\/[^/]+\/\/|^GTB\/[^/]+\/[^/]+\/\S+\d\d\/\d\d\/\d{4} \d\d:\d\d:\d\d$|^[A-Z0-9]+ GTB[A-Z0-9]+\//;
+const BANKS_OWN = /\bCHG\b|CHARGE|\bFEE|COMMISSION|LEVY|\bSMS\b|MAINT|STAMP\s*DUTY|\bVAT\b|E-?LEVY|CHGBK|DISPUTE/i;
 
 /**
  * The bank statement → its header and the card and MoMo rows.
@@ -70,9 +74,15 @@ export async function readStatement(file) {
   const index = finacle ? FINACLE_COLUMNS.map((name) => header.indexOf(name)) : header.map((_, i) => i);
   const kept = [finacle ? FINACLE_COLUMNS : rows[at]];
   let left = 0;
+  // Money in: the debit/credit flag in the export, the Credit column on internet banking.
+  const flag = header.indexOf('PART TRAN TYPE');
+  const credit = header.indexOf('CREDIT');
+  const isCredit = (row) => (finacle ? String(row[flag] ?? '').trim().toUpperCase() === 'C'
+    : credit >= 0 && String(row[credit] ?? '').replace(/[,\s]/g, '') !== '' && Number(String(row[credit]).replace(/,/g, '')) !== 0);
   for (const row of rows.slice(at + 1)) {
     if (!row || row.length <= particular) continue;
-    if (!WANTED.test(String(row[particular] ?? '').trim())) { left += 1; continue; }
+    const text = String(row[particular] ?? '').trim();
+    if (!WANTED.test(text) && !isCredit(row) && !BANKS_OWN.test(text)) { left += 1; continue; }
     kept.push(index.map((i) => (i < 0 ? null : row[i] ?? null)));
   }
   return { rows: kept, leftOut: left };
