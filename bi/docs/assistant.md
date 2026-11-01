@@ -1,7 +1,26 @@
 # The Assistant
 
-Assistant › Today, for admins: everything that needs you, from every place
-Insight reads, in one list, each with what Insight would do about it.
+Assistant › Today: everything that needs you, from every place Insight
+reads, in one list, each with what Insight would do about it. Everybody given
+Insight has one, and it opens first; an admin's covers everything, anybody
+else's only what their access already shows them.
+
+## Who sees what
+
+| Who | Their Assistant reads |
+|---|---|
+| **Admin** (and owners) | Everything below in **The list** |
+| **Supervisor** | To-dos given to them, and sent back to them; shifts of the last week not checked (if they may check shifts); staff answers from HIVE waiting for a decision (if they act on staff answers); Nice Place counters to read (if they read them; the link opens To sort out) |
+| **Uploader** | The ASSD journal not loaded lately, with a link to Upload files |
+| **Anybody given report pages** | Insight's checks, if the Brief is shared with them; Nice Place shifts with no sales sent, if the Nice Place page is |
+
+Approvals in every system, receipts, floats, bills owed, suppliers, the
+management report and Nice Place pickups to approve stay an admin's, and so
+does **Done for you**. Amounts show only for whoever may see money (an admin,
+or a supervisor given amounts); the Brief's own findings show theirs, as the
+Brief does. The summary and **Ask Insight** use only that person's list, and
+say so when something is beyond it. The count on the Assistant button is an
+admin's approvals, so nobody else has it.
 
 ## The list
 

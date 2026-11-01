@@ -313,8 +313,19 @@ export async function renderFloats(root) {
       h('p.small.muted', 'What they held at the start, everything given, spent and given back, and what they hold at the end.'),
       h('div.fl-two', field('From', from), field('To', to)),
       h('div.fl-dlg-acts',
-        h('button.btn.primary', { type: 'button', onclick: () => window.open(url(''), '_blank', 'noopener') }, 'Open to print or save as PDF'),
+        // The PDF opens in the device's own viewer, which saves, shares and prints it, on a phone too.
+        h('button.btn.primary', { type: 'button', onclick: () => open_(url('pdf')) }, 'PDF'),
+        h('button.btn', { type: 'button', onclick: () => open_(url('')) }, 'View'),
         h('button.btn', { type: 'button', onclick: () => { location.href = url('csv'); } }, 'Spreadsheet (CSV)')));
+  }
+
+  /**
+   * A new tab on a computer; in the same window when Insight was opened from a
+   * phone's home screen, where a new tab has no way back and cannot print.
+   */
+  function open_(href) {
+    if (navigator.standalone || matchMedia('(display-mode: standalone)').matches) location.href = href;
+    else window.open(href, '_blank', 'noopener');
   }
 
   /** A receipt they handed over on paper: photographed here, for them. */

@@ -386,9 +386,10 @@ const ROUTES = [
   ['GET', '/api/po/find', 'insight', adminOnly((env, ctx) => newpo.findPo(env, ctx.query))],
   // Approvals: everything waiting for an admin in every system, decided here as them.
   // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
-  ['GET', '/api/assistant', 'session', adminOnly((env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true }))],
-  ['GET', '/api/assistant/brief', 'session', adminOnly((env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by })))],
-  ['POST', '/api/assistant/ask', 'session', adminOnly((env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true }))],
+  // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
+  ['GET', '/api/assistant', 'session', (env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true })],
+  ['GET', '/api/assistant/brief', 'session', (env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by }))],
+  ['POST', '/api/assistant/ask', 'session', (env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true })],
   ['POST', '/api/assistant/bills', 'session', adminOnly((env, ctx) => assistant.setBills(env, ctx.body, ctx.account))],
   ['GET', '/api/approvals', 'session', adminOnly((env, ctx) => approvals.list(env, ctx.account))],
   ['POST', '/api/approvals/decide', 'session', adminOnly((env, ctx) => approvals.decide(env, ctx.body, ctx.account))],

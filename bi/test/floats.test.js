@@ -139,11 +139,31 @@ test('a statement for a period: held at the start, every line, held at the end, 
   assert.match(res.headers.get('Content-Type'), /text\/html/);
   const html = await res.text();
   assert.match(html, /<h1>Float statement<\/h1><p>Ama Test · <span class="mono">FLT\/AMA<\/span>/);
-  assert.match(html, /Print or save as PDF/);
+  assert.match(html, /Download PDF/);
+  assert.match(html, /href="\?from=2026-10-01&amp;to=2026-10-31&amp;format=pdf"/, 'its PDF, for the same dates');
+  assert.match(html, /<a class="back" href="\/#\/floats"[^>]*>← Back<\/a>/, 'back to Insight’s floats when there is nothing to go back to');
   assert.match(html, /<tr class="month"><td colspan="6">October 2026<\/td><\/tr>/, 'grouped by month');
   assert.match(html, /<b>Given<\/b> · from the safe by Test Owner<div class="note">For the generator repair<\/div>/);
   assert.match(html, /<b>A Hardware Shop<\/b> · Padlock<div class="st checking">Being checked · PO P02531<\/div>/);
   assert.match(html, /href="\?from=2026-10-01&amp;to=2026-10-31&amp;format=csv"/, 'its spreadsheet, for the same dates');
+
+  // As a PDF: one the phone's own viewer opens, shares and prints.
+  const file = await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31', format: 'pdf' });
+  assert.equal(file.headers.get('Content-Type'), 'application/pdf');
+  assert.match(file.headers.get('Content-Disposition'), /^inline; filename="Float statement AMA 2026-10-01 to 2026-10-31\.pdf"$/);
+  const text = Buffer.from(await file.arrayBuffer()).toString('latin1');
+  assert.match(text, /^%PDF-1\.4/);
+  assert.match(text, /\(Float statement\) Tj/);
+  assert.match(text, /\(Ama Test \\267 FLT\/AMA\) Tj/, 'the middle dot in Latin-1');
+  assert.match(text, /\(GHS 600\.00\) Tj/, 'still with them');
+  assert.match(text, /\(A Hardware Shop\) Tj/);
+  assert.match(text, /\(Being checked \\267 PO P02531\) Tj/);
+  assert.match(text, /\(Page 1 of 1\) Tj/);
+  // Every object where the cross-reference table says it is.
+  const xref = Number(/startxref\n(\d+)/.exec(text)[1]);
+  const offsets = text.slice(xref).split('\n').filter((l) => / 00000 n $/.test(l)).map((l) => Number(l.slice(0, 10)));
+  assert.ok(offsets.length > 5);
+  offsets.forEach((o, i) => assert.equal(text.slice(o, o + String(i + 1).length + 6), `${i + 1} 0 obj`));
 
   // Just the totals, for their page; and from the very start.
   assert.deepEqual(await floats.statement(env, personId, { from: '2026-10-01', to: '2026-10-31', format: 'json' }),
