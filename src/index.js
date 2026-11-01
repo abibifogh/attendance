@@ -1258,9 +1258,12 @@ export default {
           console.log(`Maintenance: ${taken.added} late-report deduction(s) put on, ${taken.removed} taken back off`);
         }
         if (taken.unmatched.length) console.log(`Maintenance: not put on: ${taken.unmatched.join('; ')}`);
+      }
 
-        // And the other way: the Admin shifts, so Team Tasks can ask for
-        // every Admin day of a week to be planned before the plan goes.
+      // And the other way, once a day with the nightly run: the Admin shifts
+      // for the next two weeks, so Team Tasks can ask for every Admin day of
+      // a week to be planned before the plan goes.
+      if (env.MAINTENANCE_LINK && nightly) {
         const shifts = await sendAdminShifts(env).catch((err) => {
           console.error('Admin shifts to Maintenance failed', err);
           return { sent: 0, unmatched: [] };

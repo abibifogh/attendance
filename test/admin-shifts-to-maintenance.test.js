@@ -10,9 +10,11 @@ import { adminShiftsBetween, isAdminShift, sendAdminShifts } from '../src/lib/ma
  * have an admin shift, make those days visible in a way and require plan for
  * that day to be completed before they can submit their plan."
  *
- * HIVE sends Maintenance (where Team Tasks lives) every Admin shift from a
- * week ago to three weeks ahead, once an hour, with the link key it already
- * uses. Matched there by employee number.
+ * HIVE sends Maintenance (where Team Tasks lives) every Admin shift for the
+ * next two weeks, today included, once a day with the nightly run, with the
+ * link key it already uses. Matched there by employee number.
+ * ("Instead of Hive sending the admin shift across every hour, make it once
+ * a day. And it should not send for 3 weeks. It should do for just 2 weeks.")
  */
 
 const KEY = `mxh_${'cd'.repeat(24)}`;
@@ -47,6 +49,8 @@ function setup() {
   put(2, '2026-11-12', admin1, { published: 0 });       // a draft day goes too
   put(3, '2026-11-09', admin1);                         // no employee number: cannot be matched
   put(1, '2026-12-30', admin1);                         // too far ahead
+  put(1, '2026-11-04', admin1);                         // yesterday: not sent again
+  put(1, '2026-11-19', admin1);                         // the 15th day: beyond two weeks
   return { raw, db: d1(raw) };
 }
 
@@ -59,7 +63,7 @@ test('an Admin shift is one that says Admin', () => {
 
 test('only Admin shifts, with hours, by employee number', async () => {
   const { db } = setup();
-  const { shifts, unnumbered } = await adminShiftsBetween(db, '2026-11-02', '2026-11-22');
+  const { shifts, unnumbered } = await adminShiftsBetween(db, '2026-11-05', '2026-11-18');
   assert.deepEqual(shifts.map((s) => `${s.employee_no} ${s.day} ${s.shift} ${s.starts_at}-${s.ends_at} ${s.published}`), [
     'SV-01 2026-11-09 Admin 1 TEST 08:00-17:00 true',
     'CO-02 2026-11-11 Admin cover 06:00-14:00 true',
@@ -68,7 +72,7 @@ test('only Admin shifts, with hours, by employee number', async () => {
   assert.deepEqual(unnumbered, ['Abena NoNumber']);
 });
 
-test('sent to Maintenance with the link key, a week back to three ahead', async () => {
+test('sent to Maintenance with the link key, for the next two weeks', async () => {
   const { db } = setup();
   const calls = [];
   const out = await sendAdminShifts({ DB: db, MAINTENANCE_LINK: LINK }, {
@@ -81,9 +85,10 @@ test('sent to Maintenance with the link key, a week back to three ahead', async 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://abcdefgh.supabase.co/rest/v1/rpc/mx_hive_shifts_put');
   assert.equal(calls[0].body.p_key, KEY);
-  assert.equal(calls[0].body.p_from, '2026-10-29');
-  assert.equal(calls[0].body.p_to, '2026-11-26');
-  assert.equal(calls[0].body.p_shifts.length, 3, 'not the one in December');
+  assert.equal(calls[0].body.p_from, '2026-11-05', 'from today');
+  assert.equal(calls[0].body.p_to, '2026-11-18', 'two weeks, today included');
+  assert.deepEqual(calls[0].body.p_shifts.map((s) => s.day), ['2026-11-09', '2026-11-11', '2026-11-12'],
+    'not yesterday, not the 15th day, not December');
   assert.equal(out.sent, 3);
   assert.equal(out.matched, 2);
   assert.deepEqual(out.unmatched, ['Abena NoNumber (no employee number in HIVE)', 'Destiny Owusu (CO-02: nobody in Maintenance has it)']);
@@ -96,4 +101,17 @@ test('nothing is sent until HIVE is linked; a Maintenance without the update say
     today: '2026-11-05',
     fetchImpl: async () => new Response(JSON.stringify({ message: 'Could not find the function public.mx_hive_shifts_put' }), { status: 404 }),
   }), /database update has not been run/);
+});
+
+test('it goes once a day, with the nightly run, not every hour', () => {
+  // The scheduler fires every five minutes and once at 00:30; "nightly" is the
+  // 00:30 one. The sending must sit behind that, and nothing else.
+  const src = readFileSync('src/index.js', 'utf8');
+  const at = src.indexOf('sendAdminShifts(env)');
+  assert.ok(at > 0, 'the scheduler sends them');
+  assert.equal(src.indexOf('sendAdminShifts(env)', at + 1), -1, 'from one place only');
+  const guard = src.lastIndexOf('if (', at);
+  assert.match(src.slice(guard, at), /^if \(env\.MAINTENANCE_LINK && nightly\) \{/);
+  assert.match(src, /const nightly = String\(event\?\.cron \?\? ''\)\.startsWith\('30 0'\)/);
+  assert.match(readFileSync('wrangler.toml', 'utf8'), /crons = \["30 0 \* \* \*"/);
 });

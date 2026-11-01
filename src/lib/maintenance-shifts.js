@@ -11,12 +11,13 @@ import { addDays, todayIn } from '../util/dates.js';
  * break (usually 1 to 2pm)."
  *
  * Team Tasks lives in the Maintenance database, so the shifts go there, once
- * an hour, with the same link and key HIVE already uses to collect the bonus
- * and the deductions. What goes is every Admin shift on the rota from a week
- * ago to three weeks ahead: who (by employee number, the way the two systems
- * match everybody), which day, the shift's name and its hours. Each sending
- * replaces what Maintenance had for those days, so a shift moved or taken off
- * the rota goes from Team Tasks at the next one.
+ * a day with the nightly run (00:30), with the same link and key HIVE already
+ * uses to collect the bonus and the deductions. What goes is every Admin
+ * shift on the rota for the next two weeks, today included: who (by employee
+ * number, the way the two systems match everybody), which day, the shift's
+ * name and its hours. Each sending replaces what Maintenance had for those
+ * days, so a shift moved or taken off the rota goes from Team Tasks the next
+ * night. Days already gone by are left as they were sent.
  *
  * An Admin shift is one whose name, or the day's own title, says Admin (as
  * "Admin 1", "Admin 2"), the same test the till uses to know a shift has no
@@ -63,8 +64,11 @@ export async function adminShiftsBetween(db, from, to) {
   return { shifts: out, unnumbered: [...unnumbered] };
 }
 
+/** How far ahead the shifts go: two weeks, today included. */
+export const DAYS_AHEAD = 14;
+
 /**
- * Send them. Runs from the scheduler once an hour; does nothing until HIVE is
+ * Send them. Runs from the scheduler once a day; does nothing until HIVE is
  * linked to Maintenance. Throws with a sentence a person can act on.
  */
 export async function sendAdminShifts(env, { fetchImpl = fetch, today = null } = {}) {
@@ -74,8 +78,8 @@ export async function sendAdminShifts(env, { fetchImpl = fetch, today = null } =
   if (!link) throw new HttpError(503, 'HIVE is not linked to Maintenance yet.');
   const tz = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'timezone'").first().catch(() => null))?.value || 'UTC';
   const day = today ?? todayIn(tz);
-  const from = addDays(day, -7);
-  const to = addDays(day, 21);
+  const from = day;
+  const to = addDays(day, DAYS_AHEAD - 1);
   const { shifts, unnumbered } = await adminShiftsBetween(env.DB, from, to);
 
   let response;
