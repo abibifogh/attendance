@@ -1028,3 +1028,34 @@ export function placeField({
 function newSession() {
   return crypto.randomUUID?.() ?? String(Math.random()).slice(2);
 }
+
+/**
+ * Earlier, the period, later, and back to now, as one joined bar.
+ *
+ * The period's own label opens the browser's calendar (a date or a month
+ * picker), so there is one control to read and one to press rather than an
+ * input box between two buttons. The same look as the rota's bar.
+ */
+export function periodBar({
+  label, onPrev, onNext, prevDisabled = false, nextDisabled = false,
+  picker = null, now = null, prevLabel = 'Earlier', nextLabel = 'Later',
+}) {
+  const input = picker
+    ? h('input.period-picker', {
+      type: picker.type || 'date', value: picker.value ?? '', max: picker.max ?? undefined,
+      'aria-label': picker.label || 'Pick', tabindex: -1,
+      onchange: (e) => e.target.value && picker.onPick(e.target.value),
+    })
+    : null;
+  return h('div.joined-bar.period-bar',
+    h('button.joined-btn', { type: 'button', 'aria-label': prevLabel, disabled: prevDisabled, onclick: onPrev }, '‹'),
+    h('span.period-label',
+      h('button.joined-btn.period-label-btn', {
+        type: 'button',
+        title: picker ? 'Pick another' : undefined,
+        onclick: () => { if (!input) return; try { input.showPicker(); } catch { input.focus(); input.click(); } },
+      }, label),
+      input),
+    h('button.joined-btn', { type: 'button', 'aria-label': nextLabel, disabled: nextDisabled, onclick: onNext }, '›'),
+    now ? [h('span.joined-sep', { 'aria-hidden': 'true' }), h('button.joined-btn', { type: 'button', onclick: now.onClick }, now.label)] : null);
+}

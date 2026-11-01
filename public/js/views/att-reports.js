@@ -1,13 +1,13 @@
 import { api } from '../api.js';
 import { can, navigate, replaceParams } from '../app.js';
 import {
-  fmtDay, fmtNum, h, money, monthOf, mount, shiftDay, shiftMonth, toast, todayISO,
+  fmtDay, fmtDayShort, fmtNum, h, money, monthOf, mount, shiftDay, shiftMonth, toast, todayISO,
 } from '../util.js';
 import { card, emptyState, exportButton, face, moreActions, table } from './components.js';
 import { printButton } from '../print.js';
 import { analyticsSection } from './att-analytics.js';
 import {
-  asHours, correctTimesDialog, daysCell, field, formDialog, needsAttention, reasonSelect, statusPill,
+  asHours, correctTimesDialog, daysCell, field, formDialog, needsAttention, periodBar, reasonSelect, statusPill,
 } from './att-shared.js';
 
 /**
@@ -200,23 +200,16 @@ export async function renderAttWeek(params) {
   };
 
   const nav = h('div.toolbar',
-    // Arrows on a phone, words on a desk, either side of the date.
-    h('button.btn-sm', {
-      onclick: () => reload(shiftDay(data.from, -7)),
-      'aria-label': 'The week before',
-    }, '‹', h('span.only-desk', ' Previous week')),
-    h('input', {
-      type: 'date', value: data.from,
-      onchange: (e) => e.target.value && reload(mondayOf(e.target.value)),
+    periodBar({
+      label: `${fmtDayShort(data.from)} – ${fmtDayShort(data.to)}`,
+      onPrev: () => reload(shiftDay(data.from, -7)),
+      onNext: () => reload(shiftDay(data.from, 7)),
+      prevLabel: 'The week before',
+      nextLabel: 'The week after',
+      picker: { type: 'date', value: data.from, label: 'Week beginning', onPick: (v) => reload(mondayOf(v)) },
+      // Only when it is not the week already on screen.
+      now: data.from === mondayOf(todayISO()) ? null : { label: 'This week', onClick: () => reload(mondayOf(todayISO())) },
     }),
-    h('button.btn-sm', {
-      onclick: () => reload(shiftDay(data.from, 7)),
-      'aria-label': 'The week after',
-    }, h('span.only-desk', 'Next week '), '›'),
-    // Only when it is not the week already on screen.
-    data.from === mondayOf(todayISO())
-      ? null
-      : h('button.btn-sm', { onclick: () => reload(mondayOf(todayISO())) }, 'This week'),
     h('div', { style: { flex: 1 } }),
     moreActions(
       printButton({
@@ -371,16 +364,15 @@ export async function renderAttOverview(params) {
     .toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
 
   const nav = h('div.toolbar',
-    h('button.btn-sm', { onclick: () => reload(shiftMonth(data.month, -1)), 'aria-label': 'The month before' }, '‹'),
-    h('input', {
-      type: 'month', value: data.month,
-      onchange: (e) => e.target.value && reload(e.target.value),
+    periodBar({
+      label,
+      onPrev: () => reload(shiftMonth(data.month, -1)),
+      onNext: () => reload(shiftMonth(data.month, 1)),
+      nextDisabled: data.month >= monthOf(todayISO()),
+      prevLabel: 'The month before',
+      nextLabel: 'The month after',
+      picker: { type: 'month', value: data.month, label: 'Month', onPick: (v) => reload(v) },
     }),
-    h('button.btn-sm', {
-      onclick: () => reload(shiftMonth(data.month, 1)),
-      disabled: data.month >= monthOf(todayISO()),
-      'aria-label': 'The month after',
-    }, '›'),
     h('div', { style: { flex: 1 } }),
     moreActions(
       printButton({

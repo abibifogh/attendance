@@ -406,6 +406,22 @@ function hereGroup(groups = myGroups()) {
 }
 
 /**
+ * A screen's own buttons, put at the far end of the tab row above it.
+ *
+ * The rota's Who heard and Publish live there, opposite the tabs. Kept by
+ * path, so the next screen opened does not inherit them. Returns whether there
+ * was a tab row to put them in; a screen without one keeps them itself.
+ */
+let stripExtras = { path: null, els: [] };
+export function stripActions(path, ...els) {
+  stripExtras = { path, els: els.filter(Boolean) };
+  const slot = document.querySelector('.strip-actions');
+  if (!slot || currentRoute()?.path !== path) return false;
+  mount(slot, ...stripExtras.els);
+  return true;
+}
+
+/**
  * The tabs across the top of a group that holds more than one screen.
  *
  * Above the page rather than inside each view, in the shell beside the who
@@ -418,13 +434,16 @@ function groupStrip() {
   if (!group) return null;
   const here = currentRoute()?.path;
   const tab = (t, active) => h('a', { href: `#/${t.path}`, class: active ? 'active' : '' }, t.label);
+  // A screen's own buttons, at the far end of the tab row (see stripActions).
+  const actions = h('div.strip-actions', stripExtras.path === here ? stripExtras.els : null);
+  const row = (tabsEl) => h('div.group-row', tabsEl, actions);
 
   // A manager's own screens: one row of the five things they are, and the
   // screens under the one they are on as a smaller second row.
   if (mode() === 'manager' && group.key === 'mine') {
     const { tabs, parent, siblings } = mineTabs(group, here);
     return h('div.group-strips',
-      tabs.length > 1 ? h('div.group-tabs.seg.seg-wrap', tabs.map((t) => tab(t, t.path === parent))) : null,
+      row(tabs.length > 1 ? h('div.group-tabs.seg.seg-wrap', tabs.map((t) => tab(t, t.path === parent))) : null),
       siblings.length ? h('div.group-tabs.group-tabs-sub.seg.seg-sm.seg-wrap', siblings.map((t) => tab(t, t.path === here))) : null);
   }
 
@@ -433,7 +452,7 @@ function groupStrip() {
   if (!tabs.length && !views.length) return null;
   const family = familyOf(group.screens.find((r) => r.path === here));
   return h('div.group-strips',
-    tabs.length ? h('div.group-tabs.seg.seg-wrap', tabs.map((t) => tab(t, t.family === family))) : null,
+    row(tabs.length ? h('div.group-tabs.seg.seg-wrap', tabs.map((t) => tab(t, t.family === family))) : null),
     views.length ? h('div.group-tabs.group-tabs-sub.seg.seg-sm.seg-wrap', views.map((t) => tab(t, t.path === here))) : null);
 }
 

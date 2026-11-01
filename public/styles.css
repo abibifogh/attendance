@@ -8407,3 +8407,96 @@ button.lp-row:disabled { cursor: default; }
 .my-late-chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: .4rem .8rem; font-size: .84rem; font-weight: 600; cursor: pointer; min-height: 2.25rem; }
 .my-late-chip.on { background: var(--text); border-color: var(--text); color: var(--surface); }
 .my-late-tally { display: flex; justify-content: space-between; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .6rem .9rem; font-size: .88rem; }
+
+/* ---------------------------------------------------------------------------
+   Tabs and toolbars, the look chosen for the rota and used everywhere:
+   the tabs across the top of a place in a dark bar with the one you are on
+   in amber; the views under them, and every set of options on a page, as one
+   white bar with the chosen option dark.
+--------------------------------------------------------------------------- */
+:root { --tabbar: #10131a; --tabbar-ink: #b9bfcc; --tabbar-on: #f0a94c; --tabbar-on-ink: #1d1406; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --tabbar: #262b36; --tabbar-ink: #a9b0bd; }
+}
+:root[data-theme="dark"] { --tabbar: #262b36; --tabbar-ink: #a9b0bd; }
+
+.group-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.group-row .group-tabs { margin-bottom: 0; }
+.strip-actions { margin-left: auto; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.strip-actions:empty { display: none; }
+.strip-actions .btn-row { margin: 0; }
+
+/* The tabs of a place: a dark bar. */
+.group-tabs.seg:not(.group-tabs-sub) {
+  background: var(--tabbar); border: 0; border-radius: 14px; padding: 4px; gap: 2px;
+}
+.group-tabs.seg:not(.group-tabs-sub) a {
+  color: var(--tabbar-ink); border-radius: 10px; padding: .5rem 1.05rem; font-size: .9rem; font-weight: 600;
+}
+.group-tabs.seg:not(.group-tabs-sub) a:hover { color: #fff; }
+.group-tabs.seg:not(.group-tabs-sub) a.active {
+  background: var(--tabbar-on); color: var(--tabbar-on-ink); box-shadow: none;
+}
+
+/* Every other set of options: one white bar, the chosen one dark. */
+.seg {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 3px; gap: 2px;
+  box-shadow: 0 1px 2px rgba(16, 19, 26, .04);
+}
+.seg button,
+.seg a {
+  border-radius: 9px; font-weight: 600; color: var(--text-dim);
+}
+.seg button.active,
+.seg a.active {
+  background: var(--text); color: var(--surface); box-shadow: none;
+}
+.seg button.active .seg-count { color: inherit; opacity: .7; }
+
+/* Several sets of options joined into one bar, split by thin lines. */
+.joined-bar {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px; max-width: 100%;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 4px;
+  box-shadow: 0 1px 2px rgba(16, 19, 26, .04);
+}
+.joined-bar .seg { background: transparent; border: 0; box-shadow: none; padding: 0; }
+.joined-bar .seg button { padding: .45rem .85rem; font-size: .88rem; }
+.joined-sep { width: 1px; height: 24px; background: var(--border); margin: 0 .35rem; flex: none; }
+.joined-btn {
+  border: 0; background: transparent; border-radius: 9px; padding: .45rem .7rem; font-size: .88rem;
+  font-weight: 600; color: var(--text-dim); cursor: pointer; white-space: nowrap;
+}
+.joined-btn:hover { background: var(--surface-2); color: var(--text); }
+.joined-select {
+  border: 0 !important; background-color: transparent !important; box-shadow: none !important;
+  font-size: .88rem; font-weight: 600; color: var(--text-dim); padding: .45rem 1.8rem .45rem .7rem; min-width: 0 !important;
+}
+
+/* The rota's header: title and week, the joined bar, the tools as links. */
+.rota-head { align-items: flex-end; }
+.rota-range { color: var(--text-dim); font-size: 1rem; margin-top: .15rem; }
+.rota-date { position: relative; display: inline-flex; }
+.rota-date-label { color: var(--text); }
+.rota-date-picker { position: absolute; left: 0; bottom: 0; width: 1px !important; min-width: 0 !important; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+.rota-tools { gap: 1.1rem !important; }
+.rota-tools > .btn-sm, .rota-tools .toolbar-more-btn {
+  border: 0; background: transparent; box-shadow: none; padding: .35rem .1rem; border-radius: 0;
+  font-weight: 600; color: var(--text); border-bottom: 2px dotted var(--border-strong);
+}
+.rota-tools > .btn-sm:hover, .rota-tools .toolbar-more-btn:hover { border-bottom-color: var(--text); background: transparent; }
+.rota-tools > .rota-tool-warn { color: var(--bad); }
+.btn.btn-primary.rota-publish:disabled { background: var(--text); border-color: var(--text); color: var(--surface); opacity: 1; }
+
+@media (max-width: 620px) {
+  .joined-bar { display: flex; width: 100%; box-sizing: border-box; }
+  .joined-sep { display: none; }
+  .joined-bar .seg { flex: 1 1 100%; }
+  .joined-bar .seg button { flex: 1 1 auto; }
+  .joined-bar .rota-date { flex: 1 1 auto; justify-content: center; }
+  .rota-bar .joined-bar .joined-select { flex: 1 1 100%; max-width: none; width: 100%; }
+}
+.period-label { position: relative; display: inline-flex; }
+.period-label-btn { color: var(--text); min-width: 9rem; }
+.period-picker { position: absolute; left: 0; bottom: 0; width: 1px !important; min-width: 0 !important; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+.joined-btn:disabled { opacity: .35; cursor: default; background: transparent; }
+@media (max-width: 620px) { .period-bar { width: auto; display: inline-flex; } .period-bar .joined-sep { display: block; } }

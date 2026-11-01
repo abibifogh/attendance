@@ -7,7 +7,7 @@ import { showPublishHistory, showWhoHeard } from './rota-heard.js';
 import { printButton } from '../print.js';
 import { sayAskedDays } from '../availability-rules.js';
 import { draftEntries } from './draft-entries.js';
-import { can, holdRefresh, navigate, replaceParams, warnBeforeLeaving } from '../app.js';
+import { can, holdRefresh, navigate, replaceParams, stripActions, warnBeforeLeaving } from '../app.js';
 import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark,
   runsIntoTheNight, shiftColour, shiftHours, shiftLabel, shiftMinutes, shiftSelect,
@@ -2457,37 +2457,64 @@ export async function renderAttRota(params) {
       onclick: () => onPick(value),
     }, label)));
 
+  // The week, written out under the title: "2 – 8 November 2026".
+  const longDay = (d, opts) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', ...opts });
+  const rangeLong = from.slice(0, 7) === to.slice(0, 7)
+    ? `${Number(from.slice(8))} – ${longDay(to, { day: 'numeric', month: 'long', year: 'numeric' })}`
+    : `${longDay(from, { day: 'numeric', month: 'long' })} – ${longDay(to, { day: 'numeric', month: 'long', year: 'numeric' })}`;
+  const dayBits = (d) => {
+    const at = new Date(`${d}T12:00:00Z`);
+    return {
+      wd: at.toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short' }),
+      n: at.getUTCDate(),
+      mon: at.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short' }),
+    };
+  };
+  const [a0, b0] = [dayBits(from), dayBits(to)];
+  const rangeShort = `${a0.wd} ${a0.n}${a0.mon === b0.mon ? '' : ` ${a0.mon}`} – ${b0.wd} ${b0.n} ${b0.mon}`;
+  // The calendar stays the browser's own, opened from the week's label.
+  const picker = h('input.rota-date-picker', {
+    type: 'date', value: from, 'aria-label': 'Week beginning', tabindex: -1,
+    onchange: (e) => e.target.value && reload({ from: mondayOf(e.target.value) }),
+  });
+  const sep = () => h('span.joined-sep', { 'aria-hidden': 'true' });
+  const headButtons = h('div.btn-row.rota-head-buttons', saveState, heardButton, publishButton);
+
   mount(host,
-    h('div.page-head',
-      h('h1', 'Rota'),
-      h('div.btn-row', saveState, heardButton, publishButton),
+    h('div.page-head.rota-head',
+      h('div', h('h1', 'Rota'), h('div.rota-range', rangeLong)),
+      headButtons,
     ),
 
     // One bar rather than two. Wide, the whole thing sits on a line; narrow,
     // the two halves take a line each. Either way it is two rows at the very
     // most, which is what the rota is entitled to before the grid starts.
     h('div.rota-bar',
-      h('div.rota-bar-group',
+      // One joined bar: what is shown, over how long, which week, and whose.
+      h('div.joined-bar',
       seg([['people', 'People'], ['positions', 'Positions']], view, (v) => reload({ view: v })),
+      sep(),
       seg([['7', 'Week'], ['14', 'Fortnight'], ['28', '4 weeks']], span, (v) => reload({ span: v })),
-      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, -span) }) }, '‹'),
-      // The calendar. The browser's own — it opens a month view on press,
-      // which is the picker the request asked for without a second widget to
-      // maintain — and whatever day is chosen snaps to its Monday.
-      h('input', {
-        type: 'date', value: from, 'aria-label': 'Week beginning',
-        onchange: (e) => e.target.value && reload({ from: mondayOf(e.target.value) }),
-      }),
-      h('button.btn-sm', { onclick: () => reload({ from: shiftDay(from, span) }) }, '›'),
-      // Only when it would go somewhere. On the week already on screen it is a
-      // button that does nothing, and on a handset it is the one that pushes
-      // the row onto a second line.
+      sep(),
+      h('button.joined-btn', { type: 'button', 'aria-label': 'Earlier', onclick: () => reload({ from: shiftDay(from, -span) }) }, '‹'),
+      // The week's label opens the browser's own calendar; whatever day is
+      // chosen snaps to its Monday.
+      h('span.rota-date',
+        h('button.joined-btn.rota-date-label', {
+          type: 'button',
+          title: 'Pick a week',
+          onclick: () => { try { picker.showPicker(); } catch { picker.focus(); picker.click(); } },
+        }, rangeShort),
+        picker),
+      h('button.joined-btn', { type: 'button', 'aria-label': 'Later', onclick: () => reload({ from: shiftDay(from, span) }) }, '›'),
+      // Only when it would go somewhere.
       from === mondayOf(todayISO())
         ? null
-        : h('button.btn-sm', { onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
+        : h('button.joined-btn', { type: 'button', onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
 
+      data.departments?.length ? sep() : null,
       data.departments?.length
-        ? h('select', {
+        ? h('select.joined-select', {
           'aria-label': 'Department',
           onchange: (e) => reload({ department: e.target.value || null }),
         },
@@ -2495,7 +2522,7 @@ export async function renderAttRota(params) {
         data.departments.map((d) => h('option', { value: d, selected: params.department === d }, d)))
         : null,
       data.tags?.length
-        ? h('select', {
+        ? h('select.joined-select', {
           'aria-label': 'Tag',
           onchange: (e) => reload({ tag: e.target.value || null }),
         },
@@ -2504,13 +2531,13 @@ export async function renderAttRota(params) {
         : null,
       ),
 
-      h('div.rota-bar-group',
+      h('div.rota-bar-group.rota-tools',
       // Everything in this group is either a decision or a reading a planner
       // takes while deciding. A reader gets none of it: the workload chip is
       // about people rather than the week, and the rest changes the rota.
       !mayEdit || !conflicts
         ? null
-        : h('button.btn-sm', {
+        : h('button.btn-sm.rota-tool-warn', {
           onclick: () => navigate('att-workload', { from, to }),
           title: 'People this plan is overworking. The full picture is on Workload',
         }, `⚠️ ${conflicts} ${conflicts === 1 ? 'person' : 'people'} to look at`),
@@ -2601,6 +2628,9 @@ export async function renderAttRota(params) {
     // inside the box that scrolls.
     dropMenu,
   );
+
+  // Who heard and Publish sit opposite the tabs, at the end of the tab row.
+  stripActions('att-rota', headButtons);
 
   return host;
 }
