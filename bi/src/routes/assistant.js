@@ -10,6 +10,8 @@ import { listTodos } from './todo.js';
 import * as supplierbook from './supplierbook.js';
 import { requireAdmin, roleOf, accessOf } from './till.js';
 import { reportsOf } from './reportaccess.js';
+import { envelopeLines } from './envelopes.js';
+import * as proof from './proof.js';
 
 /**
  * The Assistant: everything that needs you, from every system Insight reads,
@@ -49,17 +51,22 @@ const cedi = (minor) => `GH₵ ${(Math.round(Number(minor) || 0) / 100).toLocale
 
 /** Each source: its label, the kind of items it gives, and how they are read. */
 const SOURCES = [
-  { id: 'approvals', label: 'Approvals in every system', read: readApprovals },
-  { id: 'findings', label: 'Insight’s checks', read: readFindings },
-  { id: 'receipts', label: 'Receipts', read: readReceipts },
-  { id: 'floats', label: 'Floats', read: readFloats },
-  { id: 'bills', label: 'Odoo bills', read: readBills },
-  { id: 'todos', label: 'The to-do list', read: readTodos },
-  { id: 'niceplace', label: 'Nice Place', read: readNicePlace },
-  { id: 'files', label: 'Shift files', read: readFiles },
-  { id: 'suppliers', label: 'Suppliers', read: readSuppliers },
-  { id: 'report', label: 'Management report', read: readReport },
+  { id: 'approvals', label: 'Approvals in every system', read: readApprovals, area: 'approvals', tag: 'Approval' },
+  { id: 'findings', label: 'Insight’s checks', read: readFindings, area: 'checks', tag: 'Check' },
+  { id: 'receipts', label: 'Receipts', read: readReceipts, area: 'buying', tag: 'Receipts' },
+  { id: 'floats', label: 'Floats', read: readFloats, area: 'buying', tag: 'Floats' },
+  { id: 'bills', label: 'Odoo bills', read: readBills, area: 'buying', tag: 'Odoo' },
+  { id: 'todos', label: 'POs to chase', read: readTodos, area: 'buying', tag: 'POs' },
+  { id: 'niceplace', label: 'Nice Place', read: readNicePlace, area: 'niceplace', tag: 'Nice Place' },
+  { id: 'files', label: 'Shift files', read: readFiles, area: 'shifts', tag: 'Files' },
+  { id: 'suppliers', label: 'Suppliers', read: readSuppliers, area: 'buying', tag: 'Suppliers' },
+  { id: 'report', label: 'Management report', read: readReport, area: 'report', tag: 'Report' },
 ];
+
+/** What anybody who works shifts has of their own: to-dos given to them, and proof asked of them. */
+const GIVEN = { id: 'given', label: 'To-dos given to you', read: readGiven, area: 'given', tag: 'To-do' };
+const PROOF = { id: 'proof', label: 'Proof asked of you', read: readProofAsked, area: 'given', tag: 'Proof asked' };
+const ENVELOPES = { id: 'envelopes', label: 'Envelopes to receive', read: readEnvelopes, area: 'safe', tag: 'Safe' };
 
 /**
  * The last list read for each admin, for a minute: the summary and Ask come
@@ -89,24 +96,26 @@ async function requireMember(account) {
  */
 export async function sourcesFor(env, account) {
   const role = roleOf(account);
-  if (role === 'admin') return SOURCES;
+  if (role === 'admin') return [GIVEN, PROOF, ...SOURCES, ENVELOPES];
   const access = await accessOf(env, account);
   const reports = await reportsOf(env, account).catch(() => []);
   const out = [];
   if (reports.includes('brief')) out.push(SOURCES.find((x) => x.id === 'findings'));
   if (role === 'supervisor') {
-    out.push({ id: 'mytodos', label: 'Your to-dos', read: readMyTodos });
-    if ((access.check || 0) >= 2) out.push({ id: 'checks', label: 'Shifts to check', read: readUnchecked });
-    if ((access.answers || 0) >= 2) out.push({ id: 'staffanswers', label: 'Staff answers from HIVE', read: readStaffAnswers });
+    out.push(GIVEN, PROOF);
+    out.push({ id: 'mytodos', label: 'POs to chase', read: readMyTodos, area: 'buying', tag: 'POs' });
+    if ((access.check || 0) >= 2) out.push({ id: 'checks', label: 'Shifts to check', read: readUnchecked, area: 'shifts', tag: 'Shift' });
+    if ((access.answers || 0) >= 2) out.push({ id: 'staffanswers', label: 'Staff answers from HIVE', read: readStaffAnswers, area: 'shifts', tag: 'Staff answer' });
+    if ((access.envelopes || 0) >= 2) out.push(ENVELOPES);
   }
   // Shifts with no sales sent, for whoever can open the Nice Place page; counters to read, for
   // whoever reads them (a supervisor does it in To sort out).
   const npPage = reports.includes('niceplace');
   const npRead = role === 'supervisor' && (access.niceplace || 0) >= 2;
   if (npPage || npRead) {
-    out.push({ id: 'niceplace', label: 'Nice Place', read: (e, a, n) => readNicePlace(e, a, n, { pickups: false, missing: npPage, readings: npRead, href: '#/inbox' }) });
+    out.push({ id: 'niceplace', label: 'Nice Place', area: 'niceplace', tag: 'Nice Place', read: (e, a, n) => readNicePlace(e, a, n, { pickups: false, missing: npPage, readings: npRead, href: '#/inbox' }) });
   }
-  if ((access.files || 0) >= 2) out.push({ id: 'files', label: 'Shift files', read: (e, a, n) => readFiles(e, a, n, { href: role === 'uploader' ? '#/upload' : '#/files' }) });
+  if ((access.files || 0) >= 2) out.push({ id: 'files', label: 'Shift files', area: 'shifts', tag: 'Files', read: (e, a, n) => readFiles(e, a, n, { href: role === 'uploader' ? '#/upload' : '#/files' }) });
   return out;
 }
 
@@ -117,12 +126,12 @@ async function seesMoney(env, account) {
 }
 
 /** The list as just read for this page, or read now. Opening the page always reads it fresh. */
-export async function gatherOnce(env, account, { fresh = false } = {}) {
+export async function gatherOnce(env, account, { fresh = false, now = Date.now() } = {}) {
   await requireMember(account);
   const key = account?.id ?? 'owner';
   const had = recent.get(key);
   if (!fresh && had && Date.now() - had.at < RECENT_MS) return had.data;
-  const data = await gather(env, account);
+  const data = await gather(env, account, { now });
   recent.set(key, { at: Date.now(), data });
   return data;
 }
@@ -165,7 +174,7 @@ export async function gather(env, account, { now = Date.now(), sources = null } 
       const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Took too long to answer; it is read again next time.')), SOURCE_MS); });
       const got = await Promise.race([s.read(env, account, now), late]).finally(() => clearTimeout(timer));
       // Amounts only for whoever may see money; the Brief's own findings show theirs on the Brief.
-      for (const item of got) items.push({ source: s.label, ...item, ...(money || s.id === 'findings' ? {} : { amount: null, amountNote: null }) });
+      for (const item of got) items.push({ source: s.label, area: s.area || 'other', tag: s.tag || s.label, ...item, ...(money || s.id === 'findings' ? {} : { amount: null, amountNote: null }) });
       read.push({ id: s.id, label: s.label, ok: true, count: got.length });
     } catch (err) {
       read.push({ id: s.id, label: s.label, ok: false, error: err.message });
@@ -207,6 +216,8 @@ async function readApprovals(env, account, now) {
     return {
       tab: 'decide', key: `approval:${x.system}:${x.kind}:${x.id}`, sev: age >= 7 ? 'warn' : 'info',
       title: x.title, why: x.sub, system: x.systemLabel, age, amount: x.amount || null,
+      // Decided the day after it was asked, like a staff answer.
+      due: x.askedAt ? plusDay(String(x.askedAt).slice(0, 10), 1) : null,
       advice: age >= 7 ? `It has waited ${age} days: decide it today, or ask ${x.who || 'whoever asked'} what is missing.` : 'Check the details, then decide it here.',
       actions: [
         ...quick.map((d) => ({ label: d.label, primary: Boolean(d.primary), decide: { system: x.system, kind: x.kind, id: x.id, decision: d.key } })),
@@ -306,8 +317,8 @@ async function readTodos(env, account) {
   const answered = items.filter((t) => t.state === 'answered');
   const nobody = items.filter((t) => t.state === 'open' && !t.assignee);
   const out = [];
-  if (answered.length) out.push({ tab: 'decide', key: 'todos:answered', sev: 'info', title: `${answered.length} answer${answered.length === 1 ? '' : 's'} on the to-do list to decide`, advice: 'A supervisor said what happened; accept it, or send it back.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
-  if (nobody.length) out.push({ tab: 'fix', key: 'todos:nobody', sev: 'warn', title: `${nobody.length} to-do${nobody.length === 1 ? '' : 's'} nobody has been given`, advice: 'Give each to a supervisor so somebody chases it.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
+  if (answered.length) out.push({ tab: 'decide', key: 'todos:answered', sev: 'info', title: `${answered.length} answer${answered.length === 1 ? '' : 's'} on POs to chase to decide`, advice: 'A supervisor said what happened; accept it, or send it back.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
+  if (nobody.length) out.push({ tab: 'fix', key: 'todos:nobody', sev: 'warn', title: `${nobody.length} PO${nobody.length === 1 ? '' : 's'} to chase that nobody has been given`, advice: 'Give each to a supervisor so somebody chases it.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   return out;
 }
 
@@ -373,15 +384,94 @@ async function readMyTodos(env, account, now) {
   const back = open.filter((t) => t.sentBack);
   const out = [];
   if (back.length) {
-    out.push({ tab: 'fix', key: 'mytodos:back', sev: 'warn', title: `${back.length} to-do${back.length === 1 ? '' : 's'} sent back to you`, why: back.slice(0, 3).map((t) => `${t.kindLabel}${t.ref ? ` ${t.ref}` : ''}: ${t.sentBack}`).join(' · '), advice: 'An admin asked for more: say what happened, or what you found.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
+    out.push({ tab: 'fix', key: 'mytodos:back', sev: 'warn', title: `${back.length} PO item${back.length === 1 ? '' : 's'} sent back to you`, why: back.slice(0, 3).map((t) => `${t.kindLabel}${t.ref ? ` ${t.ref}` : ''}: ${t.sentBack}`).join(' · '), advice: 'An admin asked for more: say what happened, or what you found.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   }
   const fresh = open.filter((t) => !t.sentBack);
   if (fresh.length) {
     const oldest = Math.max(...fresh.map((t) => daysSince(t.openedAt || t.day, now) || 0));
-    out.push({ tab: 'fix', key: 'mytodos:open', sev: oldest >= 3 ? 'warn' : 'info', title: `${fresh.length} to-do${fresh.length === 1 ? '' : 's'} given to you`, why: fresh.slice(0, 3).map((t) => `${t.kindLabel}${t.ref ? ` ${t.ref}` : ''}${t.day ? `, ${t.day}` : ''}`).join(' · '), age: oldest, advice: 'Find out what happened to each, and answer it.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
+    out.push({ tab: 'fix', key: 'mytodos:open', sev: oldest >= 3 ? 'warn' : 'info', title: `${fresh.length} PO${fresh.length === 1 ? '' : 's'} to chase in Odoo`, why: fresh.slice(0, 3).map((t) => `${t.kindLabel}${t.ref ? ` ${t.ref}` : ''}${t.day ? `, ${t.day}` : ''}`).join(' · '), age: oldest, advice: 'Find out what happened to each, and answer it.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   }
   return out;
 }
+
+/** To-dos made from a difference for this person, one line each, by the day they are due. */
+async function readGiven(env, account, now) {
+  if (account?.id == null) return [];
+  const today = new Date(now).toISOString().slice(0, 10);
+  const rows = await all(env.DB, "SELECT * FROM shift_task WHERE state = 'open' AND for_id = ?1 ORDER BY due, id", Number(account.id)).catch(() => []);
+  return rows.map((t) => ({
+    tab: 'fix', key: `task:${t.id}`, sev: t.due < today ? 'warn' : 'info',
+    title: t.what, why: t.about ? `About ${t.about}` : null,
+    from: t.made_by_id != null && Number(t.made_by_id) === Number(account.id) ? null : t.made_by,
+    due: t.due, age: daysSince(t.made_at, now),
+    actions: [
+      t.day && t.slot ? { label: 'Open shift', shift: { day: t.day, slot: t.slot } } : null,
+      { label: 'Done', task: t.id, primary: true },
+    ].filter(Boolean),
+  }));
+}
+
+/** Proof an admin asked of this person's answers, due the day it was asked. */
+async function readProofAsked(env, account, now) {
+  const { requests } = await proof.mine(env, account);
+  return requests.map((r) => ({
+    tab: 'fix', key: `proof:${r.id}`, sev: 'warn',
+    title: `Send proof for “${String(r.about || 'your answer').slice(0, 90)}”`,
+    why: r.note ? `“${r.note}”` : null, from: r.askedBy,
+    due: String(r.askedAt || '').slice(0, 10) || null, age: daysSince(r.askedAt, now),
+    actions: [{ label: 'Send proof', href: '#/inbox', primary: true }],
+  }));
+}
+
+/** Envelopes moved to the safe in the last month that nobody has marked received. */
+async function readEnvelopes(env, account, now) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  const lines = (await envelopeLines(env, { from: plusDay(today, -30), to: today }, account)).filter((l) => !l.received);
+  if (!lines.length) return [];
+  const oldest = lines.map((l) => l.day).sort()[0];
+  const shifts = [...new Set(lines.map((l) => `${dayWords(l.day)} ${l.slot}`))];
+  const numbers = lines.map((l) => l.no).filter(Boolean);
+  return [{
+    tab: 'fix', key: 'envelopes:open', sev: 'info',
+    title: `${lines.length} envelope${lines.length === 1 ? '' : 's'} moved to the safe, not marked received`,
+    why: `${shifts.slice(0, 3).join(', ')}${shifts.length > 3 ? ' and more' : ''}${numbers.length ? ` · ${numbers.slice(0, 4).join(', ')}${numbers.length > 4 ? '…' : ''}` : ''}`,
+    amount: lines.reduce((t, l) => t + (l.expected || 0), 0) || null,
+    due: plusDay(oldest, 1), age: daysSince(oldest, now),
+    actions: [{ label: 'Open safe', href: '#/safe', primary: true }],
+  }];
+}
+
+const plusDay = (day, n) => new Date(Date.parse(`${day}T12:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+const dayWords = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+/** "Tue 27 Oct night" from a difference's key, when it names its shift. */
+function shiftOfKey(key) {
+  const m = /(\d{4}-\d{2}-\d{2})[:|](morning|afternoon|night)/.exec(String(key || ''));
+  return m ? `${dayWords(m[1])} ${m[2]}` : null;
+}
+
+/**
+ * Each item placed by when it wants doing: `overdue` (its day has passed),
+ * `today`, or `later`. An item with a day is placed by it. One without is
+ * placed by how urgent it is: urgent, or waiting a week, is overdue; "soon"
+ * is today; the rest later. `late` is how many days past its day.
+ */
+export function arrange(items, today) {
+  const span = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / DAY);
+  return items.map((x) => {
+    if (x.tab === 'done') return x;
+    let when;
+    let late = null;
+    if (x.due) {
+      when = x.due < today ? 'overdue' : x.due === today ? 'today' : 'later';
+      if (when === 'overdue') late = span(x.due, today);
+    } else if (x.sev === 'crit') when = 'today';
+    else if ((x.age || 0) >= 7) { when = 'overdue'; late = x.age - 7 || null; }
+    else when = x.sev === 'warn' ? 'today' : 'later';
+    return { ...x, when, late };
+  }).sort((a, b) => WHEN_RANK[a.when] - WHEN_RANK[b.when] || String(a.due || '9').localeCompare(String(b.due || '9')) || RANK_SEV[a.sev] - RANK_SEV[b.sev] || (b.age || 0) - (a.age || 0));
+}
+const WHEN_RANK = { overdue: 0, today: 1, later: 2, undefined: 3 };
+const RANK_SEV = { crit: 0, warn: 1, info: 2, good: 3 };
 
 const SLOT_NAMES = ['morning', 'afternoon', 'night'];
 const CHECK_DAYS = 7;
@@ -400,38 +490,35 @@ async function readUnchecked(env, account, now) {
   for (let d = from; d <= to && d < today; d = new Date(Date.parse(`${d}T12:00:00Z`) + DAY).toISOString().slice(0, 10)) {
     for (const slot of SLOT_NAMES) if (!done.has(`${d}|${slot}`)) left.push({ day: d, slot });
   }
-  if (!left.length) return [];
-  return [{
-    tab: 'fix', key: 'checks:open', sev: left.length > 6 ? 'warn' : 'info',
-    title: `${left.length} shift${left.length === 1 ? '' : 's'} of the last week not checked`,
-    why: left.slice(0, 4).map((x) => `${x.day} ${x.slot}`).join(', ') + (left.length > 4 ? ' and more' : ''),
-    age: daysSince(left[0].day, now),
-    advice: 'Open each, look at its report, drawer and payments, and mark it checked: until then its people see their differences as not final.',
-    actions: [{ label: 'Open shifts', href: '#/shifts', primary: true }],
-  }];
+  // One line each, due the day after the shift: a shift is checked the next day.
+  return left.map((x) => ({
+    tab: 'fix', key: `check:${x.day}|${x.slot}`, sev: 'info',
+    title: `Check ${dayWords(x.day)} ${x.slot} shift`,
+    due: plusDay(x.day, 1), age: daysSince(x.day, now),
+    advice: 'Look at its report, drawer and payments, and mark it checked: until then its people see their differences as not final.',
+    actions: [{ label: 'Open shift', shift: { day: x.day, slot: x.slot }, primary: true }],
+  }));
 }
 
 /** Answers staff gave in HIVE in the last month that nobody has decided yet. */
 async function readStaffAnswers(env, account, now) {
   if (!env.ATT_DB) return [];
   const since = new Date(now - 30 * DAY).toISOString().slice(0, 19).replace('T', ' ');
-  const answers = await all(env.ATT_DB, `SELECT a.key, a.user_id, a.at, u.name FROM till_answer a LEFT JOIN users u ON u.id = a.user_id
+  const answers = await all(env.ATT_DB, `SELECT a.key, a.user_id, a.at, a.text, u.name FROM till_answer a LEFT JOIN users u ON u.id = a.user_id
     WHERE a.how <> 'note' AND a.at >= ?1 ORDER BY a.id`, since).catch(() => []);
   if (!answers.length) return [];
   const decided = await all(env.DB, 'SELECT key, hive_user_id, at FROM till_resolution WHERE at >= ?1', since).catch(() => []);
   const latest = new Map();
   for (const a of answers) latest.set(`${a.key}|${a.user_id}`, a);
   const waiting = [...latest.values()].filter((a) => !decided.some((d) => d.key === a.key && Number(d.hive_user_id) === Number(a.user_id) && String(d.at) >= String(a.at)));
-  if (!waiting.length) return [];
-  const names = [...new Set(waiting.map((a) => a.name || 'Somebody'))];
-  return [{
-    tab: 'decide', key: 'staffanswers', sev: waiting.length > 5 ? 'warn' : 'info',
-    title: `${waiting.length} staff answer${waiting.length === 1 ? '' : 's'} from HIVE to decide`,
-    why: names.slice(0, 5).join(', ') + (names.length > 5 ? ` and ${names.length - 5} more` : ''),
-    age: daysSince(waiting[0].at, now),
-    advice: 'Read what each said: accept it, ask for proof, or send it back.',
-    actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }],
-  }];
+  // One line each, due the day after it was given.
+  return waiting.map((a) => ({
+    tab: 'decide', key: `staffanswer:${a.key}|${a.user_id}`, sev: 'info',
+    title: `${a.name || 'Somebody'} answered${a.text ? `: “${String(a.text).slice(0, 90)}${String(a.text).length > 90 ? '…' : ''}”` : ''}`,
+    why: shiftOfKey(a.key), due: plusDay(String(a.at).slice(0, 10), 1), age: daysSince(a.at, now),
+    advice: 'Read what they said: accept it, ask for proof, or send it back.',
+    actions: [{ label: 'Decide', href: '#/inbox', primary: true }],
+  }));
 }
 
 /** Names typed in the other apps that match no Odoo supplier. */

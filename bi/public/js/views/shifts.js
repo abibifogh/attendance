@@ -4384,4 +4384,10 @@ export async function renderShifts(root, { range, section: only = null, onSectio
 
   // Last, once every helper above exists: the first read and paint.
   await load(null, { inboxRead: true });
+  // Opened from Today ("Open shift"): that shift's story, once.
+  const wantShift = /^(\d{4}-\d{2}-\d{2})\|(morning|afternoon|night)$/.exec(store.get('openshift', '') || '');
+  if (wantShift && section === 'shifts') {
+    store.set('openshift', '');
+    await openShift(wantShift[1], wantShift[2]);
+  }
 }

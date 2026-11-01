@@ -3,14 +3,16 @@ import { badRequest, forbidden, notFound, str } from '../lib/http.js';
 import { callLink } from '../lib/link.js';
 import { logEvent, people } from './notes.js';
 import { roleOf } from './till.js';
+import { dutySettings, supervisors } from './duty.js';
 
 /**
  * To-dos made from a difference ("What does not agree on this shift").
  *
  * An admin or a supervisor makes one for an Insight user (an admin or a
  * supervisor, themselves included), with a day it is due. Whoever it is for
- * is emailed when it is made, and each morning after, with the daily summary,
- * until it is done. It is its own thing: answering the difference does not
+ * is emailed when it is made. After that it is on their Today, and a
+ * supervisor's 07:00 email; anybody without that email (an admin) is
+ * reminded each morning until it is done. It is its own thing: answering the difference does not
  * close it, and Done on it does not answer the difference.
  *
  * An admin sees every to-do; a supervisor, those for them and those they
@@ -88,8 +90,8 @@ async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to: to.email, subject, kind: 'insight_todo', senderName: 'Insight',
-        text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\n${link ? `Open it: ${link}\n\n` : ''}It is in Insight (not HIVE): Front desk › Shifts › To sort out › To-do, signed in as ${to.email}. Press Done when it is done. You are reminded each morning until then.`,
-        html: `<p><b>${esc(t.what)}</b>${esc(from)}.</p><p>It ${esc(when)}. Made by ${esc(t.made_by)}.</p>${link ? `<p><a href="${esc(link)}"><b>Open the to-do in Insight</b></a></p>` : ''}<p>It is in Insight (not HIVE): Shifts › Inbox › <b>To-do</b>, signed in as ${esc(to.email)}. Press Done when it is done. You are reminded each morning until then.</p>`,
+        text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\n${link ? `Open it: ${link}\n\n` : ''}It is in Insight (not HIVE): Front desk › Shifts › To sort out › To-do, signed in as ${to.email}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.`,
+        html: `<p><b>${esc(t.what)}</b>${esc(from)}.</p><p>It ${esc(when)}. Made by ${esc(t.made_by)}.</p>${link ? `<p><a href="${esc(link)}"><b>Open the to-do in Insight</b></a></p>` : ''}<p>It is in Insight (not HIVE): Shifts › Inbox › <b>To-do</b>, signed in as ${esc(to.email)}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.</p>`,
       },
     });
     return true;
@@ -174,12 +176,20 @@ export async function change(env, id, body, account, { fetchImpl, origin = '' } 
   return { ok: true, task: view(after, account), told };
 }
 
-/** Each morning: a reminder for every open to-do not reminded today. Never throws. */
+/**
+ * Each morning: a reminder for every open to-do not reminded today, for
+ * whoever does not get the 07:00 email. A supervisor gets that email, with
+ * their to-dos in it, so they are not emailed about each one as well.
+ * Never throws.
+ */
 export async function remindDue(env, { fetchImpl, at = new Date() } = {}) {
   let sent = 0;
   try {
     const today = at.toISOString().slice(0, 10);
-    const rows = await all(env.DB, "SELECT * FROM shift_task WHERE state = 'open' AND substr(COALESCE(reminded_at, made_at), 1, 10) < ?1", today);
+    const digest = (await dutySettings(env)).digest;
+    const covered = digest ? new Set((await supervisors(env)).filter((p) => p.email).map((p) => p.id)) : new Set();
+    const rows = (await all(env.DB, "SELECT * FROM shift_task WHERE state = 'open' AND substr(COALESCE(reminded_at, made_at), 1, 10) < ?1", today))
+      .filter((t) => !covered.has(Number(t.for_id)));
     for (const t of rows) {
       // eslint-disable-next-line no-await-in-loop
       if (await tell(env, t, { reminder: true, fetchImpl, today })) sent += 1;

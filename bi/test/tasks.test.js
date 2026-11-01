@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { freshDb } from './helpers.js';
 import * as tasks from '../src/routes/tasks.js';
 import * as notes from '../src/routes/notes.js';
+import * as duty from '../src/routes/duty.js';
 
 /**
- * To-dos made from a difference: for an Insight user, emailed when made and
- * each morning until done, separate from the difference. Everything is invented.
+ * To-dos made from a difference: for an Insight user, emailed when made, then
+ * in the 07:00 email (or, without it, each morning) until done, separate from the difference. Everything is invented.
  */
 
 const OWNER = { id: 1, name: 'Test Owner', isOwner: true, access: [] };
@@ -84,11 +85,13 @@ test('changed to somebody else: they are told; removed: gone from the lists', as
   await assert.rejects(tasks.done(env, task.id, OWNER), /not there/);
 });
 
-test('reminded each morning until done, once a day', async () => {
+test('a supervisor’s to-dos come in the 07:00 email, not one by one; without that email, reminded each morning until done, once a day', async () => {
   const { env, raw, sent, fetchImpl } = setUp();
   const { task } = await tasks.make(env, body(), OWNER, { fetchImpl });
   raw.exec(`UPDATE shift_task SET made_at = '2026-10-20 10:00:00', reminded_at = '2026-10-20 10:00:00'`);
   sent.length = 0;
+  assert.equal((await tasks.remindDue(env, { fetchImpl, at: new Date('2026-10-21T06:45:00Z') })).sent, 0, 'Ama gets the 07:00 email, with it in');
+  await duty.saveDuty(env, { digest: false }, OWNER);
   // The same day it was made: nothing.
   assert.equal((await tasks.remindDue(env, { fetchImpl, at: new Date('2026-10-20T18:00:00Z') })).sent, 0);
   // Next morning, and the morning after (now overdue); twice on one morning is once.

@@ -1,49 +1,83 @@
-# The Assistant
+# The Assistant: Today
 
-Assistant › Today: everything that needs you, from every place Insight
-reads, in one list, each with what Insight would do about it. Everybody given
-Insight has one, and it opens first; an admin's covers everything, anybody
-else's only what their access already shows them.
+Assistant › Today is each person's **one list**: everything that is theirs,
+from every place Insight reads, sorted by when it wants doing, with the button
+that does it. Everybody given Insight has one, and it opens first; an admin's
+covers everything, anybody else's only what their access already shows them.
+
+## The page
+
+- **On top:** how many things are yours, how many overdue and due today, and
+  chips to show one kind at a time (All, Given to you, Shifts, Safe, Nice
+  Place, Approvals, Buying, Checks, Report). The chip chosen is remembered.
+- **The Saturday report**, for the supervisor who sends it, all week: when it
+  is due, how long is left, the reminders already sent, and the 14:00
+  deduction. Amber after Friday's reminder, red once late, green once sent.
+  An admin sees it from Friday's reminder until it has gone.
+- **The list**, in three groups: **Overdue** (red), **Due today** (amber),
+  **Later**. Six of each show; the rest open with *N more*. Each line has its
+  kind, who gave it, why, how late it is, and its buttons: **Done** for a
+  to-do, **Open shift** (opens that shift's page), **Decide**, **Send proof**,
+  Approve or Send back for an approval, or a link to the page where it is done.
+- **Sent up, waiting for an admin** (supervisors): their answers,
+  reconciliations, accepts and corrections an admin has not decided yet, so
+  nobody asks twice. Nothing to do on them.
+- **Beside it:** *Your week* (things done since Monday, from the audit trail;
+  what is overdue; shifts checked in the last seven days; whether last week's
+  report went), *One email a day* (supervisors), *Done today*, and **Ask
+  Insight**.
+
+## When something is due
+
+| Line | Due |
+|---|---|
+| A to-do given to you | The day it was given for |
+| Proof asked of you | The day it was asked |
+| A shift to check | The day after the shift |
+| A staff answer from HIVE, an approval | The day after it was given |
+| Envelopes not marked received | The day after the oldest |
+| Anything else | Urgent: today. Waiting a week or more: overdue. *Soon*: today. The rest: later |
 
 ## Who sees what
 
-| Who | Their Assistant reads |
+| Who | Their list |
 |---|---|
-| **Admin** (and owners) | Everything below in **The list** |
-| **Supervisor** | To-dos given to them, and sent back to them; shifts of the last week not checked (if they may check shifts); staff answers from HIVE waiting for a decision (if they act on staff answers); Nice Place counters to read (if they read them; the link opens To sort out) |
+| **Admin** (and owners) | To-dos given to them, proof asked of them, envelopes, and everything below in **What else is on an admin's list** |
+| **Supervisor** | To-dos given to them; proof asked of them; POs to chase given to them, and sent back; each shift of the last week not checked (if they may check shifts); each staff answer from HIVE waiting (if they act on staff answers); envelopes not marked received (if they act on envelopes); Nice Place counters to read (if they read them) |
 | **Uploader** | The ASSD journal not loaded lately, with a link to Upload files |
 | **Anybody given report pages** | Insight's checks, if the Brief is shared with them; Nice Place shifts with no sales sent, if the Nice Place page is |
 
-Approvals in every system, receipts, floats, bills owed, suppliers, the
-management report and Nice Place pickups to approve stay an admin's, and so
-does **Done for you**. Amounts show only for whoever may see money (an admin,
-or a supervisor given amounts); the Brief's own findings show theirs, as the
-Brief does. The summary and **Ask Insight** use only that person's list, and
-say so when something is beyond it. The count on the Assistant button is an
-admin's approvals, so nobody else has it.
+Amounts show only for whoever may see money (an admin, or a supervisor given
+amounts); the Brief's own findings show theirs, as the Brief does. The summary
+and **Ask Insight** use only that person's list.
 
-## The list
+## What else is on an admin's list
 
-| Tab | What is in it | Where it comes from |
-|---|---|---|
-| **Decide** | Approvals waiting in every system; receipts with no PO, drafts to check; float receipts to look at; answers on the to-do list; Nice Place counters nobody could read | Approvals, Receipts, Floats, the to-do list, Nice Place |
-| **Fix** | Insight's own checks (drawers, food cost and the rest), money held in floats with nothing sent for 14 days, Odoo bills owed more than 30 days (only when turned on, see below), to-dos nobody has, the ASSD journal not loaded for two days | Findings, Floats, Odoo bills, the to-do list, Shift files |
-| **Review** | Last week's management report when it has not gone; supplier names not linked to Odoo; a system that could not be read for approvals | Management report, Suppliers, Approvals |
-| **Done for you** | What Insight did by itself in the last day: reading the systems, draft POs made from receipts | Insight |
+Approvals waiting in every system; receipts with no PO, drafts to check; float
+receipts to look at and money held in floats with nothing sent for 14 days;
+answers on POs to chase, and POs to chase nobody has; Insight's own checks
+(drawers, food cost and the rest); Odoo bills owed more than 30 days (only
+when turned on, see below); Nice Place pickups to approve and shifts with no
+sales sent; the ASSD journal not loaded for two days; last week's management
+report when it has not gone; supplier names not linked to Odoo. **Done today**
+also says what Insight did by itself (reading the systems, draft POs made from
+receipts).
 
-Urgent first, then by money, then by how long it has waited. Open a line for
-why, **What I'd do**, and buttons: a decision that needs nothing typed
-(Approve, Send back) is made from here, in its own system, as you; anything
-else opens the page where it is done.
+## Email
 
-Each place is read on its own. One that fails says so under **What I read**,
-and the rest of the list still comes.
+Supervisors get **one email a day**, at 07:00: the same list, in the same
+order, with the admins copied (see `management-report.md`). A to-do sends one
+email when it is given; there are no other reminders. Anybody who does not get
+the 07:00 email (an admin) is still reminded of their to-dos each morning.
+
+Each place is read on its own. One that fails is named at the bottom of the
+side (*could not be read*), and the rest of the list still comes.
 
 ### Bills owed in Odoo: off unless turned on
 
 Bills owed to suppliers are paid on their own rhythm, and a big balance would
-otherwise sit at the top of the list, in **Money at stake** and in the
-summary. So they are left out: **What I read** shows Odoo bills as *off*.
+otherwise sit at the top of the list and in the summary. So they are left
+out. At the bottom of the side, an admin's page says Odoo bills are *off*.
 Under it, an admin ticks **Flag bills owed in Odoo** to bring them back
 (suppliers owed for more than 30 days, two months and over as *Soon*), and
 unticks it to leave them out again. It is one setting for every admin.
@@ -52,21 +86,16 @@ answers a question about what is owed when they are off.
 
 ## The summary and Ask
 
-**Your day, in short** is written by Workers AI (the same reader that reads
+The line under the greeting is written by Workers AI (the same reader that reads
 receipts and the Nice Place counters) from the list, and nothing else: it is
 told never to invent a figure, a name or a cause. Until it answers, or if it
-cannot be reached, the counts are said in plain words.
+cannot be reached, it is left out.
 
 **Ask Insight** answers a question from the same list, and says which page
 would answer what the list cannot. It reads only; it changes nothing.
 
-## Not yet
-
-Doing things on its own (reminders, routine approvals) and telling you by
-WhatsApp or email wait for your say on how far it may go.
-
 ## Endpoints
 
-- `GET /api/assistant`: the list, counts, tiles and what was read. Admins.
+- `GET /api/assistant`: Today: the list (each line with `when`, `due`, `late`, `area`), counts, the Saturday report card, what was sent up, the week, done today, and what was read (`src/routes/today.js`).
 - `GET /api/assistant/brief`: the summary in words.
 - `POST /api/assistant/ask` `{ question }`: an answer.

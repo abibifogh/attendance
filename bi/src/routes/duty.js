@@ -3,7 +3,7 @@ import { badRequest } from '../lib/http.js';
 import { callLink } from '../lib/link.js';
 import { frame, esc } from './invitations.js';
 import { adminEmails } from './prepaid.js';
-import { gather } from './assistant.js';
+import { gather, arrange } from './assistant.js';
 import * as mgmt from './mgmt.js';
 import { requireAdmin } from './till.js';
 
@@ -98,6 +98,37 @@ export async function dutyMine(env, account, { now = Date.now() } = {}) {
   return { on: s.on, mine, key, due: `${plusDays(key, 5)}T${String(DUE_HOUR).padStart(2, '0')}:00:00Z`, sent: week.sent || null };
 }
 
+/**
+ * The Saturday report as a card for Today: for the supervisor who sends it,
+ * all week; for an admin, from Friday's reminder until it has gone. Where it
+ * stands: `ahead`, `soon` (Friday's reminder has gone), `late` (past 10:00 on
+ * Saturday), `docked` (the GH₵ came off), or `sent`. `last` is last week's.
+ */
+export async function dutyCard(env, account, { now = Date.now(), admin = false } = {}) {
+  const s = await dutySettings(env);
+  if (!s.on || !s.accountId) return null;
+  const mine = Number(account?.id) === s.accountId;
+  if (!mine && !admin) return null;
+  const key = mondayOf(dayOf(now));
+  const log = await readLog(env);
+  const week = log[key] || {};
+  const at = (day, hour) => Date.parse(`${day}T${String(hour).padStart(2, '0')}:00:00Z`);
+  const friday = plusDays(key, 4);
+  const saturday = plusDays(key, 5);
+  const t = new Date(now).getTime();
+  const stage = week.sent ? 'sent' : week.docked ? 'docked' : t >= at(saturday, DUE_HOUR) ? 'late' : t >= at(friday, 17) ? 'soon' : 'ahead';
+  if (!mine && ['ahead', 'sent'].includes(stage)) return null;
+  const person = (await supervisors(env)).find((p) => p.id === s.accountId);
+  const last = log[plusDays(key, -7)] || null;
+  return {
+    mine, who: person?.name || 'The supervisor on duty', stage, from: key, to: friday, amount: s.amount,
+    due: new Date(at(saturday, DUE_HOUR)).toISOString(), dock: new Date(at(saturday, DOCK_HOUR)).toISOString(),
+    reminders: [new Date(at(friday, 17)).toISOString(), new Date(at(saturday, 9)).toISOString()],
+    sent: week.sent || null, docked: week.docked || null,
+    last: last ? { sent: last.sent || null, docked: last.docked || null } : null,
+  };
+}
+
 /** May this account send this week's report to everybody: an admin, or the supervisor on duty, for this week. */
 export async function maySendToEverybody(env, account, { period, at }, { now = Date.now() } = {}) {
   const mine = await dutyMine(env, account, { now });
@@ -136,29 +167,37 @@ async function mail(env, { to, cc = [], subject, html, text, kind, fetchImpl }) 
 }
 
 const button = (href, label) => (href ? `<a href="${esc(href)}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;border-radius:10px;padding:12px 20px">${esc(label)}</a>` : '');
-const TAB_WORDS = { decide: 'Waiting on your yes or no', fix: 'Going wrong', review: 'Worth a look' };
+const WHEN_WORDS = { overdue: 'Overdue', today: 'Due today', later: 'Later' };
+const WHEN_COLOUR = { overdue: '#b91c1c', today: '#8a5a00', later: '#6b6a64' };
 
-/** A supervisor's morning email: their list, by what kind of thing it is. */
+/**
+ * A supervisor's morning email: the same list as their Today, in the same
+ * order (overdue, due today, later), with the Saturday report on top when it
+ * is theirs. It is their only reminder: to-dos are not emailed one by one.
+ */
 export function digestEmail({ name, items, base, duty = null }) {
   const first = String(name || '').split(/\s+/)[0] || 'there';
-  const groups = ['decide', 'fix', 'review'].map((t) => [t, items.filter((x) => x.tab === t)]).filter(([, xs]) => xs.length);
-  const urgent = items.filter((x) => x.sev === 'crit' || x.sev === 'warn').length;
-  const row = (x) => `<tr><td style="padding:10px 0;border-bottom:1px solid #ecebe6">
-      <b style="color:#111110">${esc(x.title)}</b>${x.age ? ` <span style="color:#8a8780;font-size:12px">· ${esc(x.age === 1 ? 'since yesterday' : `${x.age} days`)}</span>` : ''}
-      ${x.why ? `<div style="font-size:13px;color:#4e4d49">${esc(x.why)}</div>` : ''}
-      ${x.advice ? `<div style="font-size:13px;color:#2f2e2b;margin-top:2px">→ ${esc(x.advice)}</div>` : ''}</td></tr>`;
+  const groups = ['overdue', 'today', 'later'].map((w) => [w, items.filter((x) => x.when === w)]).filter(([, xs]) => xs.length);
+  const overdue = items.filter((x) => x.when === 'overdue').length;
+  const meta = (x) => [x.from ? `from ${x.from}` : null, x.why || null,
+    x.when === 'overdue' && x.late ? `${x.late} day${x.late === 1 ? '' : 's'} late` : x.when === 'later' && x.due ? `due ${shortDay(x.due)}` : null].filter(Boolean).join(' · ');
+  const row = (x) => `<tr><td style="padding:9px 0;border-bottom:1px solid #ecebe6">
+      <b style="color:#111110">${esc(x.title)}</b>${meta(x) ? ` <span style="color:#8a8780;font-size:13px">· ${esc(meta(x))}</span>` : ''}</td></tr>`;
   const html = frame(`
     <h1 style="margin:0 0 6px;font-size:22px;line-height:1.25;color:#111110">Good morning, ${esc(first)}</h1>
-    <p style="margin:0 0 16px">${items.length} thing${items.length === 1 ? '' : 's'} on your table${urgent ? `, ${urgent} to do first` : ''}.</p>
+    <p style="margin:0 0 16px">The same list as Today in Insight.</p>
     ${duty ? `<div style="border-left:3px solid #d97706;background:#fff7ed;padding:12px 16px;margin:0 0 16px;border-radius:0 10px 10px 0"><b>${esc(duty)}</b></div>` : ''}
-    ${groups.map(([t, xs]) => `<p style="margin:16px 0 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b6a64">${TAB_WORDS[t]}</p>
+    ${groups.map(([w, xs]) => `<p style="margin:16px 0 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${WHEN_COLOUR[w]}">${WHEN_WORDS[w]}</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${xs.map(row).join('')}</table>`).join('')}
-    <p style="margin:20px 0 0">${button(base ? `${base}/#/assistant` : null, 'Open your Assistant')}</p>
+    <p style="margin:20px 0 0">${button(base ? `${base}/#/assistant` : null, 'Open Today in Insight')}</p>
     <p style="margin:18px 0 0;font-size:12px;color:#8a8780">Sent every morning at 7:00 while something is waiting on you. The admins get a copy.</p>`);
-  const text = [`Good morning, ${first}`, `${items.length} thing(s) on your table.`, duty || '',
-    ...items.map((x) => `- ${x.title}${x.advice ? `: ${x.advice}` : ''}`), base ? `${base}/#/assistant` : ''].filter(Boolean).join('\n');
-  return { subject: `Your table this morning: ${items.length} thing${items.length === 1 ? '' : 's'}${urgent ? `, ${urgent} first` : ''}`, html, text };
+  const text = [`Good morning, ${first}`, 'The same list as Today in Insight.', duty || '',
+    ...groups.flatMap(([w, xs]) => [`${WHEN_WORDS[w]}:`, ...xs.map((x) => `- ${x.title}${meta(x) ? ` (${meta(x)})` : ''}`)]),
+    base ? `${base}/#/assistant` : ''].filter(Boolean).join('\n');
+  const n = items.length;
+  return { subject: `${first}, ${n} thing${n === 1 ? '' : 's'} today${overdue ? ` — ${overdue} overdue` : ''}`, html, text };
 }
+const shortDay = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 /** Each supervisor's morning email, with the admins copied. */
 export async function sendDigests(env, { now = Date.now(), fetchImpl } = {}) {
@@ -176,7 +215,7 @@ export async function sendDigests(env, { now = Date.now(), fetchImpl } = {}) {
     try {
       // eslint-disable-next-line no-await-in-loop
       const data = await gather(env, person, { now });
-      const items = data.items.filter((x) => x.tab !== 'done');
+      const items = arrange(data.items.filter((x) => x.tab !== 'done'), day);
       // The Saturday report, on the morning it is due, for whoever sends it.
       const duty = s.on && person.id === s.accountId && weekday(day) === 6 && !mine.sent
         ? `This week's management report is due by 10:00 today: open Reports › Management report and press Send to everybody.` : null;

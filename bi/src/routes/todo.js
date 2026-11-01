@@ -187,7 +187,7 @@ export async function todoCounts(env, account = null) {
 /** The list: a supervisor's own, or everybody's for an admin. */
 export async function listTodos(env, account, { closed = false } = {}) {
   const role = roleOf(account);
-  if (role !== 'admin' && role !== 'supervisor') throw forbidden('The to-do list is for admins and supervisors.');
+  if (role !== 'admin' && role !== 'supervisor') throw forbidden('POs to chase are for admins and supervisors.');
   const admin = role === 'admin';
   const where = [closed ? "state = 'closed'" : "state != 'closed'"];
   const binds = [];
@@ -210,7 +210,7 @@ export async function listTodos(env, account, { closed = false } = {}) {
 
 async function item(env, id) {
   const t = await first(env.DB, 'SELECT * FROM money_todo WHERE id = ?1', Number(id));
-  if (!t) throw notFound('No such item on the to-do list.');
+  if (!t) throw notFound('No such item on POs to chase.');
   return t;
 }
 

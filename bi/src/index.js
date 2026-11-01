@@ -35,6 +35,7 @@ import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
 import * as assistant from './routes/assistant.js';
+import * as today from './routes/today.js';
 import * as duty from './routes/duty.js';
 import * as audit from './lib/audit.js';
 import { meterDb, keep, speedView } from './lib/speed.js';
@@ -398,7 +399,7 @@ const ROUTES = [
   // Approvals: everything waiting for an admin in every system, decided here as them.
   // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
   // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
-  ['GET', '/api/assistant', 'session', (env, ctx) => assistant.gatherOnce(env, ctx.account, { fresh: true })],
+  ['GET', '/api/assistant', 'session', (env, ctx) => today.today(env, ctx.account)],
   ['GET', '/api/assistant/brief', 'session', (env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by }))],
   ['POST', '/api/assistant/ask', 'session', (env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true })],
   ['POST', '/api/assistant/bills', 'session', adminOnly((env, ctx) => assistant.setBills(env, ctx.body, ctx.account))],
