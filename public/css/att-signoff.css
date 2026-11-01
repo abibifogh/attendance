@@ -1,1 +1,160 @@
 /* Attendance › signoff: the redesign. Styles for this area only; tokens come from /styles.css. */
+
+.so-page {
+  --so-info: var(--info);
+  --so-info-soft: color-mix(in srgb, var(--info) 14%, var(--surface));
+  --so-accent-soft: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  --so-fix: #f0a94c;
+  --so-fix-ink: #1d1406;
+  --so-line: color-mix(in srgb, var(--border) 55%, var(--surface));
+}
+
+/* ------------------------------------------------------------ the head -- */
+.so-head { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1rem; margin-bottom: 1rem; }
+.so-head h1 { margin: 0; font-size: 1.65rem; letter-spacing: -.02em; }
+.so-tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); max-width: 100%; }
+.so-tabs button { border: 0; background: transparent; border-radius: 9px; padding: .42rem .85rem; font-size: .85rem; font-weight: 600; color: var(--text-dim); gap: .4rem; }
+.so-tabs button:hover { background: color-mix(in srgb, var(--surface) 60%, transparent); color: var(--text); }
+.so-tabs button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(16, 19, 26, .12); }
+.so-tab-n { display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem; padding: 0 .3rem; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: .72rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+
+/* ----------------------------------------------------------- the layout -- */
+.so-layout { display: grid; grid-template-columns: minmax(0, 1fr) 20.5rem; gap: 1rem; align-items: start; }
+.so-main, .so-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+}
+.so-main { overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.so-side { display: flex; flex-direction: column; gap: .75rem; position: sticky; top: calc(var(--topbar-h, 58px) + .75rem); }
+.so-card { padding: .9rem 1rem; }
+.so-label { display: block; font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
+
+/* ---------------------------------------------------------- chips, buttons -- */
+.so-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.so-chip {
+  display: inline-flex; align-items: center; gap: .4rem;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 10px; padding: .38rem .7rem; font-size: .8rem; font-weight: 650; white-space: nowrap;
+}
+.so-chip:hover { background: var(--surface-2); }
+.so-chip.on { background: var(--text); border-color: var(--text); color: var(--surface); }
+.so-chip-n { opacity: .6; font-variant-numeric: tabular-nums; }
+
+.so-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 10px; padding: .42rem .75rem; font-size: .8rem; font-weight: 650; white-space: nowrap;
+}
+.so-btn:hover { background: var(--surface-2); }
+.so-btn.so-fix { background: var(--so-fix); border-color: var(--so-fix); color: var(--so-fix-ink); }
+.so-btn.so-fix:hover { background: color-mix(in srgb, var(--so-fix) 88%, #000); }
+.so-btn.so-sign-all { background: var(--text); border-color: var(--text); color: var(--surface); padding: .5rem .95rem; }
+.so-btn.so-sign-all:hover { background: color-mix(in srgb, var(--text) 85%, var(--surface)); }
+.so-btn.so-sign-all:disabled { background: var(--surface-2); border-color: var(--border); color: var(--text-faint); opacity: 1; }
+.so-link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; font-size: inherit; display: inline; }
+.so-link:hover { background: none; text-decoration: underline; }
+
+/* ----------------------------------------------------- the list itself -- */
+.so-main-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem .9rem; padding: .9rem 1rem; }
+.so-title b { font-size: 1.05rem; }
+.so-title span { font-size: .84rem; color: var(--text-dim); }
+
+.so-issue {
+  display: grid; grid-template-columns: 2.4rem 14rem minmax(0, 1fr) auto; gap: .9rem;
+  align-items: center; padding: .75rem 1rem; border-top: 1px solid var(--so-line);
+}
+.so-issue.is-busy { opacity: .55; }
+.so-ic { width: 2.25rem; height: 2.25rem; border-radius: 11px; display: grid; place-items: center; font-weight: 800; font-size: .95rem; background: var(--surface-2); color: var(--text-dim); }
+.so-issue.is-info .so-ic { background: var(--so-info-soft); color: var(--so-info); }
+.so-issue.is-bad .so-ic { background: var(--bad-soft); color: var(--bad); }
+.so-issue.is-warn .so-ic { background: var(--warn-soft); color: var(--warn); }
+.so-issue.is-accent .so-ic { background: var(--so-accent-soft); color: var(--accent); }
+.so-issue.is-good .so-ic { background: var(--good-soft); color: var(--good); }
+.so-who { min-width: 0; }
+.so-who > b { font-size: .9rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-when { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .45rem; font-size: .76rem; color: var(--text-dim); margin-top: .1rem; }
+.so-shift { display: inline-flex; align-items: center; gap: .3rem; }
+.so-shift::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--shift, var(--text-faint)); flex: none; }
+.so-shift[data-shift-colour="0"]::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-faint); }
+.so-what { font-size: .87rem; line-height: 1.4; min-width: 0; }
+.so-what b { font-weight: 700; white-space: nowrap; }
+.so-kind-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.so-fixes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+
+.so-undone { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; padding: .55rem 1rem; border-top: 1px solid var(--so-line); background: var(--good-soft); color: var(--text); font-size: .84rem; }
+.so-undone-tick { width: 1.3rem; height: 1.3rem; border-radius: 50%; display: grid; place-items: center; background: var(--good); color: var(--surface); font-size: .72rem; font-weight: 800; }
+.so-sub { padding: .45rem 1rem; border-top: 1px solid var(--so-line); background: var(--surface-2); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.so-issue[data-kind="asked"], .so-issue[data-kind="waiting"] { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.so-issue[data-kind="asked"] .so-what, .so-issue[data-kind="waiting"] .so-what { color: var(--text-dim); }
+
+.so-none { display: flex; flex-direction: column; align-items: center; gap: .3rem; text-align: center; padding: 2.4rem 1rem; border-top: 1px solid var(--so-line); color: var(--text-dim); font-size: .88rem; }
+.so-none b { color: var(--text); font-size: 1rem; }
+.so-none-tick { width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; background: var(--good-soft); color: var(--good); font-weight: 800; font-size: 1.1rem; margin-bottom: .2rem; }
+
+.so-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem 1rem; padding: .8rem 1rem; border-top: 1px solid var(--so-line); background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+.so-foot > span { font-size: .82rem; color: var(--text-dim); flex: 1 1 18rem; }
+
+/* ---------------------------------------------------------- the side -- */
+.so-ring-card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .55rem; }
+.so-ring { --pct: 100; width: 7.5rem; height: 7.5rem; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: conic-gradient(var(--good) calc(var(--pct) * 1%), var(--warn) 0); }
+.so-ring-hole { width: 5.9rem; height: 5.9rem; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.so-ring-hole b { font-size: 1.45rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.so-ring-hole small { font-size: .7rem; color: var(--text-dim); }
+.so-ring-text { display: flex; flex-direction: column; gap: .25rem; }
+.so-ring-text b { font-size: .95rem; }
+.so-ring-text span { font-size: .8rem; color: var(--text-dim); line-height: 1.45; }
+
+.so-controls { display: flex; flex-direction: column; gap: .5rem; }
+.so-controls .so-label:not(:first-child) { margin-top: .35rem; }
+.so-dates { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.so-dates input { padding: .4rem .5rem; font-size: .84rem; }
+.so-dept-select { display: none; }
+
+.so-last p { margin: .4rem 0 0; font-size: .84rem; color: var(--text-dim); line-height: 1.5; }
+
+/* ------------------------------------------------ "Each person" view -- */
+.so-people { min-width: 0; }
+.so-people-bar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: .8rem; }
+.so-people-bar .signoff-counts { margin: 0; }
+
+/* The other tabs keep their cards, a little rounder to sit with the list. */
+.so-page > div:not(.so-layout) > .card, .so-page .so-people .card { border-radius: 16px; }
+.so-page > .card.empty { border-radius: 18px; }
+
+/* ------------------------------------------------------- narrower -- */
+@media (max-width: 1180px) {
+  .so-issue { grid-template-columns: 2.4rem minmax(0, 11rem) minmax(0, 1fr); }
+  .so-fixes { grid-column: 2 / -1; justify-content: flex-start; }
+}
+@media (max-width: 960px) {
+  .so-layout { grid-template-columns: minmax(0, 1fr); }
+  .so-side { position: static; order: -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+  .so-ring-card { flex-direction: row; text-align: left; }
+  .so-ring { width: 4.6rem; height: 4.6rem; }
+  .so-ring-hole { width: 3.5rem; height: 3.5rem; }
+  .so-ring-hole b { font-size: .95rem; }
+  .so-ring-hole small { display: none; }
+}
+@media (max-width: 620px) {
+  .so-head { gap: .5rem; margin-bottom: .75rem; }
+  .so-head h1 { font-size: 1.35rem; }
+  .so-tabs { width: 100%; }
+  .so-tabs button { padding: .38rem .6rem; font-size: .8rem; }
+  .so-side { grid-template-columns: minmax(0, 1fr); gap: .6rem; }
+  .so-last { display: none; }
+  .so-depts { display: none; }
+  .so-dept-select { display: block; }
+  .so-main { border-radius: 14px; }
+  .so-main-head { padding: .8rem .85rem; }
+  .so-kinds { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; scrollbar-width: none; }
+  .so-issue { grid-template-columns: 2.1rem minmax(0, 1fr); gap: .35rem .7rem; padding: .7rem .85rem; align-items: start; }
+  .so-ic { width: 2rem; height: 2rem; border-radius: 10px; }
+  .so-what, .so-fixes { grid-column: 2; }
+  .so-fixes { justify-content: flex-start; }
+  .so-foot { padding: .75rem .85rem; }
+  .so-foot .so-sign-all { width: 100%; }
+}
+
+@media print {
+  .so-side, .so-fixes, .so-foot, .so-tabs { display: none !important; }
+  .so-layout { grid-template-columns: 1fr; }
+}
