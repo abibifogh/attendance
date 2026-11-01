@@ -1221,6 +1221,7 @@ function perPersonScores(scheme, data, scored, typed, closed, cash) {
     const input = h('input.pay-score', {
       type: 'number', min: '0', max: '100', step: '1', value: now,
       disabled: closed,
+      'data-k': `${scheme.id}|${staffId}`,
       'aria-label': `${person?.name ?? 'Somebody'} on ${scheme.name}`,
       oninput: (e) => {
         const value = Math.max(0, Math.min(100, Number(e.target.value) || 0));
@@ -1510,6 +1511,13 @@ function schemesCard(data, month, closed, reload, cash) {
                 : ` · ${cash(scheme.amount)} at 100%`),
             scheme.note ? h('div.muted', scheme.note) : null),
           h('div.btn-row',
+            // The Ahokeka bonus is worked out in Maintenance, week by week.
+            fromMaintenanceOk(scheme, everybody, closed)
+              ? h('button.btn-sm', {
+                title: 'Each artisan’s Ahokeka bonus for the month, as Maintenance worked it out',
+                onclick: (e) => bringFromMaintenance(scheme, month, e.target),
+              }, 'Bring in from Maintenance')
+              : null,
             h('button.btn-sm', { onclick: () => editScheme(scheme, data, reload) }, 'Edit'),
             h('button.btn-ghost.btn-sm', {
               title: 'Take this scheme off the books',
@@ -1551,6 +1559,93 @@ function schemesCard(data, month, closed, reload, cash) {
         // schemes pay a set figure has not scored anything.
       }, data.schemes.every((s) => s.kind === 'amount') ? 'Save the figures' : 'Save the scores'))
     : null);
+}
+
+/**
+ * The Ahokeka bonus, out of Maintenance.
+ *
+ * Maintenance scores its artisans week by week and adds the weeks up into a
+ * month; the server asks it for the month and says the score that pays what
+ * each person earned. Nothing is saved from here: the window shows each
+ * person's weeks, and "Put these in" fills the boxes, which are then saved
+ * the usual way. Only on a scheme scored person by person whose name says
+ * Ahokeka: the others are not Maintenance's.
+ */
+function fromMaintenanceOk(scheme, everybody, closed) {
+  return !closed && !everybody && !['amount', 'tier'].includes(scheme.kind) && /ahokeka/i.test(scheme.name);
+}
+
+const weekDay = (iso) => {
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+
+async function bringFromMaintenance(scheme, month, button) {
+  button.disabled = true;
+  const was = button.textContent;
+  button.textContent = 'Asking Maintenance…';
+  let got;
+  try {
+    got = await api.payrollFromMaintenance({ month, schemeId: scheme.id });
+  } catch (err) {
+    toast(err.message, 'bad');
+    return;
+  } finally {
+    button.disabled = false;
+    button.textContent = was;
+  }
+
+  const ghs = (n) => `GHS ${fmtNum(n)}`;
+  const body = h('div.mx-bonus',
+    h('p.muted', { style: { marginTop: 0 } },
+      `${niceMonth(got.month)}: ${got.weeks.length} weeks, each in the month most of its days are in — `
+      + `${got.weeks.map(weekDay).join(', ')}. A week under ${got.threshold ?? 80}% earns nothing. `
+      + `The score is what they earned, as a share of the ${ghs(scheme.amount)} this scheme pays at 100%.`),
+    got.lines.length
+      ? h('table.pay-scores.mx-bonus-table',
+        h('thead', h('tr',
+          h('th', 'Who'),
+          h('th', 'Each week'),
+          h('th.num', 'Earned'),
+          h('th.num', 'Score'))),
+        h('tbody', got.lines.map((line) => h('tr',
+          h('td', line.name),
+          h('td', h('div.mx-weeks', line.weeks.map((w) => h('span', {
+            class: `mx-week${w.earned > 0 ? ' good' : ''}`,
+            title: w.why ? `${weekDay(w.week)}: ${w.why}` : `${weekDay(w.week)}: ${w.done} of ${w.jobs} done`,
+          }, `${weekDay(w.week)} · ${w.rate == null ? '—' : `${w.rate}%`}${w.earned > 0 ? ` · ${ghs(w.earned)}` : ''}`)))),
+          h('td.num', `${ghs(line.earned)} of ${ghs(line.budget)}`),
+          h('td.num', h('strong', `${fmtNum(line.score)}%`),
+            line.capped ? h('div.muted', 'capped at 100') : null)))))
+      : h('p', 'Nobody on this scheme was found in Maintenance.'),
+    got.unmatched.length
+      ? h('div.mx-bonus-miss',
+        h('strong', 'Not brought in'),
+        h('ul', got.unmatched.map((u) => h('li',
+          `${u.name}${u.employeeNo ? ` (${u.employeeNo})` : ''}: ${u.why}`))),
+        h('p.muted', 'An employee number is set in Maintenance, under Team, on the person, by Bonus.'))
+      : null,
+    got.notSent.length
+      ? h('p.muted', `Left as they are: ${got.notSent.join(', ')} — on this scheme, but not in what Maintenance sent.`)
+      : null);
+
+  const put = await formDialog({
+    title: `${scheme.name} from Maintenance`,
+    body,
+    wide: 'xl',
+    submitLabel: got.lines.length ? `Put ${got.lines.length === 1 ? 'this' : `these ${got.lines.length}`} in` : 'Close',
+    onSubmit: async () => true,
+  });
+  if (!put || !got.lines.length) return;
+  let filled = 0;
+  for (const line of got.lines) {
+    const box = document.querySelector(`input.pay-score[data-k="${scheme.id}|${line.staffId}"]`);
+    if (!box) continue;
+    box.value = line.score;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    filled += 1;
+  }
+  toast(`${filled} filled in from Maintenance. Look them over, then Save the scores.`, 'good');
 }
 
 async function editScheme(scheme, data, reload) {

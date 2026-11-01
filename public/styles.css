@@ -4356,6 +4356,18 @@ html { touch-action: manipulation; }
 .pay-scores { width: 100%; font-size: .9rem; }
 .pay-scores td { padding: .25rem .3rem; border-top: 1px solid var(--border); }
 
+/* The Ahokeka bonus, as Maintenance sent it: each week, then the score. */
+.mx-bonus-table th { text-align: left; font-size: .8rem; color: var(--text-dim); font-weight: 600; padding: .25rem .3rem; }
+.mx-bonus-table th.num { text-align: right; }
+.mx-weeks { display: flex; flex-wrap: wrap; gap: .25rem; }
+.mx-week {
+  font-size: .78rem; padding: .1rem .45rem; border-radius: 999px; white-space: nowrap;
+  background: var(--bad-soft); color: var(--bad);
+}
+.mx-week.good { background: var(--good-soft); color: var(--good); }
+.mx-bonus-miss { margin-top: .8rem; padding: .6rem .8rem; border-radius: var(--radius-sm); background: var(--warn-soft); }
+.mx-bonus-miss ul { margin: .3rem 0; padding-left: 1.1rem; }
+
 /* The payslip. */
 .slip { display: grid; gap: .9rem; }
 .slip-top {

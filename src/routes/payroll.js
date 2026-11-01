@@ -17,6 +17,7 @@ import {
 } from '../lib/statutory.js';
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
+import { askMaintenance, scoresFor } from '../lib/maintenance-bonus.js';
 import { inputSheet } from '../lib/pay-input-sheet.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import {
@@ -2346,6 +2347,36 @@ export async function setScores(ctx) {
 
   await audit(ctx, 'payroll.scores', month, { set });
   return json({ ok: true, month, set });
+}
+
+/**
+ * A scored scheme's month, out of the Maintenance app: the Ahokeka bonus.
+ *
+ * Asks Maintenance what each artisan earned in the month and says the score
+ * that pays it. Saves nothing: the screen fills the boxes, and the scores are
+ * saved the usual way once somebody has looked at them. See
+ * lib/maintenance-bonus.js for how a month and a score are worked out.
+ */
+export async function fromMaintenance(ctx) {
+  const body = await readJson(ctx.request);
+  const { timezone } = await settingsOf(ctx.db);
+  const month = isMonth(body.month) ? body.month : monthOf(todayIn(timezone));
+  const schemeId = int(body.schemeId, 'Scheme', { required: true, min: 1 });
+  const scheme = await ctx.db.prepare('SELECT id, name, amount, kind FROM pay_scheme WHERE id = ?')
+    .bind(schemeId).first();
+  if (!scheme) throw notFound('That scheme is not on the books.');
+  if (['amount', 'tier'].includes(scheme.kind)) {
+    throw badRequest('Maintenance sends a score out of a hundred, and this scheme pays a set figure or by tier.');
+  }
+  const [members, staff] = await Promise.all([
+    ctx.db.prepare('SELECT staff_id FROM pay_scheme_staff WHERE scheme_id = ?').bind(schemeId).all(),
+    ctx.db.prepare('SELECT id, name, employee_no FROM att_staff').all(),
+  ]);
+  const sent = await askMaintenance(ctx.env.MAINTENANCE_LINK, month, ctx.fetchMaintenance ?? fetch);
+  const out = scoresFor({ ...scheme, staffIds: (members.results ?? []).map((m) => m.staff_id) },
+    staff.results ?? [], sent);
+  await audit(ctx, 'payroll.maintenance', month, { scheme: schemeId, lines: out.lines.length });
+  return json({ ok: true, ...out });
 }
 
 /** Money off somebody's bonus, with the reason it came off. */
