@@ -7,8 +7,7 @@ import { showPublishHistory, showWhoHeard } from './rota-heard.js';
 import { printButton } from '../print.js';
 import { sayAskedDays } from '../availability-rules.js';
 import { draftEntries } from './draft-entries.js';
-import { can, holdRefresh, navigate, replaceParams, state, warnBeforeLeaving } from '../app.js';
-import { coverGaps, hoursTone, restGaps } from '../rota-plan.js';
+import { can, holdRefresh, navigate, replaceParams, warnBeforeLeaving } from '../app.js';
 import {
   asHours, byDepartment, byPosition, earliestFirst, field, formDialog, nightMark,
   runsIntoTheNight, shiftColour, shiftHours, shiftLabel, shiftMinutes, shiftSelect,
@@ -164,7 +163,7 @@ export async function renderAttRota(params) {
   let saveFailed = false;
   const refreshSaveBar = () => {
     const count = pending.size;
-    saveBar.style.display = count && (saveFailed || !mayEdit) ? '' : 'none';
+    saveBar.style.display = count && saveFailed ? '' : 'none';
     afterChange();
     mount(saveBar,
       h('strong', `${count} change${count === 1 ? '' : 's'} not saved`),
@@ -198,67 +197,6 @@ export async function renderAttRota(params) {
       }
     }
     return minutes;
-  };
-
-  // ---- The plan's sums, kept live while cells change ----------------------
-  //
-  // What somebody is down for against their week, read from the cells on
-  // screen rather than from the last load, so the bar under a name moves the
-  // moment a shift is picked.
-  const daysShown = data.days.length;
-  const fmtH = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
-  const targetOf = (row) => Math.round((Number(row.staff.weeklyHours) || 0) * (daysShown / 7) * 10) / 10;
-  const dailyOf = (row) => (Number(row.staff.weeklyHours) || 0) / (Number(row.staff.daysPerWeek) || 5);
-  const heldOn = (row, entry) => {
-    const found = cells.get(`${row.staff.id}|${entry.day}`);
-    let main = entry.shift_id;
-    if (found) {
-      const v = found.select.value;
-      main = v === '' ? null : v === 'pattern' ? entry.shift_id : Number(v);
-    }
-    return [main, ...(entry.extra ?? []).map((x) => x.shift_id)]
-      .filter((id) => id != null && shiftById.has(String(id)));
-  };
-  const liveHours = (row) => {
-    let minutes = 0;
-    for (const entry of row.days) {
-      // A day of leave counts as one of their ordinary days.
-      if (entry.leave) { minutes += dailyOf(row) * 60; continue; }
-      for (const id of heldOn(row, entry)) minutes += shiftMinutes(shiftById.get(String(id)));
-    }
-    return Math.round(minutes / 6) / 10;
-  };
-  const toneFor = (row) => hoursTone(liveHours(row), targetOf(row));
-  const minRest = Number(state.settings?.wl_dailyRestHours) || 12;
-  const restFor = (row) => restGaps(row.days.map((entry) => {
-    const id = entry.leave ? null : heldOn(row, entry)[0];
-    return id == null ? null : shiftById.get(String(id));
-  }), minRest);
-
-  const meters = new Map();
-  const drawMeter = (id) => {
-    const m = meters.get(String(id));
-    if (!m) return;
-    const hours = liveHours(m.row);
-    const target = targetOf(m.row);
-    const t = hoursTone(hours, target);
-    const scale = Math.max(target * 1.3, hours, 1);
-    m.el.className = `rota-meter is-${t.k}`;
-    m.el.title = `Down for ${fmtH(hours)}h over the ${daysShown} days shown, against ${fmtH(target)}h `
-      + `(${fmtH(Number(m.row.staff.weeklyHours) || 0)}h a week)`;
-    mount(m.el,
-      h('div.rota-meter-track',
-        h('i.rota-meter-fill', { style: { width: `${Math.min(100, (hours / scale) * 100)}%` } }),
-        target ? h('i.rota-meter-tick', { style: { left: `${(target / scale) * 100}%` } }) : null),
-      h('div.rota-meter-nums',
-        h('span', h('b', `${fmtH(hours)}h`), target ? ` of ${fmtH(target)}h` : ''),
-        t.label ? h('span.rota-meter-badge', t.k === 'ok' ? '✓ on target' : t.label) : null));
-  };
-  const meterFor = (row) => {
-    const el = h('div.rota-meter');
-    meters.set(String(row.staff.id), { el, row });
-    drawMeter(row.staff.id);
-    return el;
   };
 
   /**
@@ -828,11 +766,8 @@ export async function renderAttRota(params) {
 
     syncHours();
     syncTitle();
-    wrap.dataset.staff = String(row.staff.id);
-    wrap.dataset.day = entry.day;
     const drawn = {
       select,
-      wrap,
       syncHours: () => { syncHours(); syncTitle(); },
       // What this cell was drawn from. A second shift arriving is a new chip
       // rather than a new value, and nothing in a sync of values can put one
@@ -995,8 +930,10 @@ export async function renderAttRota(params) {
      * in place is faster than a dialog and is what most edits are. Anywhere
      * else on the card opens it.
      */
-    const openCard = () => {
+    wrap.addEventListener('click', (event) => {
+      if (event.target.closest('select, button, a, input')) return;
       if (select.value === '') return;   // an empty day has no shift to open
+
       const held = entryOf(row.staff.id, entry.day);
       editCard({
         id: held?.id ?? entry.id ?? null,
@@ -1007,11 +944,6 @@ export async function renderAttRota(params) {
         published: held?.published ?? entry.published ?? false,
         clash: Boolean(held?.extra?.length),
       });
-    };
-    drawn.openCard = openCard;
-    wrap.addEventListener('click', (event) => {
-      if (event.target.closest('select, button, a, input')) return;
-      openCard();
     });
 
     // Picked up when there is something on it, and put down anywhere. An
@@ -1262,17 +1194,6 @@ export async function renderAttRota(params) {
   // the header are what Humanity does, and it is right.
   const todayMark = (day) => (day === data.today ? h('span.rota-today-mark', 'Today') : null);
 
-  // Each day's cover, under its name: a bar, and the must-cover shifts with
-  // nobody on them. Drawn again whenever a cell changes.
-  const coverMarks = new Map();
-  const coverMark = (day) => {
-    const el = h('div.rota-cover');
-    coverMarks.set(day, el);
-    return el;
-  };
-  const rowEls = new Map();
-  const keepRow = (row, tr) => { rowEls.set(String(row.staff.id), tr); return tr; };
-
   const headRow = h('tr',
     h('th', 'Name'),
     // The standing pattern is a planner's column: the two buttons in it are
@@ -1291,7 +1212,6 @@ export async function renderAttRota(params) {
       h('small.muted', span > 7 ? String(Number(day.slice(8, 10))) : fmtDayShort(day)),
       todayMark(day),
       holidayMark(day),
-      coverMark(day),
     )),
   );
 
@@ -1309,7 +1229,7 @@ export async function renderAttRota(params) {
       // Held by name because the unfilled row is put in front of these later:
       // it draws cards, and the code that draws a card is defined further
       // down the file than this is.
-      peopleBody = h('tbody', visible.map((row) => keepRow(row, h('tr',
+      peopleBody = h('tbody', visible.map((row) => h('tr',
         h('td.rota-who',
           h('div.rota-who-in',
             faceOf(row.staff),
@@ -1346,7 +1266,10 @@ export async function renderAttRota(params) {
             // What this window already has them down for. The number a planner
             // is weighing every time they fill a cell, and it was on the
             // Workload screen and nowhere near the decision.
-            meterFor(row),
+            h('div.rota-who-hours', {
+              title: `Down for ${asHours(hoursThisWindow(row.staff.id))} over the `
+                + `${data.days.length} days shown`,
+            }, `🕐 ${asHours(hoursThisWindow(row.staff.id))}`),
               row.staff.tags?.length
                 ? h('div.rota-tags', row.staff.tags.map((t) => h('span.rota-tag', t)))
                 : null,
@@ -1365,7 +1288,7 @@ export async function renderAttRota(params) {
             }, '⇢'),
           )),
         ...row.days.map((entry) => h('td', { class: dayClass(entry.day) }, cell(row, entry))),
-      )))),
+      ))),
     ),
   );
 
@@ -2344,19 +2267,6 @@ export async function renderAttRota(params) {
           tally(fresh, fresh === 1 ? 'New shift' : 'New shifts'),
           tally(again, again === 1 ? 'Changed shift' : 'Changed shifts')),
 
-        // How the plan stands before it goes: what is still uncovered and who
-        // is off their hours, so nothing is sent out by surprise.
-        (() => {
-          const gaps = gapsNow().length;
-          const tones = data.rows.map((row) => toneFor(row).k);
-          const over = tones.filter((k) => k === 'over' || k === 'far').length;
-          const under = tones.filter((k) => k === 'under').length;
-          return h('div.publish-tallies',
-            tally(gaps, gaps === 1 ? 'Gap left' : 'Gaps left'),
-            tally(over, 'Over their hours'),
-            tally(under, 'Under their hours'));
-        })(),
-
         h('h3.publish-heading', 'Who is told'),
         h('div.answer-choices',
           choice('staff', 'Tell the staff it affects',
@@ -2422,217 +2332,10 @@ export async function renderAttRota(params) {
     title: 'Who heard about each rota that has gone out, and send it again',
   }, 'Who heard');
 
-  // -------------------------------------------------------------------------
-  // The planner: cover, filters, the side panel, painting, and saving as you go
-  // -------------------------------------------------------------------------
-  const planning = mayEdit && view === 'people';
-  const fmtDay = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-  const awayOn = (staffId, day) => {
-    const row = staffById.get(String(staffId));
-    const entry = row?.days.find((d) => d.day === day);
-    return !row || Boolean(entry?.leave);
-  };
-  const gapsNow = () => coverGaps({
-    shifts: data.shifts,
-    days: data.days,
-    department: params.department || null,
-    away: awayOn,
-    onDay: (day) => data.rows.flatMap((row) => {
-      const entry = row.days.find((d) => d.day === day);
-      return entry && !entry.leave ? heldOn(row, entry) : [];
-    }),
-  });
-
-  const drawCover = (gaps) => {
-    for (const day of data.days) {
-      const el = coverMarks.get(day);
-      if (!el) continue;
-      const mine = gaps.filter((g) => g.day === day);
-      el.className = `rota-cover${mine.length ? ' has-gap' : ''}`;
-      el.title = mine.length ? `Nobody on: ${mine.map((g) => g.label).join(', ')}` : 'Every must-cover shift has somebody';
-      const musts = Math.max(1, new Set(data.shifts.filter((sh) => sh.cover === 'must').map((sh) => sh.alt_group || sh.id)).size);
-      const share = Math.max(8, Math.round((1 - Math.min(1, mine.length / musts)) * 100));
-      mount(el, h('i.rota-cover-bar', { style: { '--covered': `${share}%` } }),
-        h('span', mine.length ? `${mine.length} gap${mine.length === 1 ? '' : 's'}` : '✓ covered'));
-    }
-  };
-
-  const drawRest = () => {
-    for (const row of visible) {
-      const rest = restFor(row);
-      row.days.forEach((entry, i) => {
-        const found = cells.get(`${row.staff.id}|${entry.day}`);
-        if (!found?.wrap) return;
-        const r = rest[i];
-        found.wrap.classList.toggle('rota-rest-short', r != null);
-        found.wrap.dataset.rest = r != null ? `Only ${fmtH(r)}h rest after the day before` : '';
-      });
-    }
-  };
-
-  // Everybody · Over · Under · Rest warnings: a view of the rows, nothing more.
-  let filterBy = 'all';
-  const filterBar = h('div.rota-filters', { role: 'group', 'aria-label': 'Show' });
-  const matches = (row, k) => {
-    const t = toneFor(row).k;
-    if (k === 'over') return t === 'over' || t === 'far';
-    if (k === 'under') return t === 'under';
-    if (k === 'rest') return restFor(row).some((r) => r != null);
-    return true;
-  };
-  const drawFilters = () => {
-    const n = (k) => visible.filter((row) => matches(row, k)).length;
-    mount(filterBar, [['all', 'Everybody', ''], ['over', 'Over their hours', 'over'], ['under', 'Under their hours', 'under'], ['rest', 'Short rest', 'rest']]
-      .map(([k, label, dot]) => h(`button.rota-filter${filterBy === k ? '.on' : ''}`, {
-        type: 'button', 'aria-pressed': String(filterBy === k),
-        onclick: () => { filterBy = k; drawFilters(); },
-      }, dot ? h(`i.rota-dot.is-${dot}`) : null, label, h('span.rota-filter-n', String(k === 'all' ? visible.length : n(k))))));
-    for (const row of visible) {
-      const tr = rowEls.get(String(row.staff.id));
-      if (tr) tr.style.display = matches(row, filterBy) ? '' : 'none';
-    }
-  };
-
-  // The side panel: the week's cover and hours, or one day being decided.
-  const panel = h('aside.rota-panel', { 'aria-label': 'Plan' });
-  let pick = null;
-  const candidateFor = (gap) => visible
-    .filter((row) => {
-      const entry = row.days.find((d) => d.day === gap.day);
-      if (!entry || entry.leave || entry.alwaysOff || entry.availability?.status === 'unavailable') return false;
-      if (heldOn(row, entry).length) return false;
-      if (!allowedShift(row.staff, gap.shift)) return false;
-      return toneFor(row).k === 'under';
-    })
-    .sort((a, b) => toneFor(a).diff - toneFor(b).diff)[0] ?? null;
-
-  const drawPanel = (gaps) => {
-    if (!planning) return;
-    if (pick) {
-      const row = staffById.get(String(pick.staffId));
-      const entry = row?.days.find((d) => d.day === pick.day);
-      const found = cells.get(`${pick.staffId}|${pick.day}`);
-      if (!row || !entry || !found) { pick = null; drawPanel(gaps); return; }
-      const hours = liveHours(row);
-      const target = targetOf(row);
-      const now = hoursTone(hours, target);
-      const current = heldOn(row, entry)[0] ?? null;
-      const base = hours - (current != null ? shiftMinutes(shiftById.get(String(current))) / 60 : 0);
-      const after = (h2) => {
-        const t = hoursTone(base + h2, target);
-        return `→ ${fmtH(Math.round((base + h2) * 10) / 10)}h${t.k === 'ok' ? ' ✓' : t.label ? ` (${t.diff > 0 ? '+' : '−'}${fmtH(Math.abs(t.diff))}h)` : ''}`;
-      };
-      const { own } = shiftsFor(data.shifts, row.staff);
-      const options = own.slice(0, 14);
-      const choose = (shiftId) => {
-        putShift(row.staff.id, entry.day, shiftId, shiftId == null ? null : entry.title);
-        found.syncHours?.();
-        refreshSaveBar();
-      };
-      mount(panel,
-        h('div.rota-panel-head',
-          h('div', h('small', fmtDay(entry.day)), h('h2', row.staff.name)),
-          h('button.rota-panel-x', { type: 'button', 'aria-label': 'Close', onclick: () => { pick = null; afterChange(); } }, '✕')),
-        h(`div.rota-panel-now.is-${now.k}`, `${fmtH(hours)}h of ${fmtH(target)}h this ${daysShown === 7 ? 'week' : 'stretch'}: ${now.k === 'ok' ? 'on target' : now.label || 'no target set'}.`),
-        entry.leave ? h('p.muted', 'On approved leave this day.') : [
-          h('div.rota-panel-label', 'Put on'),
-          h('div.rota-pick-list', options.map((shift) => h('button.rota-pick', {
-            type: 'button',
-            'data-shift-colour': String(shiftColour(shift)),
-            class: String(current) === String(shift.id) ? 'rota-pick on' : 'rota-pick',
-            onclick: () => choose(shift.id),
-          }, h('span', h('b', shift.name), h('small', shiftHours(shift))), h('em', after(shiftMinutes(shift) / 60))))),
-          h('button.rota-pick.rota-pick-off', { type: 'button', class: current == null ? 'rota-pick rota-pick-off on' : 'rota-pick rota-pick-off', onclick: () => choose(null) },
-            h('span', h('b', 'Off')), h('em', after(0))),
-          current != null && found.openCard
-            ? h('button.btn-sm', { type: 'button', onclick: () => found.openCard() }, 'Hand it to somebody else…') : null,
-          h('p.muted.rota-panel-tip', 'The box itself lists every shift, other departments too.'),
-        ]);
-      return;
-    }
-    const needed = gaps.length;
-    const people = visible.map((row) => ({ row, t: toneFor(row) }));
-    const off = people.filter((p) => p.t.k !== 'ok' && p.t.k !== 'none').sort((a, b) => b.t.diff - a.t.diff);
-    mount(panel,
-      h('div.rota-panel-label', daysShown === 7 ? 'This week' : 'These days'),
-      h(`div.rota-panel-cover${needed ? ' has-gap' : ''}`,
-        h('b', needed ? `${needed} gap${needed === 1 ? '' : 's'}` : 'Every must-cover shift has somebody'),
-        h('small', needed ? 'Must-cover shifts with nobody on them' : 'Shifts marked "must be on the rota" in Setup')),
-      needed ? h('div.rota-gaps', gaps.slice(0, 12).map((gap) => {
-        const who = candidateFor(gap);
-        return h('div.rota-gap', { 'data-shift-colour': String(shiftColour(gap.shift)) },
-          h('i.rota-gap-swatch'),
-          h('div', h('b', `${fmtDay(gap.day)} · ${gap.label}`),
-            h('small', who ? `${who.staff.name} is free and ${toneFor(who).label}` : 'Nobody under their hours is free')),
-          who ? h('button.btn-sm.rota-gap-go', {
-            type: 'button',
-            onclick: () => { putShift(who.staff.id, gap.day, gap.shift.id); cells.get(`${who.staff.id}|${gap.day}`)?.syncHours?.(); refreshSaveBar(); },
-          }, `Give to ${who.staff.name.split(' ')[0]}`) : null);
-      }), gaps.length > 12 ? h('small.muted', `and ${gaps.length - 12} more`) : null) : null,
-      h('div.rota-panel-label', 'Hours'),
-      off.length ? h('div.rota-hours-list', off.slice(0, 12).map((p) => h('button.rota-hours-row', {
-        type: 'button', onclick: () => { rowEls.get(String(p.row.staff.id))?.scrollIntoView({ block: 'center', behavior: 'smooth' }); },
-      }, h(`i.rota-dot.is-${p.t.k === 'far' ? 'far' : p.t.k}`), h('span', p.row.staff.name), h(`b.is-${p.t.k}`, p.t.label))))
-        : h('p.muted', 'Everybody is within two hours of their week.'),
-      h('p.muted.rota-panel-tip', 'Click a day to see what each shift does to their hours, or pick a shift in the bar below and paint days.'));
-  };
-
-  // Painting: pick a shift in the bar, then click days.
-  let brush = null;
-  const dock = h('div.rota-dock', { role: 'toolbar', 'aria-label': 'Paint with a shift' });
-  const dockShifts = (() => {
-    const pool = data.shifts.filter((s) => s.active !== 0 && (!params.department || !s.department || s.department === params.department));
-    const used = new Map();
-    for (const row of data.rows) for (const e of row.days) if (e.shift_id != null) used.set(String(e.shift_id), (used.get(String(e.shift_id)) ?? 0) + 1);
-    return pool.sort((a, b) => (used.get(String(b.id)) ?? 0) - (used.get(String(a.id)) ?? 0) || (a.sort_order ?? 0) - (b.sort_order ?? 0)).slice(0, 12);
-  })();
-  const drawDock = () => {
-    host.classList.toggle('rota-painting', brush != null);
-    mount(dock,
-      saveState,
-      h('span.rota-dock-label', brush == null ? 'Paint with' : `Painting ${brush === 'off' ? 'Off' : shiftById.get(String(brush))?.name}: click days`),
-      h('div.rota-dock-brushes',
-        dockShifts.map((shift) => h('button.rota-brush', {
-          type: 'button', 'data-shift-colour': String(shiftColour(shift)), title: shiftHours(shift),
-          class: String(brush) === String(shift.id) ? 'rota-brush on' : 'rota-brush',
-          onclick: () => { brush = String(brush) === String(shift.id) ? null : shift.id; drawDock(); },
-        }, shift.name)),
-        h('button.rota-brush.rota-brush-off', {
-          type: 'button', class: brush === 'off' ? 'rota-brush rota-brush-off on' : 'rota-brush rota-brush-off',
-          onclick: () => { brush = brush === 'off' ? null : 'off'; drawDock(); },
-        }, 'Off')),
-      brush != null ? h('button.btn.btn-primary.rota-dock-done', { type: 'button', onclick: () => { brush = null; drawDock(); } }, 'Done') : null);
-  };
-  if (planning) {
-    grid.addEventListener('click', (event) => {
-      const wrap = event.target.closest?.('.rota-cellwrap');
-      if (!wrap) return;
-      if (brush != null) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (putShift(wrap.dataset.staff, wrap.dataset.day, brush === 'off' ? null : Number(brush))) {
-          cells.get(`${wrap.dataset.staff}|${wrap.dataset.day}`)?.syncHours?.();
-          refreshSaveBar();
-        }
-        return;
-      }
-      if (event.target.closest('select, button, a, input')) return;
-      // The day opens in the side panel; "Who works it" is one press from there.
-      event.stopPropagation();
-      pick = { staffId: wrap.dataset.staff, day: wrap.dataset.day };
-      afterChange();
-    }, true);
-    grid.addEventListener('focusin', (event) => {
-      const wrap = event.target.closest?.('.rota-cellwrap');
-      if (!wrap || brush != null) return;
-      pick = { staffId: wrap.dataset.staff, day: wrap.dataset.day };
-      drawPanel(gapsNow());
-    });
-  }
-
   // Saving as you go. A change waits a moment for the next one, then saves;
-  // Undo puts the days it saved back as they were.
-  const saveState = h('span.rota-save-state', { 'aria-live': 'polite' });
+  // Undo puts the days it saved back as they were. Saved is not published:
+  // the count on Publish goes up, and Publish is what tells people.
+  const saveState = !mayEdit ? null : h('span.rota-save-state', { 'aria-live': 'polite' });
   const original = new Map();
   for (const row of data.rows) {
     for (const entry of row.days) {
@@ -2643,6 +2346,7 @@ export async function renderAttRota(params) {
   let saveTimer = null;
   let publishCount = unpublished;
   const showSaved = (text, undo = false) => {
+    if (!saveState) return;
     mount(saveState, h('span', text), undo && undoStack.length
       ? h('button.rota-undo', { type: 'button', onclick: () => undoLast() }, 'Undo') : null);
   };
@@ -2700,28 +2404,13 @@ export async function renderAttRota(params) {
       showSaved('Undo did not go through', true);
     }
   };
-  if (planning) holdRefresh(() => saveTimer != null);
-
+  if (mayEdit) holdRefresh(() => saveTimer != null);
   afterChange = () => {
-    if (!planning && view !== 'people') return;
-    for (const id of meters.keys()) drawMeter(id);
-    const gaps = gapsNow();
-    drawCover(gaps);
-    if (planning) {
-      drawRest();
-      drawFilters();
-      drawPanel(gaps);
-      if (pending.size && !saveFailed) {
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(autoSave, 900);
-        showSaved('Saving…');
-      }
-    }
+    if (!mayEdit || !pending.size || saveFailed) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(autoSave, 900);
+    showSaved('Saving…');
   };
-  if (planning) drawDock();
-  // First drawing of the sums, once everything they read is on the page.
-  queueMicrotask(() => afterChange());
-
 
   const seg = (options, chosen, onPick) => h('div.seg',
     options.map(([value, label]) => h('button', {
@@ -2732,7 +2421,7 @@ export async function renderAttRota(params) {
   mount(host,
     h('div.page-head',
       h('h1', 'Rota'),
-      h('div.btn-row', heardButton, publishButton),
+      h('div.btn-row', saveState, heardButton, publishButton),
     ),
 
     // One bar rather than two. Wide, the whole thing sits on a line; narrow,
@@ -2758,29 +2447,14 @@ export async function renderAttRota(params) {
         ? null
         : h('button.btn-sm', { onclick: () => reload({ from: mondayOf(todayISO()) }) }, 'Today'),
 
-      // A handful of departments read best as chips; a long list stays a menu.
-      data.departments?.length && data.departments.length <= 8
-        ? [h('select.rota-dept-select', {
+      data.departments?.length
+        ? h('select', {
           'aria-label': 'Department',
           onchange: (e) => reload({ department: e.target.value || null }),
         },
         h('option', { value: '' }, 'Every department'),
-        data.departments.map((d) => h('option', { value: d, selected: params.department === d }, d))),
-        h('div.rota-depts', { role: 'group', 'aria-label': 'Department' },
-          [[null, 'Every department'], ...data.departments.map((d) => [d, d])].map(([value, label]) => h('button.rota-dept', {
-            type: 'button',
-            class: (params.department || null) === value ? 'rota-dept on' : 'rota-dept',
-            'aria-pressed': String((params.department || null) === value),
-            onclick: () => reload({ department: value }),
-          }, label)))]
-        : data.departments?.length
-          ? h('select', {
-            'aria-label': 'Department',
-            onchange: (e) => reload({ department: e.target.value || null }),
-          },
-          h('option', { value: '' }, 'Every department'),
-          data.departments.map((d) => h('option', { value: d, selected: params.department === d }, d)))
-          : null,
+        data.departments.map((d) => h('option', { value: d, selected: params.department === d }, d)))
+        : null,
       data.tags?.length
         ? h('select', {
           'aria-label': 'Tag',
@@ -2874,22 +2548,16 @@ export async function renderAttRota(params) {
     view === 'people' && imported?.draft
       ? importCard(imported.draft, data.rows.map((r) => r.staff), reload)
       : null,
-    planning ? filterBar : null,
-    planning
-      ? h('div.rota-layout',
-        card(null, { cls: 'rota-card' }, grid),
-        panel)
-      : card(
-        null,
-        { wide: true, cls: 'rota-card' },
-        view === 'people' ? grid : positionsGrid,
-      ),
+    card(
+      null,
+      { wide: true, cls: 'rota-card' },
+      view === 'people' ? grid : positionsGrid,
+    ),
     h('p.muted', { style: { fontSize: '.82rem' } }, mayEdit
       ? 'Changes save as you make them; Publish is what tells people. Off is a rostered rest day; days on '
         + 'approved leave are locked. Drag a shift onto another box to move or copy it.'
       : 'Off means a rostered rest day. A dashed shift is still a draft and may change; a '
         + 'solid one has been published.'),
-    planning ? dock : null,
     // Asked at the point of the drop, so it sits above the grid rather than
     // inside the box that scrolls.
     dropMenu,
