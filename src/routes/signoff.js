@@ -188,10 +188,19 @@ export async function outstanding(ctx) {
         const record = byDay.get(day);
         if (!record) return null;
         if (!record.scheduled && !Number(record.worked_minutes)) return null;
+        const shiftRow = record.shift_id ? ds.shiftById.get(record.shift_id) ?? null : null;
 
         return {
           day,
-          shift: record.shift_id ? ds.shiftById.get(record.shift_id)?.name ?? null : null,
+          shift: shiftRow?.name ?? null,
+          // The shift's own hours and colour, so the list can say "Night
+          // 22:00-06:00" and offer the end of the shift as the clock-out.
+          shiftId: shiftRow?.id ?? null,
+          shiftColour: shiftRow?.colour ?? null,
+          starts: shiftRow?.starts_at ?? null,
+          ends: shiftRow?.ends_at ?? null,
+          lateMinutes: Number(record.late_minutes) || 0,
+          earlyMinutes: Number(record.early_minutes) || 0,
           scheduled: Boolean(record.scheduled),
           in: record.first_in,
           out: record.last_out,
@@ -275,6 +284,7 @@ export async function outstanding(ctx) {
     to,
     limit,
     rows,
+    lastSigned: await lastSignedOff(ctx.db, onlyDepartment),
     issues: ISSUES,
     departments: [...new Set(ds.staff.map((s) => s.department).filter(Boolean))].sort(),
     total: rows.reduce((n, r) => n + r.unsignedCount, 0),
@@ -288,6 +298,41 @@ export async function outstanding(ctx) {
     asked: rows.reduce((n, r) => n + r.days.filter((d) => d.query?.status === 'open').length, 0),
     answered: rows.reduce((n, r) => n + r.days.filter((d) => d.query?.status === 'answered').length, 0),
   });
+}
+
+/**
+ * The most recent sign-off, as one line: the span it covered, how many people,
+ * who signed it and when. A sitting is everything the same person signed on
+ * the same date, so a Monday's twenty records read as the one sign-off they
+ * were. Read only; nothing else depends on it.
+ */
+async function lastSignedOff(db, department = '') {
+  const byDept = department ? ' AND s.department = ?1' : '';
+  const binds = department ? [department] : [];
+  const latest = await db.prepare(
+    `SELECT r.decided_by, r.decided_at FROM att_period_review r
+       JOIN att_staff s ON s.id = r.staff_id
+      WHERE 1 = 1${byDept}
+      ORDER BY r.decided_at DESC, r.id DESC LIMIT 1`,
+  ).bind(...binds).first().catch(() => null);
+  if (!latest?.decided_at) return null;
+
+  const at = String(latest.decided_at).slice(0, 10);
+  const sitting = await db.prepare(
+    `SELECT MIN(r.from_day) AS from_day, MAX(r.to_day) AS to_day,
+            COUNT(DISTINCT r.staff_id) AS people
+       FROM att_period_review r JOIN att_staff s ON s.id = r.staff_id
+      WHERE r.decided_by = ?${binds.length + 1} AND substr(r.decided_at, 1, 10) = ?${binds.length + 2}${byDept}`,
+  ).bind(...binds, latest.decided_by, at).first().catch(() => null);
+  if (!sitting?.from_day) return null;
+
+  return {
+    from: sitting.from_day,
+    to: sitting.to_day,
+    people: Number(sitting.people) || 0,
+    by: nameOf(latest.decided_by),
+    on: at,
+  };
 }
 
 // ---------------------------------------------------------------------------

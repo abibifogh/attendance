@@ -3,7 +3,9 @@ import { daysApart, fmtDay, fmtDayShort, h, monthOf, mount, shiftDay, toast, tod
 import { monthCard } from './att-leave.js';
 import { card, emptyState, table } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
-import { correctTimesDialog, field, formDialog, overUnderOf } from './att-shared.js';
+import {
+  correctTimesDialog, field, formDialog, overUnderOf, reasonSelect, shiftColour,
+} from './att-shared.js';
 
 /**
  * What is still waiting to be signed off.
@@ -49,6 +51,13 @@ const TABS = [['open', 'To sign off'], ['months', 'Months'], ['queries', 'Questi
  */
 let justActed = null;
 
+/**
+ * The day last signed with one press on the list, so it can be taken back.
+ * Held on the page rather than in a toast, which is gone before most people
+ * have read it; cleared by any other control, like the pin above.
+ */
+let justSigned = null;
+
 /** Held for a few minutes only, so coming back to the screen later is clean. */
 const PIN_MS = 10 * 60 * 1000;
 const pinned = () => (justActed && Date.now() - justActed.at < PIN_MS ? justActed : null);
@@ -59,37 +68,62 @@ function keepInView(staffId, note) {
 }
 
 export async function renderAttSignoff(params) {
-  const host = h('div');
+  const host = h('div.so-page');
   const tab = TABS.some(([key]) => key === params.tab) ? params.tab : 'open';
   const range = rangeFor(params);
 
   const reload = async (next = {}) => {
     // Called with no arguments after an action — keep the pin. Called with
     // arguments because a control was pressed — the reader has moved on.
-    if (Object.keys(next).length) justActed = null;
+    if (Object.keys(next).length) { justActed = null; justSigned = null; }
     const merged = { ...params, ...next };
     replaceParams('signoff', merged);
     mount(host, await renderAttSignoff(merged));
   };
 
-  const tabs = h('div.seg.seg-wrap', TABS.map(([key, label]) =>
-    h('button', { class: tab === key ? 'active' : '', onclick: () => reload({ tab: key }) }, label)));
+  const [content, counts] = await Promise.all([
+    tab === 'months' ? monthsTab(params, reload)
+      : tab === 'queries' ? queriesTab(reload)
+        : tab === 'times' ? timesTab(range, reload)
+          : tab === 'leave' ? leaveTab(reload)
+            : openTab(params, range, reload),
+    tabCounts(),
+  ]);
+
+  // The tabs carry how many are waiting behind each, so a question nobody has
+  // answered is visible from whichever tab somebody happens to be on.
+  const tabs = h('div.so-tabs', { role: 'tablist' }, TABS.map(([key, label]) =>
+    h('button', {
+      type: 'button',
+      role: 'tab',
+      'aria-selected': tab === key ? 'true' : 'false',
+      class: tab === key ? 'on' : '',
+      onclick: () => reload({ tab: key }),
+    }, label, counts[key] ? h('span.so-tab-n', String(counts[key])) : null)));
 
   mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Sign-off'),
-      ),
-    ),
-    h('div.toolbar', tabs),
-    tab === 'months' ? await monthsTab(params, reload)
-      : tab === 'queries' ? await queriesTab(reload)
-      : tab === 'times' ? await timesTab(range, reload)
-        : tab === 'leave' ? await leaveTab(reload)
-          : await openTab(params, range, reload),
+    h('div.so-head', h('h1', 'Sign-off'), tabs),
+    content,
   );
 
   return host;
+}
+
+/**
+ * How many are waiting behind each of the other tabs. Each is asked on its
+ * own and a refusal (a tab this login cannot open) is simply no number.
+ */
+async function tabCounts() {
+  const [queries, times, leave] = await Promise.all([
+    api.attQueries().catch(() => null),
+    api.attTimeEdits({ limit: 1 }).catch(() => null),
+    api.attLeaveChanges().catch(() => null),
+  ]);
+  return {
+    queries: (queries?.rows ?? []).filter((q) => q.status === 'open' || q.status === 'answered').length,
+    times: (times?.pending ?? []).length,
+    leave: (leave?.rows ?? []).filter((r) => r.status === 'pending').length,
+  };
 }
 
 /**
@@ -126,31 +160,60 @@ function rangeFor(params) {
 // ---------------------------------------------------------------------------
 
 /**
- * What is outstanding, in three lists and as little else as possible.
+ * What is outstanding, as a list of the things to settle.
  *
- * The screen this replaced had four tiles, five controls and an alert box on
- * every card before you reached a single day, and the thing it exists for —
- * tick some days, sign them — was below the fold. So: one line of controls,
- * one line of counts, and then the days.
+ * One line per day that needs somebody: what kind of problem it is, whose day
+ * and which shift, what happened in a sentence, and the likely fix as the main
+ * button with the other answers beside it. Every button is one of the answers
+ * this screen already gave (correct the times, sign the day as it stands, ask
+ * somebody, open their record), moved onto the line it is about.
  *
- * The grouping is by day rather than by person. Asking about a Thursday nobody
- * can explain must not put that person's other four days beyond reach, and
- * parking somebody's whole week because one day of it has a question on it is
- * the surest way to stop anybody ever asking.
+ * The days nothing is wrong with are not listed. They are counted, and signed
+ * together from the footer once the reader is happy with them.
+ *
+ * The person-by-person cards are still here under "Each person", for ticking a
+ * run of somebody's days, reopening what was signed, or asking about a week.
  */
 async function openTab(params, range, reload) {
+  const view = params.view === 'people' ? 'people' : 'problems';
   const data = await api.attOutstanding({
     from: range.from,
     to: range.to,
     ...(params.department ? { department: params.department } : {}),
-    ...(params.issues === '1' || params.issues === '0' ? { issues: params.issues } : {}),
+    ...(view === 'people' && (params.issues === '1' || params.issues === '0') ? { issues: params.issues } : {}),
   });
 
+  const groups = groupRows(data.rows);
+
+  // Days nothing is wrong with and nothing is waiting on. The bulk clear works
+  // on the working list alone: sweeping up a day somebody deliberately asked
+  // about would answer their question for them.
+  const clearable = groups.working
+    .map((row) => ({ row, days: row.days.filter((d) => !d.issues.length && !d.pendingTimes) }))
+    .filter((entry) => entry.days.length);
+  const clearableDays = clearable.reduce((n, entry) => n + entry.days.length, 0);
+
+  const problems = problemsOf(data.rows);
+  const totalDays = data.rows.reduce((n, r) => n + r.days.length, 0);
+
+  const side = sidePanel({
+    params, range, data, reload, view, clean: clearableDays, total: totalDays, problems,
+  });
+
+  const main = view === 'people'
+    ? peopleView({ params, data, reload, groups, clearable, clearableDays })
+    : problemsView({ params, data, reload, problems, clearable, clearableDays });
+
+  return h('div.so-layout', main, side);
+}
+
+/** Each person's days split by where any question about them has got to. */
+function groupRows(rows) {
   /** One person, cut down to a given set of their days. */
   const slice = (row, days) => ({ ...row, days, unsignedCount: days.length });
 
   const groups = { answered: [], working: [], asked: [] };
-  for (const row of data.rows) {
+  for (const row of rows) {
     const bucket = {
       answered: row.days.filter((d) => d.query?.status === 'answered'),
       working: row.days.filter((d) => !d.query),
@@ -170,81 +233,365 @@ async function openTab(params, range, reload) {
       if (at > 0) list.unshift(...list.splice(at, 1));
     }
   }
+  return groups;
+}
 
+// ---------------------------------------------------------------------------
+// The things to settle
+// ---------------------------------------------------------------------------
+
+/**
+ * The kinds of problem, in the order they are listed. `wait` marks the ones
+ * that are with somebody else: shown, but not counted as things to settle.
+ */
+const KINDS = [
+  { key: 'noout', label: 'No clock-out', icon: '?', tone: 'info' },
+  { key: 'noin', label: 'No clock-in', icon: '?', tone: 'info' },
+  { key: 'absent', label: 'Absent', icon: '✕', tone: 'bad' },
+  { key: 'late', label: 'Late', icon: '!', tone: 'warn' },
+  { key: 'early', label: 'Left early', icon: '!', tone: 'warn' },
+  { key: 'noshift', label: 'No shift', icon: '+', tone: 'accent' },
+  { key: 'answered', label: 'Answered', icon: '✓', tone: 'good' },
+  { key: 'other', label: 'Other', icon: '•', tone: 'plain' },
+  { key: 'waiting', label: 'Clock change waiting', icon: '⏳', tone: 'plain', wait: true },
+  { key: 'asked', label: 'Asked', icon: '?', tone: 'plain', wait: true },
+];
+const KIND = new Map(KINDS.map((k) => [k.key, k]));
+
+/** Which kind of problem a day is. A day carrying two shows as the worse. */
+function kindOf(day) {
+  if (day.query?.status === 'open') return 'asked';
+  if (day.pendingTimes) return 'waiting';
+  if (day.query?.status === 'answered') return 'answered';
+  const has = (key) => day.issues.includes(key);
+  if (has('open')) return day.in ? 'noout' : 'noin';
+  if (has('absent') || has('under')) return 'absent';
+  if (has('late')) return 'late';
+  if (has('early')) return 'early';
+  if (has('noshift') || has('over')) return 'noshift';
+  return day.issues.length ? 'other' : null;
+}
+
+/** Every day that needs somebody, worst kind first, then by date. */
+function problemsOf(rows) {
+  const order = new Map(KINDS.map((k, i) => [k.key, i]));
+  const list = [];
+  for (const row of rows) {
+    for (const day of row.days) {
+      const kind = kindOf(day);
+      if (kind) list.push({ row, day, kind });
+    }
+  }
+  return list.sort((a, b) => (order.get(a.kind) - order.get(b.kind))
+    || (a.day.day < b.day.day ? -1 : a.day.day > b.day.day ? 1 : 0)
+    || a.row.staff.name.localeCompare(b.row.staff.name));
+}
+
+/** "1h 07m" or "34 min": how far out, the way somebody would say it. */
+function sayMinutes(minutes) {
+  const m = Math.round(Number(minutes) || 0);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+/** "Night 22:00–06:00", or what the day was if nobody rostered a shift. */
+function shiftLabel(day) {
+  if (!day.shift) return day.scheduled ? 'no shift named' : 'no shift';
+  if (!day.starts || !day.ends || day.shift.includes(day.starts)) return day.shift;
+  return `${day.shift} ${day.starts}–${day.ends}`;
+}
+
+/** What happened, in one sentence, with the part that matters in bold. */
+function sentenceFor(item) {
+  const { day, kind } = item;
+  const extra = kind !== 'early' && day.issues.includes('early') && day.earlyMinutes
+    ? ` · left ${sayMinutes(day.earlyMinutes)} early`
+    : '';
+
+  switch (kind) {
+    case 'noout':
+      return [`Clocked in ${day.in}, `, h('b', 'no clock-out'), extra];
+    case 'noin':
+      return day.out
+        ? [`Clocked out ${day.out}, `, h('b', 'no clock-in')]
+        : [h('b', 'Nothing clocked'), ', and nobody has said why'];
+    case 'absent':
+      return [h('b', 'Absent'), day.issues.includes('under')
+        ? ', a whole shift missed'
+        : ', nothing clocked'];
+    case 'late':
+      return [h('b', day.lateMinutes ? `${sayMinutes(day.lateMinutes)} late` : 'Late'),
+        day.in ? ` · in ${day.in}` : '', extra];
+    case 'early':
+      return [h('b', day.earlyMinutes ? `Left ${sayMinutes(day.earlyMinutes)} early` : 'Left early'),
+        day.out ? ` · out ${day.out}` : ''];
+    case 'noshift':
+      return [`Worked ${day.in || '—'}–${day.out || '—'} with `, h('b', 'nothing on the rota')];
+    case 'answered':
+      return [h('b', 'Answered'), day.query?.reason ? `: ${day.query.reason}` : '', ` · ${day.label}`];
+    case 'waiting':
+      return [h('b', 'Clock change waiting'), `: ${day.pendingTimes.actor} asked for `
+        + `${day.pendingTimes.now_in || '—'} → ${day.pendingTimes.now_out || '—'}`];
+    case 'asked':
+      return [h('b', `Asked${day.query?.addressedName ? ` of ${day.query.addressedName}` : ''}`),
+        day.query?.reason ? `: ${day.query.reason}` : ''];
+    default:
+      return [h('b', day.label || 'Flagged'),
+        day.in || day.out ? ` · ${day.in || '—'} → ${day.out || '—'}` : ''];
+  }
+}
+
+/**
+ * The answers to one problem: the likely one first, the others beside it.
+ * Each is an action this screen already had.
+ */
+function fixesFor(item, data, reload) {
+  const { row, day, kind } = item;
+  const staff = row.staff;
+  const one = () => new Set([day.day]);
+  const ask = { label: 'Ask', title: 'Ask somebody senior about this day', run: () => raise(row, one(), reload) };
+  const times = (label = 'Another time…') => (data.canFixTimes
+    ? { label, title: 'Change the clock-in or clock-out', run: () => fixTimes(staff, day, reload) }
+    : null);
+  const reason = (label, preset) => (data.canDecide
+    ? { label, title: 'Record what the day was', run: () => giveReason(row, day, preset, reload) }
+    : null);
+  const record = {
+    label: 'Open their day',
+    run: () => navigate('att-staff', { id: staff.id, day: day.day, period: 'day' }),
+  };
+
+  switch (kind) {
+    case 'noout':
+      return [
+        data.canFixTimes && day.ends
+          ? {
+            label: `Out at ${day.ends}`,
+            title: 'Set the clock-out to the end of the shift',
+            run: () => setTime(row, day, { in: day.corrected_in || day.in, out: day.ends },
+              `No clock-out. Out at ${day.ends}, the end of the shift.`, reload),
+          }
+          : times('Set the clock-out…'),
+        data.canFixTimes && day.ends ? times() : null,
+        ask,
+      ];
+    case 'noin':
+      return [
+        data.canFixTimes && day.starts && day.out
+          ? {
+            label: `In at ${day.starts}`,
+            title: 'Set the clock-in to the start of the shift',
+            run: () => setTime(row, day, { in: day.starts, out: day.corrected_out || day.out },
+              `No clock-in. In at ${day.starts}, the start of the shift.`, reload),
+          }
+          : times('Set the times…'),
+        data.canFixTimes && day.starts && day.out ? times() : null,
+        reason('Give a reason…', ''),
+        ask,
+      ];
+    case 'absent':
+      return [
+        { label: 'Sign off as absent', title: 'Sign this day as it stands', run: () => sign(row, one(), reload) },
+        reason('Give a reason…', ''),
+        ask,
+        times('They were in…'),
+      ];
+    case 'late':
+    case 'early':
+      return [
+        {
+          label: kind === 'late' ? 'Keep as late' : 'Keep as left early',
+          title: 'Sign this day as it stands',
+          run: () => quickSign(row, day,
+            kind === 'late' ? 'Late, kept as it stands' : 'Left early, kept as it stands', reload),
+        },
+        reason('Excuse it…', 'present') ?? times('Change the times…'),
+        ask,
+      ];
+    case 'noshift':
+      return [
+        {
+          label: 'Count it as worked',
+          title: 'Sign this day as worked',
+          run: () => quickSign(row, day, 'Worked with no shift, counted', reload),
+        },
+        times('Change the times…'),
+        ask,
+      ];
+    case 'answered':
+      return [
+        { label: 'Sign it off', run: () => sign(row, one(), reload) },
+        { label: 'See the answer', run: () => reload({ tab: 'queries' }) },
+      ];
+    case 'waiting':
+      return can('att_setup')
+        ? [{ label: 'Approve or send back', run: () => reload({ tab: 'times' }) }, record]
+        : [record];
+    case 'asked':
+      return [{ label: 'See the question', run: () => reload({ tab: 'queries' }) }, record];
+    default:
+      return [
+        { label: 'Sign it as it stands', run: () => sign(row, one(), reload) },
+        times('Change the times…'),
+        ask,
+      ];
+  }
+}
+
+/** One problem, one line. */
+function problemLine(item, data, reload) {
+  const { row, day, kind } = item;
+  const meta = KIND.get(kind) ?? KIND.get('other');
+  // Three at most: the likely answer and two others. Anything further is on
+  // their record, and a row of five buttons is a row nobody reads.
+  const fixes = fixesFor(item, data, reload).filter(Boolean).slice(0, 3);
+  const colour = day.shiftId ? shiftColour({ id: day.shiftId, colour: day.shiftColour }) : 0;
+
+  const press = (fix) => async (event) => {
+    const line = event.currentTarget.closest('.so-issue');
+    const buttons = [...(line?.querySelectorAll('button') ?? [])];
+    line?.classList.add('is-busy');
+    for (const b of buttons) b.disabled = true;
+    try {
+      await fix.run();
+    } catch (err) {
+      toast(err.message, 'bad');
+    } finally {
+      // The list is redrawn after anything that worked, so this only matters
+      // when the answer was cancelled or refused.
+      line?.classList.remove('is-busy');
+      for (const b of buttons) b.disabled = false;
+    }
+  };
+
+  return h(`div.so-issue.is-${meta.tone}`, { dataset: { kind } },
+    h('span.so-ic', { 'aria-hidden': 'true' }, meta.icon),
+    h('div.so-who',
+      h('b', row.staff.name),
+      h('div.so-when',
+        h('span', fmtDay(day.day)),
+        h('span.so-shift', { 'data-shift-colour': String(colour) }, shiftLabel(day)))),
+    h('div.so-what', h('span.so-kind-word', `${meta.label}: `), sentenceFor(item)),
+    h('div.so-fixes', fixes.map((fix, i) => h(`button.so-btn${i === 0 ? '.so-fix' : ''}`, {
+      type: 'button', title: fix.title ?? null, onclick: press(fix),
+    }, fix.label))),
+  );
+}
+
+function problemsView({ params, data, reload, problems, clearable, clearableDays }) {
+  const toSettle = problems.filter((p) => !KIND.get(p.kind)?.wait);
+  const waiting = problems.filter((p) => KIND.get(p.kind)?.wait);
+
+  // Kind chips: everything, then each kind that is actually on the list.
+  const counts = new Map();
+  for (const p of problems) counts.set(p.kind, (counts.get(p.kind) ?? 0) + 1);
+  let chosen = counts.has(params.kind) ? params.kind : 'all';
+
+  const listHost = h('div.so-list');
+  const chipHost = h('div.so-chips.so-kinds', { role: 'group', 'aria-label': 'Show only' });
+
+  const draw = () => {
+    mount(chipHost,
+      [['all', 'Everything', problems.length], ...KINDS.filter((k) => counts.has(k.key))
+        .map((k) => [k.key, k.label, counts.get(k.key)])]
+        .map(([key, label, n]) => h('button.so-chip', {
+          type: 'button',
+          class: chosen === key ? 'on' : '',
+          'aria-pressed': chosen === key ? 'true' : 'false',
+          onclick: () => {
+            chosen = key;
+            params.kind = key === 'all' ? null : key;
+            replaceParams('signoff', params);
+            draw();
+          },
+        }, label, h('span.so-chip-n', String(n)))));
+
+    const shown = (list) => (chosen === 'all' ? list : list.filter((p) => p.kind === chosen));
+    const mine = shown(toSettle);
+    const theirs = shown(waiting);
+    mount(listHost,
+      mine.map((p) => problemLine(p, data, reload)),
+      theirs.length
+        ? h('div.so-sub', `Waiting on somebody else · ${theirs.length}`)
+        : null,
+      theirs.map((p) => problemLine(p, data, reload)),
+      !mine.length && !theirs.length
+        ? h('div.so-none',
+          h('span.so-none-tick', { 'aria-hidden': 'true' }, '✓'),
+          h('b', data.rows.length ? 'Nothing to settle' : 'Nothing outstanding'),
+          h('span', data.rows.length
+            ? 'Every day left in this period is clean. Sign them off below.'
+            : `Every day between ${fmtDay(data.from)} and ${fmtDay(data.limit)} has been signed off, `
+              + 'or there was nothing on it to sign.'))
+        : null,
+    );
+  };
+  draw();
+
+  const period = data.limit && data.limit > data.from
+    ? `${fmtDayShort(data.from)} – ${fmtDayShort(data.limit)}`
+    : fmtDayShort(data.from);
+
+  return h('section.so-main',
+    h('div.so-main-head',
+      h('div.so-title',
+        h('b', toSettle.length
+          ? `${toSettle.length} thing${toSettle.length === 1 ? '' : 's'} to settle`
+          : 'Nothing to settle'),
+        h('span', ` · ${period}`,
+          clearableDays
+            ? ` · ${clearableDays} clean day${clearableDays === 1 ? '' : 's'} sign${clearableDays === 1 ? 's' : ''} off together`
+            : '')),
+      problems.length ? chipHost : null),
+    undoStrip(reload),
+    listHost,
+    h('div.so-foot',
+      h('span', toSettle.length
+        ? 'Each answer is saved as you press it, with who and when. The clean days can go now; '
+          + 'the rest stay on the list.'
+        : 'Each answer is saved as you press it, with who and when.'),
+      h('button.so-btn.so-sign-all', {
+        type: 'button',
+        disabled: !clearableDays,
+        title: clearableDays
+          ? 'Shows every day first, and any of them can be taken out'
+          : 'No clean day is waiting',
+        onclick: (event) => signAllClean(clearable, clearableDays, reload, event.currentTarget),
+      }, clearableDays
+        ? `Sign off ${clearableDays === 1 ? 'the clean day' : `all ${clearableDays} clean days`}`
+        : 'No clean days to sign')),
+  );
+}
+
+/**
+ * The cards as they were: one per person with their days in a table, for
+ * ticking a run of them, asking about a week, or reopening what was signed.
+ */
+function peopleView({ params, data, reload, groups, clearable, clearableDays }) {
   const count = (list) => list.reduce((n, r) => n + r.days.length, 0);
   const toDo = count(groups.working);
 
-  // Days nothing is wrong with and nothing is waiting on. The bulk clear works
-  // on the working list alone: sweeping up a day somebody deliberately asked
-  // about would answer their question for them.
-  const clearable = groups.working
-    .map((row) => ({ row, days: row.days.filter((d) => !d.issues.length && !d.pendingTimes) }))
-    .filter((entry) => entry.days.length);
-  const clearableDays = clearable.reduce((n, entry) => n + entry.days.length, 0);
-
-  const custom = Boolean(params.from || params.to);
-
-  const controls = h('div.signoff-bar',
-    h('div.seg.seg-wrap', [...PRESETS, ['custom', 'Dates…']].map(([key, label]) =>
-      h('button', {
-        class: (custom ? 'custom' : range.preset) === key ? 'active' : '',
-        onclick: () => (key === 'custom'
-          ? reload({ preset: null, from: range.from, to: range.to })
-          : reload({ preset: key, from: null, to: null })),
-      }, label))),
-
-    // Only in the way when somebody has actually asked for dates by hand.
-    custom
-      ? h('span.signoff-dates',
-        h('input', {
-          type: 'date', value: range.from, 'aria-label': 'From',
-          onchange: (e) => e.target.value && reload({ from: e.target.value, to: range.to, preset: null }),
-        }),
-        h('input', {
-          type: 'date', value: range.to, 'aria-label': 'To',
-          onchange: (e) => e.target.value && reload({ from: range.from, to: e.target.value, preset: null }),
-        }))
-      : null,
-
-    h('div.seg.seg-wrap',
-      [['', 'All'], ['1', 'With issues'], ['0', 'Clean']].map(([value, label]) =>
-        h('button', {
-          class: (params.issues ?? '') === value ? 'active' : '',
+  const view = h('div.so-people',
+    h('div.so-people-bar',
+      h('div.so-chips', [['', 'All'], ['1', 'With issues'], ['0', 'Clean']].map(([value, label]) =>
+        h('button.so-chip', {
+          type: 'button',
+          class: (params.issues ?? '') === value ? 'on' : '',
+          'aria-pressed': (params.issues ?? '') === value ? 'true' : 'false',
           onclick: () => reload({ issues: value || null }),
         }, label))),
-
-    h('div', { style: { flex: 1 } }),
-
-    data.departments?.length
-      ? h('select', {
-        'aria-label': 'Department',
-        onchange: (e) => reload({ department: e.target.value || null }),
-      },
-      h('option', { value: '' }, 'Every department'),
-      data.departments.map((d) => h('option', {
-        value: d, selected: params.department === d,
-      }, d)))
-      : null,
-  );
-
-  const view = h('div',
-    controls,
-
-    // One line where four tiles were. Everything on it is a number somebody
-    // acts on; nothing on it is a number that only describes the page.
-    h('p.signoff-counts',
-      h('strong', `${toDo} day${toDo === 1 ? '' : 's'} to deal with`),
-      groups.working.length
-        ? h('span.muted', ` · ${groups.working.length} ${groups.working.length === 1 ? 'person' : 'people'}`)
-        : null,
-      count(groups.answered)
-        ? h('span.pill.good', { style: { marginLeft: '.5rem' } }, `${count(groups.answered)} answered`)
-        : null,
-      count(groups.asked)
-        ? h('span.pill.warn', { style: { marginLeft: '.35rem' } }, `${count(groups.asked)} waiting`)
-        : null,
-      h('span.muted', { style: { marginLeft: '.5rem' } }, `up to ${fmtDayShort(data.limit)}`),
-    ),
+      h('p.signoff-counts',
+        h('strong', `${toDo} day${toDo === 1 ? '' : 's'} to deal with`),
+        groups.working.length
+          ? h('span.muted', ` · ${groups.working.length} ${groups.working.length === 1 ? 'person' : 'people'}`)
+          : null,
+        count(groups.answered)
+          ? h('span.pill.good', { style: { marginLeft: '.5rem' } }, `${count(groups.answered)} answered`)
+          : null,
+        count(groups.asked)
+          ? h('span.pill.warn', { style: { marginLeft: '.35rem' } }, `${count(groups.asked)} waiting`)
+          : null,
+        h('span.muted', { style: { marginLeft: '.5rem' } }, `up to ${fmtDayShort(data.limit)}`))),
 
     groups.answered.length
       ? h('div',
@@ -255,7 +602,7 @@ async function openTab(params, range, reload) {
     clearable.length
       ? h('div.bulk-clear',
         h('span', h('strong', `${clearableDays} clean`),
-          h('span.muted', ' — nothing flagged, nothing waiting')),
+          h('span.muted', ', nothing flagged and nothing waiting')),
         h('button.btn-sm.btn-primary', {
           onclick: (event) => signAllClean(clearable, clearableDays, reload, event.target),
         }, 'Review and sign'))
@@ -269,7 +616,7 @@ async function openTab(params, range, reload) {
       ? h('details.asked-group',
         h('summary',
           h('span.pill.warn', 'Waiting on an answer'),
-          ` ${count(groups.asked)} day${count(groups.asked) === 1 ? '' : 's'} — nothing to do until somebody replies`),
+          ` ${count(groups.asked)} day${count(groups.asked) === 1 ? '' : 's'}, nothing to do until somebody replies`),
         h('div', groups.asked.map((row) => personCard(row, data, reload, 'asked'))))
       : null,
 
@@ -287,12 +634,193 @@ async function openTab(params, range, reload) {
 
   // And brought back under the eye. The card is at the top of its group, but
   // its group may not be the one that was on screen a moment ago.
-  if (pin) {
+  if (pinned()) {
     requestAnimationFrame(() => view.querySelector('.just-acted')
       ?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
   }
-
   return view;
+}
+
+/** The right-hand column: how clean the period is, the controls, the last sign-off. */
+function sidePanel({ params, range, data, reload, view, clean, total, problems }) {
+  const custom = Boolean(params.from || params.to);
+  const pct = total ? Math.round((clean / total) * 100) : 100;
+  const others = problems.filter((p) => !KIND.get(p.kind)?.wait).length;
+
+  const ring = h('section.so-card.so-ring-card',
+    h('div.so-ring', { style: { '--pct': String(pct) }, role: 'img', 'aria-label': `${pct}% clean` },
+      h('div.so-ring-hole', h('b', `${pct}%`), h('small', 'clean'))),
+    h('div.so-ring-text',
+      h('b', total
+        ? `${clean} of ${total} day${total === 1 ? '' : 's'} ${clean === 1 ? 'is' : 'are'} clean`
+        : 'Nothing waiting'),
+      h('span', !total
+        ? 'Every day in this period is signed off.'
+        : others
+          ? `Settle the ${others} problem${others === 1 ? '' : 's'} and the period signs off in one press.`
+          : 'All of it can be signed off in one press.')));
+
+  const chip = (label, on, onclick) => h('button.so-chip', {
+    type: 'button', class: on ? 'on' : '', 'aria-pressed': on ? 'true' : 'false', onclick,
+  }, label);
+
+  const departments = data.departments ?? [];
+  const controls = h('section.so-card.so-controls',
+    h('span.so-label', 'Period'),
+    h('div.so-chips',
+      PRESETS.map(([key, label]) => chip(label, !custom && range.preset === key,
+        () => reload({ preset: key, from: null, to: null }))),
+      chip('Dates…', custom, () => reload({ preset: null, from: range.from, to: range.to }))),
+    custom
+      ? h('div.so-dates',
+        h('input', {
+          type: 'date', value: range.from, 'aria-label': 'From',
+          onchange: (e) => e.target.value && reload({ from: e.target.value, to: range.to, preset: null }),
+        }),
+        h('input', {
+          type: 'date', value: range.to, 'aria-label': 'To',
+          onchange: (e) => e.target.value && reload({ from: range.from, to: e.target.value, preset: null }),
+        }))
+      : null,
+    departments.length
+      ? [
+        h('span.so-label', 'Department'),
+        h('div.so-chips.so-depts',
+          chip('Everybody', !params.department, () => reload({ department: null })),
+          departments.map((d) => chip(d, params.department === d, () => reload({ department: d })))),
+        h('select.so-dept-select', {
+          'aria-label': 'Department',
+          onchange: (e) => reload({ department: e.target.value || null }),
+        },
+        h('option', { value: '' }, 'Everybody'),
+        departments.map((d) => h('option', { value: d, selected: params.department === d }, d))),
+      ]
+      : null,
+    h('span.so-label', 'Show'),
+    h('div.so-chips',
+      chip('Problems', view === 'problems', () => reload({ view: null })),
+      chip('Each person', view === 'people', () => reload({ view: 'people' }))),
+  );
+
+  const last = data.lastSigned;
+  const lastCard = h('section.so-card.so-last',
+    h('span.so-label', 'Last signed off'),
+    last
+      ? h('p',
+        `${last.from === last.to ? fmtDayShort(last.from) : `${fmtDayShort(last.from)} – ${fmtDayShort(last.to)}`}`
+        + `${last.people > 1 ? `, ${last.people} people` : ''}`
+        + `${last.by ? `, by ${last.by}` : ''}, on ${fmtDayShort(last.on)}. `,
+        h('button.so-link', {
+          type: 'button',
+          onclick: () => reload({ tab: 'months', month: last.to.slice(0, 7) }),
+        }, 'Open it'))
+      : h('p', 'Nothing has been signed off yet.'));
+
+  return h('aside.so-side', ring, controls, lastCard);
+}
+
+/** One press: put a clock time on from the shift, as the times dialog would. */
+async function setTime(row, day, times, reason, reload) {
+  const done = await api.attCorrectTimes(day.day, {
+    staffId: row.staff.id,
+    in: times.in || null,
+    out: times.out || null,
+    reason,
+  });
+  const said = `${times.in || '—'} → ${times.out || '—'}`;
+  toast(done?.pending
+    ? `Sent to an administrator: ${row.staff.name}, ${said}. Nothing has changed yet.`
+    : `${row.staff.name}, ${fmtDayShort(day.day)}: ${said}. The day is settled.`,
+  'good');
+  keepInView(row.staff.id, done?.pending
+    ? 'Clock times sent for approval just now'
+    : 'Clock times corrected just now');
+  await reload();
+}
+
+/**
+ * One press: sign one day as it stands.
+ *
+ * Only when signing it moves nothing on their leave. A day that would charge
+ * or give back a day opens the ordinary sign-off, where the figure is shown
+ * and can be changed, because that is a decision and not a tidy-up.
+ */
+async function quickSign(row, day, note, reload) {
+  if (overUnderOf([day]) !== 0) {
+    await sign(row, new Set([day.day]), reload);
+    return;
+  }
+  await api.attSignDays({ staffId: row.staff.id, days: [day.day], daysApplied: 0, note });
+  justSigned = { staffId: row.staff.id, name: row.staff.name, day: day.day, at: Date.now() };
+  toast(`${row.staff.name}, ${fmtDayShort(day.day)} signed off.`, 'good');
+  keepInView(row.staff.id, '1 day signed just now');
+  await reload();
+}
+
+/** "Signed: Ama, 19 Oct. Undo", for the day just signed with one press. */
+function undoStrip(reload) {
+  const last = justSigned && Date.now() - justSigned.at < PIN_MS ? justSigned : null;
+  if (!last) return null;
+  const undo = h('button.so-link', {
+    type: 'button',
+    onclick: async () => {
+      undo.disabled = true;
+      try {
+        await api.attReopenDays({ staffId: last.staffId, from: last.day, to: last.day });
+        justSigned = null;
+        toast('Taken back. The day is on the list again.');
+        await reload();
+      } catch (err) {
+        undo.disabled = false;
+        toast(err.message, 'bad');
+      }
+    },
+  }, 'Undo');
+  return h('div.so-undone', { role: 'status' },
+    h('span.so-undone-tick', { 'aria-hidden': 'true' }, '✓'),
+    h('span', `Signed off: ${last.name}, ${fmtDay(last.day)}. `), undo);
+}
+
+/**
+ * Say what a day was: sick, leave, excused, present after all.
+ *
+ * The same ruling the person's record and the Today screen make, offered here
+ * to whoever may make it, so an absence with a reason is settled on its line
+ * rather than by going to find it somewhere else.
+ */
+async function giveReason(row, day, preset, reload) {
+  const { reasons } = await api.attReasons();
+  const done = await formDialog({
+    title: `${row.staff.name}, ${fmtDay(day.day, { withYear: true })}`,
+    submitLabel: 'Record it',
+    body: h('div',
+      h('p.muted', day.shift ? shiftLabel(day) : 'No shift rostered for this day'),
+      h('div.grid.grid-2',
+        field('Clocked in', h('input', { type: 'time', name: 'in', value: day.corrected_in || day.in || '' }),
+          day.in ? 'What the terminal saw' : 'The terminal saw nothing'),
+        field('Clocked out', h('input', { type: 'time', name: 'out', value: day.corrected_out || day.out || '' }),
+          day.out ? 'What the terminal saw' : 'The terminal saw nothing')),
+      field('Record this day as', reasonSelect(reasons, preset, { name: 'reason', required: true })),
+      field('Note', h('input', {
+        type: 'text', name: 'note', maxlength: 500,
+        placeholder: 'What they told you, or who confirmed it',
+      })),
+      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+        'Recorded against your name. The punches are never altered, and it can be undone from their '
+        + 'record. The day still needs signing off afterwards.'),
+    ),
+    onSubmit: async (form) => api.attResolve(day.day, {
+      staffId: row.staff.id,
+      reason: form.get('reason'),
+      in: form.get('in') || null,
+      out: form.get('out') || null,
+      note: form.get('note') || null,
+    }),
+  });
+  if (!done) return;
+  toast('Recorded.', 'good');
+  keepInView(row.staff.id, 'Day recorded just now');
+  await reload();
 }
 
 const ISSUE_PILL = { open: 'bad', absent: 'bad', under: 'bad', over: 'warn', late: 'warn', early: 'warn', noshift: 'warn' };

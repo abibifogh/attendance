@@ -290,6 +290,54 @@ test('signing over a known problem records that it was known', async () => {
   assert.deepEqual(JSON.parse(row.issues), { late: 1 });
 });
 
+test('each day carries its shift hours and how late, for the one-press fixes', async () => {
+  // The sign-off list offers "Out at 14:00, the end of the shift" as the
+  // answer to a missing clock-out, so the day has to say when the shift ends.
+  const { db } = await setup();
+  const out = await read(await outstanding(ctx(db, { query: WEEK })));
+  const wednesday = out.rows[0].days.find((d) => d.day === '2026-06-03');
+
+  assert.equal(wednesday.shift, 'Morning');
+  assert.equal(wednesday.shiftId, 1);
+  assert.equal(wednesday.starts, '06:00');
+  assert.equal(wednesday.ends, '14:00');
+  assert.equal(wednesday.lateMinutes, 47, 'in at 06:47 for a 06:00 start');
+  assert.equal(wednesday.earlyMinutes, 0);
+});
+
+test('the list says when it was last signed off, by whom and for how many', async () => {
+  const { raw, db } = await setup();
+  assert.equal((await read(await outstanding(ctx(db, { query: WEEK })))).lastSigned, null,
+    'nothing signed yet');
+
+  // A made-up second person in another department, signed in the same sitting.
+  raw.prepare(
+    "INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (2, '1002', 'Esinam Korley', 'Bar', '2021-01-01')",
+  ).run();
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id) VALUES (2, ?, 1)').run('2026-06-04');
+  raw.prepare(
+    `INSERT INTO att_punches (staff_id, employee_no, device_serial, at_utc, at_local, day, source, dedupe_key)
+     VALUES (2, '1002', 'TEST', ?1, ?1, '2026-06-04', 'test', ?1)`,
+  ).run('2026-06-04 06:00:00');
+  raw.prepare(
+    `INSERT INTO att_punches (staff_id, employee_no, device_serial, at_utc, at_local, day, source, dedupe_key)
+     VALUES (2, '1002', 'TEST', ?1, ?1, '2026-06-04', 'test', ?1)`,
+  ).run('2026-06-04 14:00:00');
+
+  await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-01', '2026-06-02'], daysApplied: 0 } }));
+  await signDays(ctx(db, { body: { staffId: 2, days: ['2026-06-04'], daysApplied: 0 } }));
+
+  const everybody = (await read(await outstanding(ctx(db, { query: WEEK })))).lastSigned;
+  assert.equal(everybody.from, '2026-06-01');
+  assert.equal(everybody.to, '2026-06-04');
+  assert.equal(everybody.people, 2);
+  assert.equal(everybody.by, 'Yaa', 'the name, without the role after it');
+
+  const bar = (await read(await outstanding(ctx(db, { query: `${WEEK}&department=Bar` })))).lastSigned;
+  assert.deepEqual([bar.from, bar.to, bar.people], ['2026-06-04', '2026-06-04', 1],
+    'narrowed to the department being looked at');
+});
+
 test('reopening puts the days back on the list', async () => {
   const { db } = await setup();
   await signDays(ctx(db, { body: { staffId: 1, days: ['2026-06-01', '2026-06-02'], daysApplied: 0 } }));
