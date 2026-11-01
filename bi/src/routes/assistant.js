@@ -81,7 +81,8 @@ export const io = { fetch: (...a) => fetch(...a) };
 const tasksUrl = (env) => env.MAINTENANCE_TASKS_URL
   || (env.MAINTENANCE_APPROVALS_URL ? String(env.MAINTENANCE_APPROVALS_URL).replace(/\/approvals\/?$/, '/tasks') : null);
 const appsLinked = (env) => Boolean(env.SSO_SECRET_MAINTENANCE && tasksUrl(env));
-const askTasks = (env, body) => mgmt.ask({ url: tasksUrl(env), secret: env.SSO_SECRET_MAINTENANCE, path: '/tasks', body, fetchImpl: io.fetch, what: 'Maintenance' });
+const askTasks = (env, body) => mgmt.ask({ url: tasksUrl(env), secret: env.SSO_SECRET_MAINTENANCE, path: '/tasks', body, fetchImpl: io.fetch, what: 'Maintenance' })
+  .catch((err) => { throw new Error(/management report/.test(err.message) ? 'Maintenance does not list tasks for Insight yet: its tasks function is not deployed.' : err.message); });
 const APP_LABEL = { maintenance: 'Maintenance', teamtasks: 'Team Tasks' };
 
 /**
