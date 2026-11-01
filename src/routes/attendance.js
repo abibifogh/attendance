@@ -761,7 +761,11 @@ export async function week(ctx) {
     if (!days.some((d) => activeOn(staff, d))) continue;
     const records = daysFor(ds, staff.id, from, to);
     rows.push({
-      staff: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
+      staff: {
+        id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
+        // The same hours a week the rota measures them against.
+        weeklyHours: weeklyHoursFor(staff, ds.settings ?? {}),
+      },
       days: records.map((r) => present(ds, r)),
       totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
     });
@@ -979,8 +983,12 @@ export async function overview(ctx) {
     rows.push({
       staff: {
         id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department,
+        weeklyHours: weeklyHoursFor(staff, ds.settings ?? {}),
       },
       totals: summarise(records, { shifts: ds.shiftById, reasons: ds.reasonBy }),
+      // A square per day on the month grid, so only what colours one.
+      days: records.map((r) => monthDay(ds, r)),
+      targetMinutes: monthTarget(staff, records, span, ds.settings ?? {}),
       leave: showsLeave
         ? leaveBalance({
           staff,
@@ -997,6 +1005,36 @@ export async function overview(ctx) {
 
   rows.sort((a, b) => a.staff.name.localeCompare(b.staff.name));
   return json({ from, to, month: from.slice(0, 7), rows, showsLeave });
+}
+
+/** One day of the month grid: enough to colour a square and say why. */
+function monthDay(ds, record) {
+  return {
+    day: record.day,
+    status: record.status,
+    reason_code: record.reason_code ?? null,
+    resolution: record.resolution ?? null,
+    scheduled: record.scheduled ? 1 : 0,
+    colour: colourFor(record, ds.reasonBy),
+    label: labelFor(record, ds.reasonBy),
+    open: isOpen(record),
+    late_minutes: record.late_minutes || 0,
+    worked_minutes: record.worked_minutes || 0,
+    expected_minutes: record.expected_minutes || 0,
+  };
+}
+
+/**
+ * The hours somebody was due over the days shown: their hours a week, scaled
+ * to the days they were with us, less a working day's share for each day of
+ * leave or public holiday. The same hours a week the rota measures against.
+ */
+function monthTarget(staff, records, span, settings) {
+  const weekly = weeklyHoursFor(staff, settings);
+  const perDay = weekly / Math.max(1, daysPerWeekFor(staff, settings));
+  const days = span.filter((d) => activeOn(staff, d)).length;
+  const away = records.filter((r) => r.status === 'leave' || r.status === 'holiday').length;
+  return Math.max(0, Math.round(((weekly * days) / 7 - perDay * away) * 60));
 }
 
 /** The same figures, as a file, for whoever wants them in a spreadsheet. */
