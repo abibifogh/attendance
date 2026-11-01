@@ -206,7 +206,13 @@ export function suggestRota({
         // is filled, not whether it is wanted: it waits for the second pass
         // and takes whoever is left, and going without is not a failure.
         const usual = wanted.get(`${shift.id}|${weekday}`) ?? 0;
-        const asked = shift.needed == null ? null : Number(shift.needed);
+        // A shift that runs every other day (or less often) is one person's
+        // job on the days it runs unless it says otherwise. Read from the
+        // weeks behind or from empty cards, its days blur together — a
+        // weekday it ran on twice in six weeks, plus a card left over from a
+        // move — and it was drafted three times on one day.
+        const asked = shift.needed != null ? Number(shift.needed)
+          : everyDays(shift) > 1 ? 1 : null;
         const openRows = (ds.slotsByDay?.get(day) ?? [])
           .filter((row) => Number(row.shift_id) === Number(shift.id));
         const open = openRows.length;

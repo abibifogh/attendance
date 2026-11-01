@@ -487,7 +487,7 @@ export async function renderAttRota(params) {
    * leaves exactly the same thing behind. Returns whether it landed: a day on
    * approved leave has no cell to put anything on.
    */
-  const putShift = (staffId, day, shiftId, title = null) => {
+  const putShift = (staffId, day, shiftId, title = null, { moved = false } = {}) => {
     const found = cells.get(`${staffId}|${day}`);
     if (!found) return false;
 
@@ -518,6 +518,8 @@ export async function renderAttRota(params) {
     }
     pending.set(`${staffId}|${day}`, {
       staffId: Number(staffId), day, shiftId, title: title || null,
+      // Moved to another day: the shift goes with it and leaves nothing behind.
+      ...(moved && shiftId == null ? { moved: true } : {}),
     });
     return true;
   };
@@ -1064,7 +1066,7 @@ export async function renderAttRota(params) {
         // Moved, so it is no longer where it was. The title goes with it,
         // because "Stock take" belonged to the shift rather than to the
         // Tuesday it happened to be on.
-        if (answer === 'move') putShift(load.staffId, load.day, null, null);
+        if (answer === 'move') putShift(load.staffId, load.day, null, null, { moved: true });
         refreshSaveBar();
         // Move it and Copy it are the answer to a question. Somebody who has
         // answered one has decided, and the decision is written rather than
@@ -2187,7 +2189,7 @@ export async function renderAttRota(params) {
         unqueue(load.cardId);
       } else {
         queue(`${load.staffId}|${load.day}`,
-          { staffId: Number(load.staffId), day: load.day, shiftId: null, title: null });
+          { staffId: Number(load.staffId), day: load.day, shiftId: null, title: null, moved: true });
       }
     }
 

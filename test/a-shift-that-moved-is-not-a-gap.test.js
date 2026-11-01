@@ -177,7 +177,7 @@ test('two off the same shift and one taking it up leaves one hole, not none and 
   assert.equal(unfilledOn(data)[1], 1);
 });
 
-test('dragged onto another day, the day it left is short of it', async () => {
+test('taken off one day and put on another as two unrelated changes, the day it left is short of it', async () => {
   const { db } = setup();
   await save(db, [{ staffId: 2, day: DAY, shiftId: 1 }]);
 
@@ -255,6 +255,25 @@ test('the grid sends a move as the landing and the clearing together', () => {
   // let-go. Split across two requests it could not, and would be right to
   // leave the slot.
   const view = readFileSync('public/js/views/att-rota.js', 'utf8');
-  assert.match(view, /if \(answer === 'move'\) putShift\(load\.staffId, load\.day, null, null\);/);
+  assert.match(view, /if \(answer === 'move'\) putShift\(load\.staffId, load\.day, null, null, \{ moved: true \}\);/);
   assert.match(view, /refreshSaveBar\(\);\n\s*\/\/[\s\S]*?await saveNow\(\);/);
+});
+
+test('a shift moved to another day goes with the move and leaves no empty copy behind', async () => {
+  const { db } = setup();
+  await save(db, [{ staffId: 2, day: DAY, shiftId: 1 }]);
+  // What the grid sends once the planner answers "Move it": on the new day,
+  // and off the old one as a move.
+  await save(db, [
+    { staffId: 2, day: NEXT, shiftId: 1, title: null },
+    { staffId: 2, day: DAY, shiftId: null, title: null, moved: true },
+  ]);
+  const data = await look(db);
+  assert.equal(cellOf(data, 2, NEXT).shift_id, 1, 'on the new day');
+  assert.equal(cellOf(data, 2, DAY).shift_id, null, 'off the old one');
+  assert.deepEqual(data.slots, [], 'and no unassigned copy is left on the day it came from');
+
+  // Given the day off, not moved: the shift still stands on the day, wanting somebody.
+  await save(db, [{ staffId: 2, day: NEXT, shiftId: null, title: null }]);
+  assert.equal((await look(db)).slots.length, 1);
 });

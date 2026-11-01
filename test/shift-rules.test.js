@@ -474,6 +474,20 @@ test('every other day comes out as every other day', async () => {
     'Monday, Wednesday, Friday, Sunday');
 });
 
+test('every other day is one person on the days it runs, however many cards are left on it', async () => {
+  const { db, raw } = setup();
+  raw.prepare('DELETE FROM att_shifts WHERE id IN (1, 2)').run();
+  raw.prepare('UPDATE att_shifts SET every_days = 2, needed = NULL WHERE id = 3').run();
+  // Three empty cards left on the Monday, the way moves used to leave them.
+  for (let i = 0; i < 3; i += 1) {
+    raw.prepare(`INSERT INTO att_roster (staff_id, day, shift_id, set_by, published) VALUES (NULL, '2026-06-01', 3, 'seed', 0)`).run();
+  }
+  const plan = await draft(db, MONDAY, MONDAY);
+  const monday = plan.entries.filter((e) => e.shiftId === 3 && e.day === '2026-06-01');
+  assert.equal(monday.filter((e) => !e.drop && e.staffId != null).length, 1, 'one person on it');
+  assert.equal(monday.filter((e) => e.drop).length, 2, 'the spare cards are offered for removal');
+});
+
 test('a day it is already down for keeps the next day clear', async () => {
   const { db, raw } = setup();
   raw.prepare('DELETE FROM att_shifts WHERE id IN (1, 2)').run();

@@ -4057,7 +4057,10 @@ export async function saveRoster(ctx) {
     // somebody's standing pattern is an assumption about a normal week rather
     // than a shift they were put on, and a planner moving one person's day off
     // should not manufacture a hole for it.
-    if (shiftId == null) {
+    // A shift moved to another day goes with the move: the planner said so in
+    // answer to "Move it?", and an empty copy left behind on the day it came
+    // from was a hole nobody asked for.
+    if (shiftId == null && entry.moved !== true) {
       for (const row of held.filter((r) => r.shift_id != null)) {
         // Unless somebody in this same save is taking it on. Then it was
         // moved, not dropped, and there is no hole to mark.
