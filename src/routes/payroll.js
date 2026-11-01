@@ -15,7 +15,7 @@ import {
 } from '../lib/statutory.js';
 import { ratesOn } from '../lib/tax-tables.js';
 import { readSheet, tallyOf } from '../lib/pay-import.js';
-import { askMaintenance, scoresFor } from '../lib/maintenance-bonus.js';
+import { askMaintenance, askMaintenancePenalties, cleanNo, scoresFor } from '../lib/maintenance-bonus.js';
 import { inputSheet } from '../lib/pay-input-sheet.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import {
@@ -2368,6 +2368,89 @@ export async function fromMaintenance(ctx) {
     staff.results ?? [], sent);
   await audit(ctx, 'payroll.maintenance', month, { scheme: schemeId, lines: out.lines.length });
   return json({ ok: true, ...out });
+}
+
+/**
+ * The late-report deductions, out of Maintenance, put on the payroll.
+ *
+ * Maintenance marks a weekly report not sent within four hours of being due:
+ * GHS 50 off, "Late submission of report". This asks for this month's and
+ * last month's (one marked just before midnight on the last day is still
+ * found), and puts each on the person's payroll for the month it was marked
+ * in, matched by employee number. If that month is already closed it goes on
+ * this month instead, so it is never lost. Each is put on once, however often
+ * this runs, and the person is told on the spot, as with any deduction.
+ *
+ * One Maintenance withdrew (an admin withdrew the report) is taken back off,
+ * while the month it is on is still open.
+ *
+ * Runs on its own, from the scheduler, as "Maintenance (automatic)". Does
+ * nothing until HIVE is linked to Maintenance.
+ */
+export async function takeMaintenanceDeductions(env, { fetchImpl = fetch, today = null } = {}) {
+  const out = { added: 0, removed: 0, unmatched: [] };
+  if (!env?.MAINTENANCE_LINK || !env.DB) return out;
+  const db = env.DB;
+  const ctx = { db, env, session: { user: { name: 'Maintenance', role: 'automatic' } } };
+  const actor = actorOf(ctx);
+  const { timezone } = await settingsOf(db);
+  const thisMonth = monthOf(today ?? todayIn(timezone));
+  const staff = (await db.prepare('SELECT id, name, employee_no, company_id FROM att_staff').all()
+    .catch(() => db.prepare('SELECT id, name, employee_no FROM att_staff').all())).results ?? [];
+  const byNo = new Map();
+  for (const person of staff) {
+    const no = cleanNo(person.employee_no);
+    if (no) byNo.set(no, person);
+  }
+
+  for (const month of [addMonths(thisMonth, -1), thisMonth]) {
+    const sent = await askMaintenancePenalties(env.MAINTENANCE_LINK, month, fetchImpl);
+    const still = new Set();
+    for (const p of sent.penalties) {
+      // The month in the key: what is withdrawn is looked for by month.
+      const source = `maintenance:${month}:${p.id}`;
+      still.add(source);
+      const amount = round2(Number(p.amount) || 0);
+      if (amount <= 0) continue;
+      if (await db.prepare('SELECT 1 FROM pay_penalty WHERE source = ?').bind(source).first()) continue;
+      const person = byNo.get(cleanNo(p.employee_no));
+      if (!person) {
+        out.unmatched.push(`${p.name ?? 'Somebody'} (${p.employee_no ? `no one in HIVE is ${p.employee_no}` : 'no employee number in Maintenance'})`);
+        continue;
+      }
+      let into = month;
+      let run = await runFor(db, into, actor, { company: companyOf(person) });
+      if (run.status === 'final' && into !== thisMonth) {
+        into = thisMonth;
+        run = await runFor(db, into, actor, { company: companyOf(person) });
+      }
+      if (run.status === 'final') {
+        out.unmatched.push(`${person.name} (${into} is closed)`);
+        continue;
+      }
+      const reason = String(p.reason || 'Late submission of report').slice(0, 300);
+      const done = await db.prepare(
+        'INSERT OR IGNORE INTO pay_penalty (run_id, staff_id, amount, reason, actor, source) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
+      ).bind(run.id, person.id, amount, reason, actor, source).run();
+      if (!done?.meta?.changes) continue;
+      out.added++;
+      await audit(ctx, 'payroll.penalty', person.id, { month: into, amount, reason, from: 'Maintenance', week: p.week ?? null });
+      await tellOfDeduction(ctx, person.id, amount, into, reason).catch((err) => console.error('Deduction notice failed', err));
+    }
+
+    // Withdrawn in Maintenance: taken back off, unless the month is closed.
+    const ours = (await db.prepare(
+      `SELECT p.id, p.source, p.staff_id, p.amount, r.status FROM pay_penalty p JOIN pay_run r ON r.id = p.run_id
+        WHERE p.source LIKE ?1`,
+    ).bind(`maintenance:${month}:%`).all()).results ?? [];
+    for (const row of ours) {
+      if (still.has(row.source) || row.status === 'final') continue;
+      await db.prepare('DELETE FROM pay_penalty WHERE id = ?').bind(row.id).run();
+      out.removed++;
+      await audit(ctx, 'payroll.penalty_remove', row.id, { amount: round2(row.amount), why: 'Withdrawn in Maintenance' });
+    }
+  }
+  return out;
 }
 
 /** Money off somebody's bonus, with the reason it came off. */

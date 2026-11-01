@@ -1226,6 +1226,21 @@ export default {
       });
       if (lunched.sent) console.log(`Lunch: ${lunched.sent} told what they ordered`);
 
+      // And the late weekly reports out of Maintenance: GHS 50 off the bonus
+      // for each one more than four hours late. Once an hour, in the first
+      // tick of it; nothing at all until HIVE is linked to Maintenance.
+      const minute = new Date(event?.scheduledTime ?? Date.now()).getUTCMinutes();
+      if (env.MAINTENANCE_LINK && (nightly || minute < 5)) {
+        const taken = await payroll.takeMaintenanceDeductions(env).catch((err) => {
+          console.error('Maintenance deductions failed', err);
+          return { added: 0, removed: 0, unmatched: [] };
+        });
+        if (taken.added || taken.removed) {
+          console.log(`Maintenance: ${taken.added} late-report deduction(s) put on, ${taken.removed} taken back off`);
+        }
+        if (taken.unmatched.length) console.log(`Maintenance: not put on: ${taken.unmatched.join('; ')}`);
+      }
+
       if (!nightly) return;
 
       // A copy of everything to the bucket, when one is bound. First, so a
