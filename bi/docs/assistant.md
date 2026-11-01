@@ -19,9 +19,11 @@ covers everything, anybody else's only what their access already shows them.
   kind, who gave it, why, how late it is, and its buttons: **Done** for a
   to-do, **Open shift** (opens that shift's page), **Decide**, **Send proof**,
   Approve or Send back for an approval, or a link to the page where it is done.
-- **Sent up, waiting for an admin** (supervisors): their answers,
-  reconciliations, accepts and corrections an admin has not decided yet, so
-  nobody asks twice. Nothing to do on them.
+- **Sent up, waiting for a decision**: a supervisor's answers,
+  reconciliations, accepts and corrections an admin has not decided yet, and
+  anybody's own answers in HIVE (as staff, found by the same email) that
+  nobody has decided yet, oldest first, so nobody asks twice. Nothing to do on
+  them. Somebody's own HIVE answers are never on their list to decide.
 - **Beside it:** *Your week* (things done since Monday, from the audit trail;
   what is overdue; shifts checked in the last seven days; whether last week's
   report went), *One email a day* (supervisors), *Done today*, and **Ask
@@ -48,6 +50,24 @@ finished work and has none, a job in a locked period (for anybody but a
 Maintenance admin), and a repeating task (Team Tasks sets the next one when it
 is ticked there). The rules live in the Maintenance repository
 (`db/maintenance/supabase/functions/tasks/`). They are in the 07:00 email too.
+
+### When somebody's emails do not match
+
+Jobs and tasks are found by the email of the Insight account. When somebody is
+not found in Maintenance or Team Tasks by it, but somebody there has their
+name (the same name; the same first and last name; or a single name that is
+the other's first), their emails do not match and their work there cannot
+show:
+
+- **They** see *Your email doesn't match Team Tasks* on their Today, with the
+  address Insight has and the start of the one the app has
+  (`sa•••@other.test`), and to ask an admin to make them the same.
+- **Admins** see one line per person and app, with both addresses in full
+  (*People* chip): change one, in Insight under Settings › People & access, or
+  in that app. It goes once they match.
+
+Somebody in neither app, with no one of their name there, is not warned:
+they simply have nothing there.
 
 ## When something is due
 

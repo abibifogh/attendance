@@ -18,7 +18,7 @@ import { state } from '../app.js';
 const WHEN = [['overdue', 'Overdue'], ['today', 'Due today'], ['later', 'Later']];
 const AREAS = [
   ['given', 'Given to you'], ['maintenance', 'Maintenance'], ['teamtasks', 'Team Tasks'], ['shifts', 'Shifts'], ['safe', 'Safe'], ['niceplace', 'Nice Place'],
-  ['approvals', 'Approvals'], ['buying', 'Buying'], ['checks', 'Checks'], ['report', 'Report'], ['other', 'Other'],
+  ['approvals', 'Approvals'], ['buying', 'Buying'], ['checks', 'Checks'], ['people', 'People'], ['report', 'Report'], ['other', 'Other'],
 ];
 const SHOWN = 6;
 
@@ -84,7 +84,7 @@ export async function renderAssistant(root) {
             xs.length > shown.length ? h('button.today-more', { type: 'button', onclick: () => { more.add(w); paintList(); } }, `${xs.length - shown.length} more ${label.toLowerCase()} ▾`) : null));
       }),
       waiting.length ? h('section.today-group.w-waiting',
-        h('div.today-gh', h('span.today-dot'), 'Sent up, waiting for an admin', h('span.today-gn', String(waiting.length))),
+        h('div.today-gh', h('span.today-dot'), 'Sent up, waiting for a decision', h('span.today-gn', String(waiting.length))),
         h('div.today-rows', waiting.map((w) => h('div.today-row',
           h('span.today-bar'),
           h('div.today-t', h('b', w.title),

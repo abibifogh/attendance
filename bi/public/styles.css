@@ -2865,7 +2865,7 @@ main img, main svg, main canvas, main video { max-width: 100%; }
 .today-tag.a-maintenance, .today-tag.a-teamtasks { background: var(--surface-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--border); }
 .today-tag.a-shifts, .today-tag.a-waiting { background: var(--bl-soft); color: var(--bl-ink); }
 .today-tag.a-safe, .today-tag.a-report { background: var(--am-soft); color: var(--am-ink); }
-.today-tag.a-approvals, .today-tag.a-checks { background: var(--em-soft); color: var(--em-ink); }
+.today-tag.a-approvals, .today-tag.a-checks, .today-tag.a-people { background: var(--em-soft); color: var(--em-ink); }
 .today-tag.a-buying, .today-tag.a-niceplace { background: var(--gr-soft); color: var(--gr-ink); }
 .today-from { display: inline-flex; align-items: center; gap: 6px; }
 .today-av { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: .58rem; font-weight: 800; display: inline-grid; place-items: center; }
