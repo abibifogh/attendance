@@ -754,6 +754,23 @@ export async function createDraftPo({ config: settings, token, vendorId, product
   };
 }
 
+/**
+ * A draft PO cancelled: a float's receipt that is going to the POS instead.
+ * Only while it is still a draft (an RFQ, sent or not); one confirmed in
+ * Odoo is left alone, and the error says so.
+ */
+export async function cancelDraftPo({ config: settings, token, poId, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const rows = await call(config, 'purchase.order', 'search_read', { domain: [['id', '=', Number(poId)]], fields: ['name', 'state'], limit: 1 }, opts);
+  const row = (Array.isArray(rows) ? rows : rows?.records || [])[0];
+  if (!row) throw new OdooError('That PO is not in Odoo any more.');
+  if (row.state === 'cancel') return { name: String(row.name || ''), state: 'cancel' };
+  if (!['draft', 'sent'].includes(row.state)) throw new OdooError(`${row.name} is already confirmed in Odoo: cancel it there first.`);
+  await call(config, 'purchase.order', 'button_cancel', { ids: [Number(poId)] }, opts);
+  return { name: String(row.name || ''), state: 'cancel' };
+}
+
 /** A receipt kept on the PO it is for, in Odoo's attachments. */
 export async function attachToPo({ config: settings, token, poId, name, mimetype, data, fetchImpl = fetch }) {
   const config = odooConfig(settings, token);

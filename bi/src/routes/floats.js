@@ -2,9 +2,10 @@ import { all, first, run } from '../lib/db.js';
 import { badRequest, csvResponse, HttpError, str } from '../lib/http.js';
 import { todayIn } from '../lib/dates.js';
 import { pdf, wrap, widthOf, A4 } from '../lib/pdf.js';
-import { purchaseOrders } from '../connectors/odoo.js';
+import { purchaseOrders, cancelDraftPo } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
-import { addReceipt, markFor } from './receipts.js';
+import { addReceipt, markFor, makeInOdoo, keptData, readAgain, typedIn } from './receipts.js';
+import { pos } from './approvals.js';
 
 /**
  * Floats: money given to people to spend.
@@ -17,6 +18,15 @@ import { addReceipt, markFor } from './receipts.js';
  * cancelled in Odoo), it goes back on what they hold. What they give back
  * comes off too. A statement of any period downloads as a spreadsheet or a
  * page to print.
+ *
+ * Where a receipt goes. Some people buy for the bistro, the bar or the craft
+ * shop, whose stock lives in the POS. An admin ticks where each person's
+ * receipts may go (Odoo, and any of the three): one tick, they always go
+ * there; several, the person says for each receipt; none, they wait here for
+ * somebody to choose. One for the POS is read and made into a draft purchase
+ * order there for that side, not in Odoo; received in the POS, it is
+ * accepted, and cancelled there, refused. While it is still a draft, either
+ * way, an admin can send it to the other instead.
  */
 
 const now = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -30,6 +40,25 @@ const QUIET_DAYS = 14;
 /** A PO changed in Odoo within this many days of the receipt being sent asks the person too; after, only an admin. */
 const ASK_HOLDER_DAYS = 30;
 const CONFIRMED = new Set(['purchase', 'done']);
+
+/** Where a float's receipts may go: Odoo, or one side of the POS (its own module names). */
+export const DESTS = { odoo: 'The hotel (Odoo)', kitchen: 'Bistro', bar: 'Bar', craft: 'Craft' };
+const POS_SIDES = new Set(['kitchen', 'bar', 'craft']);
+/** A receipt file sent to the POS with its order: under about 4 MB. */
+const POS_FILE_MAX = 5_500_000;
+/** Received in the POS (all, or some): accepted. Cancelled or refused there: refused. */
+const POS_DONE = new Set(['received', 'part']);
+const POS_GONE = new Set(['cancelled', 'refused']);
+
+/** Where this person's receipts may go. Never set: Odoo only. An empty list: nowhere, they wait. */
+export function destsOf(p) {
+  if (p?.dests == null) return ['odoo'];
+  try {
+    const list = JSON.parse(p.dests);
+    return Array.isArray(list) ? Object.keys(DESTS).filter((k) => list.includes(k)) : ['odoo'];
+  } catch { return ['odoo']; }
+}
+const destWords = (d) => (d === 'wait' ? 'Waiting: where it goes' : POS_SIDES.has(d) ? `POS · ${DESTS[d]}` : 'Odoo');
 
 const newToken = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
@@ -134,6 +163,38 @@ async function settleFromOdoo(env, rows, { fetchImpl } = {}) {
 }
 
 /**
+ * Receipts made into orders in the POS: where each stands there. Received
+ * (all or some) is accepted; cancelled or refused there is refused. Never
+ * throws: the POS not answering leaves them as they are.
+ */
+async function settleFromPos(env, rows, { fetchImpl } = {}) {
+  const there = rows.filter((r) => r.pos_id && r.status !== 'refused');
+  if (!there.length) return;
+  try {
+    const out = await pos(env, '/floats/po/status', { ids: there.map((r) => r.pos_id).slice(0, 100) }, fetchImpl ? { fetchImpl } : {});
+    const byId = new Map((out.orders || []).map((o) => [String(o.id), o]));
+    for (const r of there) {
+      const o = byId.get(String(r.pos_id));
+      if (!o) continue;
+      const changes = {};
+      if (o.status && o.status !== r.pos_status) changes.pos_status = o.status;
+      if (o.poNo && o.poNo !== r.pos_no) changes.pos_no = o.poNo;
+      if (r.status === 'checking' && POS_DONE.has(o.status)) Object.assign(changes, { status: 'accepted', decided_by: 'POS', decided_at: now() });
+      else if (r.status === 'checking' && POS_GONE.has(o.status)) {
+        Object.assign(changes, { status: 'refused', reason: `${o.poNo || r.pos_no || 'Its order'} was ${o.status} in the POS.`, decided_by: 'POS', decided_at: now() });
+      }
+      if (!Object.keys(changes).length) continue;
+      Object.assign(r, changes);
+      const keys = Object.keys(changes);
+      // eslint-disable-next-line no-await-in-loop
+      await run(env.DB, `UPDATE float_receipt SET ${keys.map((k, i) => `${k} = ?${i + 2}`).join(', ')} WHERE id = ?1`, r.id, ...keys.map((k) => changes[k]));
+    }
+  } catch (err) { console.error('Floats: the POS', err); }
+}
+
+const settle = async (env, rows, opts) => { await settleFromOdoo(env, rows, opts); await settleFromPos(env, rows, opts); };
+
+/**
  * The amount a receipt counts for: the receipt's own, or its PO's new total
  * in Odoo once accepted (by an admin, or by the person when no admin has
  * said otherwise).
@@ -160,17 +221,40 @@ function totals(moves, receipts) {
   return { given, back, spent, held: given - back - spent, receipts: receipts.filter((r) => r.status !== 'refused').length };
 }
 
-/** Something to look at: not read, read with something to check, or no PO. */
-const toLookAt = (r) => (r.status === 'checking' && (!r.po_name || ['check', 'unread', 'failed'].includes(r.read_status)))
-  || (changeOf(r) && !r.admin_answer);
+/** Where a receipt went: Odoo for one from before anybody chose. */
+const destOf = (r) => r.dest || 'odoo';
+/** Made somewhere: a PO in Odoo, or an order in the POS. */
+const placed = (r) => Boolean(destOf(r) === 'odoo' ? r.po_name : r.pos_id);
 
-function receiptView(r) {
+/** Something to look at: not read, read with something to check, no PO, or waiting to be placed. */
+const toLookAt = (r) => Boolean((r.status === 'checking' && (destOf(r) === 'wait' || !placed(r) || ['check', 'unread', 'failed'].includes(r.read_status)))
+  || (changeOf(r) && !r.admin_answer));
+
+/**
+ * Where an admin can send it now, instead: the places this person's receipts
+ * may go (any, when none is ticked), while it is not decided and its PO or
+ * order is still a draft.
+ */
+function movesOf(r, allowed) {
+  if (r.status !== 'checking') return [];
+  const d = destOf(r);
+  if (POS_SIDES.has(d) && r.pos_id && r.pos_status && r.pos_status !== 'draft') return [];
+  const may = allowed.length ? allowed : Object.keys(DESTS);
+  return may.filter((k) => k !== d || !placed(r));
+}
+
+function receiptView(r, allowed = ['odoo']) {
+  const d = destOf(r);
   return {
     id: r.id, receiptId: r.receipt_id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: amountOf(r) ?? null, change: changeOf(r),
     vendor: r.vendor_name || r.vendor_text || null, description: r.description || null, hint: r.hint || null,
     status: r.status, reason: r.reason || null, decidedBy: r.decided_by || null,
     read: r.read_status, problem: r.problem || null, thumb: r.thumb || null,
-    po: r.po_name ? { id: r.po_id, name: r.po_name, url: r.po_url } : null, toLookAt: toLookAt(r),
+    po: d === 'odoo' && r.po_name ? { id: r.po_id, name: r.po_name, url: r.po_url } : null, toLookAt: toLookAt(r),
+    dest: d, where: destWords(d),
+    pos: r.pos_id ? { id: r.pos_id, no: r.pos_no || null, status: r.pos_status || null, url: r.pos_url || null } : null,
+    posProblem: r.pos_problem || null,
+    moves: movesOf(r, allowed).map((k) => ({ key: k, label: DESTS[k] })),
   };
 }
 
@@ -179,7 +263,7 @@ export async function list(env, { fetchImpl } = {}) {
   const people = await all(env.DB, 'SELECT * FROM float_person ORDER BY active DESC, name');
   const moves = await all(env.DB, 'SELECT * FROM float_move ORDER BY day, id');
   const receipts = await receiptsOf(env, people.map((p) => p.id));
-  await settleFromOdoo(env, receipts, { fetchImpl });
+  await settle(env, receipts, { fetchImpl });
   const month = todayIn('UTC').slice(0, 7);
   const quietBefore = new Date(Date.now() - QUIET_DAYS * 86_400_000).toISOString().slice(0, 10);
   const rows = people.map((p) => {
@@ -189,7 +273,7 @@ export async function list(env, { fetchImpl } = {}) {
     const last = [...mine.map((r) => r.at.slice(0, 10)), ...myMoves.filter((m) => m.kind === 'given').map((m) => m.day)].sort().at(-1) || null;
     const lastReceipt = mine[0]?.at?.slice(0, 10) || null;
     return {
-      id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), ...t, lastReceipt,
+      id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), ...t, lastReceipt, dests: destsOf(p),
       toLookAt: mine.filter(toLookAt).length,
       quiet: t.held > 0 && last && last < quietBefore ? Math.floor((Date.now() - Date.parse(`${last}T12:00:00Z`)) / 86_400_000) : 0,
     };
@@ -203,6 +287,7 @@ export async function list(env, { fetchImpl } = {}) {
       quiet: rows.filter((r) => r.quiet).length,
     },
     sources: SOURCES,
+    places: DESTS,
   };
 }
 
@@ -211,13 +296,15 @@ export async function detail(env, id, { fetchImpl } = {}) {
   const p = await withSlug(env, await person(env, id));
   const moves = await all(env.DB, 'SELECT * FROM float_move WHERE person_id = ?1 ORDER BY day DESC, id DESC', p.id);
   const receipts = await receiptsOf(env, [p.id]);
-  await settleFromOdoo(env, receipts, { fetchImpl });
+  await settle(env, receipts, { fetchImpl });
+  const allowed = destsOf(p);
   return {
-    person: { id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), token: p.token, slug: p.slug },
+    person: { id: p.id, name: p.name, code: p.code, note: p.note, active: Boolean(p.active), token: p.token, slug: p.slug, dests: allowed },
     ...totals(moves, receipts),
     moves: moves.map((m) => ({ id: m.id, kind: m.kind, amount: m.amount, day: m.day, source: m.source, sourceText: SOURCES[m.source] || null, note: m.note, noteBy: m.note_by || null, noteAt: m.note_at || null, by: m.by_name })),
-    receipts: receipts.map(receiptView),
+    receipts: receipts.map((r) => receiptView(r, allowed)),
     sources: SOURCES,
+    places: DESTS,
   };
 }
 
@@ -316,11 +403,12 @@ export async function setLink(env, body) {
  * One receipt, for one person: given its next reference, read, and made into
  * a draft PO carrying it. From their link, or added by an admin for them.
  */
-async function addFor(env, p, body, byName, { fetchImpl } = {}) {
+async function addFor(env, p, body, byName, { fetchImpl, admin = false } = {}) {
   const file = String(body?.file || '');
   const m = file.match(/^data:([a-z]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/);
   if (!m || !TYPES.test(m[1])) throw badRequest('A photo or a PDF of the receipt.');
   if (m[2].length > FILE_MAX) throw badRequest('That file is too large: a photo, or a PDF under 7 MB.');
+  const dest = destFor(p, body?.dest, { admin });
   const thumb = String(body?.thumb || '');
   // The next number is taken before reading, so two sent at once never share one.
   const taken = await first(env.DB, 'UPDATE float_person SET next_seq = next_seq + 1 WHERE id = ?1 RETURNING next_seq - 1 AS seq', p.id);
@@ -330,18 +418,150 @@ async function addFor(env, p, body, byName, { fetchImpl } = {}) {
     mime: m[1], data: m[2], name: body?.name, came: 'float', byName,
     thumb: /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(thumb) && thumb.length < 60_000 ? thumb : null,
     hint: str(body?.hint, 'What it was for', { max: 300 }),
-  }, { fetchImpl, mark: markFor({ ref, name: p.name, given }) });
+    // Only read, with no PO in Odoo, when it goes to the POS or waits.
+  }, { fetchImpl, mark: markFor({ ref, name: p.name, given }), readOnly: dest !== 'odoo' });
   // The same picture sent twice is one receipt: the second is not counted.
   if (receipt.status === 'duplicate' && receipt.sameAs && await first(env.DB, 'SELECT id FROM float_receipt WHERE receipt_id = ?1', receipt.sameAs)) {
     return { duplicate: true, receipt };
   }
-  await run(env.DB, 'INSERT INTO float_receipt (person_id, receipt_id, seq, ref, at) VALUES (?1, ?2, ?3, ?4, ?5)', p.id, receipt.id, taken.seq, ref, now());
-  return { ref, receipt };
+  const row = await first(env.DB, 'INSERT INTO float_receipt (person_id, receipt_id, seq, ref, at, dest, lines) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING *',
+    p.id, receipt.id, taken.seq, ref, now(), dest, receipt.lines?.length ? JSON.stringify(receipt.lines) : null);
+  const placedIn = POS_SIDES.has(dest) ? await toPos(env, row, dest, { fetchImpl, by: byName }) : null;
+  return { ref, receipt, dest, pos: placedIn };
+}
+
+/**
+ * Where a new receipt goes: what the person chose, when it is one of their
+ * places; their one place, when they have one; waiting, when they have none.
+ * An admin adding one for somebody with nothing ticked may choose anywhere.
+ */
+export function destFor(p, asked, { admin = false } = {}) {
+  const allowed = destsOf(p);
+  const may = allowed.length ? allowed : admin ? Object.keys(DESTS) : [];
+  if (asked && asked !== 'wait') {
+    if (!may.includes(asked)) throw badRequest(may.length ? `That receipt can go to ${may.map((k) => DESTS[k]).join(' or ')}.` : 'The office says where these receipts go: send it without choosing.');
+    return asked;
+  }
+  if (may.length === 1) return may[0];
+  if (!may.length || (admin && !allowed.length)) return 'wait';
+  throw badRequest(`Say what it was for: ${may.map((k) => DESTS[k]).join(', ')}.`);
+}
+
+/**
+ * One receipt made into a draft purchase order in the POS, for one side.
+ * What was read goes with it (who sold it, the total, the day, each thing
+ * bought, the picture). The POS not taking it is said on the receipt, to try
+ * again; it is not lost.
+ */
+async function toPos(env, fr, side, { fetchImpl, by } = {}) {
+  const r = await first(env.DB, 'SELECT * FROM receipt WHERE id = ?1', fr.receipt_id);
+  const p = await person(env, fr.person_id);
+  const say = async (problem) => {
+    await run(env.DB, 'UPDATE float_receipt SET dest = ?2, pos_problem = ?3 WHERE id = ?1', fr.id, side, problem);
+    return { problem };
+  };
+  if (!r || r.amount == null) return say('It could not be read: try reading it again, or type in what it says.');
+  let lines = [];
+  try { lines = JSON.parse(fr.lines || '[]'); } catch { lines = []; }
+  if (!Array.isArray(lines) || !lines.length) lines = [{ name: r.description || 'From a receipt', qty: 1, amount: r.amount }];
+  const data = await keptData(env, r.id).catch(() => null);
+  try {
+    const out = await pos(env, '/floats/po', {
+      key: `insight-float:${fr.id}`, module: side, ref: fr.ref, holder: p.name,
+      supplier: r.vendor_name || r.vendor_text || '', day: r.day || String(fr.at).slice(0, 10), total: r.amount,
+      description: r.description || '', lines, hint: r.hint || '', by: by || 'Insight',
+      ...(data && data.length <= POS_FILE_MAX ? { receipt: { mime: r.mime, data } } : {}),
+    }, fetchImpl ? { fetchImpl } : {});
+    await run(env.DB, 'UPDATE float_receipt SET dest = ?2, pos_id = ?3, pos_no = ?4, pos_status = ?5, pos_url = ?6, pos_problem = NULL WHERE id = ?1',
+      fr.id, side, String(out.id), out.poNo || null, out.status || 'draft', out.url || null);
+    return { id: String(out.id), no: out.poNo || null, status: out.status || 'draft', url: out.url || null };
+  } catch (err) {
+    return say(`The POS did not take it: ${String(err?.message || err).slice(0, 300)}`);
+  }
 }
 
 export async function adminAdd(env, body, account, { fetchImpl } = {}) {
   const p = await person(env, body?.personId);
-  return addFor(env, p, body, `${who(account)} for ${p.name}`, { fetchImpl });
+  return addFor(env, p, body, `${who(account)} for ${p.name}`, { fetchImpl, admin: true });
+}
+
+/** Where each person's receipts may go, as an admin ticked them: [{ id, dests: [odoo, kitchen, bar, craft] }]. */
+export async function saveDests(env, body) {
+  const people = Array.isArray(body?.people) ? body.people : [];
+  if (!people.length) throw badRequest('Whose places?');
+  let changed = 0;
+  for (const x of people.slice(0, 200)) {
+    // eslint-disable-next-line no-await-in-loop
+    const p = await person(env, x?.id);
+    const list = Array.isArray(x?.dests) ? Object.keys(DESTS).filter((k) => x.dests.includes(k)) : null;
+    if (!list) throw badRequest(`${p.name}: tick where their receipts may go, or none.`);
+    if (JSON.stringify(destsOf(p)) === JSON.stringify(list)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await run(env.DB, 'UPDATE float_person SET dests = ?2 WHERE id = ?1', p.id, JSON.stringify(list));
+    changed += 1;
+  }
+  return { ok: true, changed };
+}
+
+/**
+ * Send a receipt somewhere else, or place one that is waiting: out of where
+ * it is (its draft PO cancelled in Odoo, or its draft order cancelled in the
+ * POS), then made where it now goes. With `typed`, what a receipt that could
+ * not be read says, typed in; with `again`, read again first.
+ */
+export async function moveReceipt(env, body, account, { fetchImpl } = {}) {
+  const fr = await first(env.DB, `SELECT f.*, r.status AS read_status, r.po_id, r.po_name, r.amount FROM float_receipt f JOIN receipt r ON r.id = f.receipt_id WHERE f.id = ?1`, Number(body?.id));
+  if (!fr) throw new HttpError(404, 'No such receipt.');
+  const p = await person(env, fr.person_id);
+  const to = String(body?.dest || destOf(fr));
+  // Waiting, and only read again (or typed in): it stays waiting.
+  const stay = to === 'wait' && destOf(fr) === 'wait' && (body?.again || body?.typed);
+  if (!DESTS[to] && !stay) throw badRequest('Where to: Odoo, the bistro, the bar or craft.');
+  if (fr.status === 'refused') throw badRequest(`${fr.ref} is refused: take the refusal off first.`);
+  if (fr.status === 'accepted') throw badRequest(`${fr.ref} is already accepted where it went.`);
+  const allowed = destsOf(p);
+  const from = destOf(fr);
+  if (to === from && placed(fr)) throw badRequest(`${fr.ref} is already there.`);
+  if (!stay && !movesOf({ ...fr, status: 'checking' }, allowed).includes(to)) {
+    throw badRequest(POS_SIDES.has(from) && fr.pos_status && fr.pos_status !== 'draft'
+      ? `${fr.pos_no || 'Its order'} is no longer a draft in the POS: it stays there.`
+      : `${p.name}’s receipts may go to ${(allowed.length ? allowed : Object.keys(DESTS)).map((k) => DESTS[k]).join(' or ')}: tick more in Where receipts go.`);
+  }
+  // What it says: typed in, or read again, before it goes anywhere.
+  if (body?.typed) {
+    const t = body.typed;
+    const amount = money(t.amount, 'The total');
+    const day = DAY.test(String(t.day || '')) ? t.day : null;
+    await typedIn(env, fr.receipt_id, { vendor: str(t.vendor, 'Who sold it', { max: 120 }), amount, description: str(t.description, 'What was bought', { max: 200 }), day });
+    await run(env.DB, 'UPDATE float_receipt SET lines = NULL WHERE id = ?1', fr.id);
+    fr.lines = null;
+  } else if (body?.again) {
+    const read = await readAgain(env, fr.receipt_id);
+    fr.lines = read.lines?.length ? JSON.stringify(read.lines) : null;
+    await run(env.DB, 'UPDATE float_receipt SET lines = ?2 WHERE id = ?1', fr.id, fr.lines);
+  }
+  if (stay) {
+    const r = await first(env.DB, 'SELECT amount, problem FROM receipt WHERE id = ?1', fr.receipt_id);
+    return { ok: true, dest: 'wait', problem: r?.amount == null ? (r?.problem || 'It still could not be read: type in what it says.') : null };
+  }
+  // Out of where it is.
+  if (fr.pos_id) {
+    await pos(env, '/floats/po/cancel', { id: fr.pos_id, by: who(account), note: `Going to ${DESTS[to]} instead, from Insight.` }, fetchImpl ? { fetchImpl } : {});
+    await run(env.DB, 'UPDATE float_receipt SET pos_id = NULL, pos_no = NULL, pos_status = NULL, pos_url = NULL, pos_problem = NULL WHERE id = ?1', fr.id);
+  } else if (from === 'odoo' && fr.po_id) {
+    const s = await odooSource(env);
+    if (!s) throw new HttpError(409, 'Odoo is not set up in Insight yet.');
+    await cancelDraftPo({ ...s, poId: fr.po_id, ...(fetchImpl ? { fetchImpl } : {}) });
+    await run(env.DB, "UPDATE receipt SET status = 'read', po_id = NULL, po_name = NULL, po_url = NULL, problem = NULL WHERE id = ?1", fr.receipt_id);
+  }
+  // Into where it goes now.
+  if (to === 'odoo') {
+    const receipt = await makeInOdoo(env, fr.receipt_id, { fetchImpl });
+    await run(env.DB, "UPDATE float_receipt SET dest = 'odoo', pos_problem = NULL WHERE id = ?1", fr.id);
+    return { ok: true, dest: to, po: receipt.po, problem: receipt.po ? null : receipt.problem };
+  }
+  const placedIn = await toPos(env, { ...fr }, to, { fetchImpl, by: who(account) });
+  return { ok: true, dest: to, pos: placedIn.problem ? null : placedIn, problem: placedIn.problem || null };
 }
 
 // ------------------------------------------------------------ their link --
@@ -365,9 +585,11 @@ export async function linkView(env, query, { fetchImpl } = {}) {
   const p = await byToken(env, query?.t, query?.s);
   const moves = await all(env.DB, 'SELECT * FROM float_move WHERE person_id = ?1', p.id);
   const receipts = await receiptsOf(env, [p.id]);
-  await settleFromOdoo(env, receipts, { fetchImpl });
+  await settle(env, receipts, { fetchImpl });
   return {
     name: p.name, ref: `FLT/${p.code}`, ...totals(moves, receipts),
+    // Where their receipts may go: more than one, they say for each. None, the office says.
+    places: destsOf(p).map((k) => ({ key: k, label: k === 'odoo' ? 'The hotel' : DESTS[k] })),
     // The money given them (and given back), newest first, each with its note.
     moves: moves.slice().sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : b.id - a.id)).slice(0, 40).map((m) => ({
       kind: m.kind, amount: m.amount, day: m.day, source: SOURCES[m.source] || null, note: m.note || null, by: m.by_name || null,
@@ -376,6 +598,7 @@ export async function linkView(env, query, { fetchImpl } = {}) {
       id: r.id, ref: r.ref, at: r.at, day: r.day || r.at.slice(0, 10), amount: amountOf(r) ?? null, change: changeOf(r), vendor: r.vendor_name || r.vendor_text || null,
       description: r.description || r.hint || null, status: r.status, reason: r.reason || null, decidedAt: r.decided_at || null,
       unread: !r.po_name && r.amount == null,
+      where: destOf(r) === 'wait' ? 'The office will say where it goes' : POS_SIDES.has(destOf(r)) ? `${DESTS[destOf(r)]}, in the POS${r.pos_no ? ` · ${r.pos_no}` : ''}` : null,
     })),
   };
 }
@@ -384,10 +607,12 @@ export async function linkSend(env, body, { fetchImpl } = {}) {
   const p = await byToken(env, body?.t, body?.s);
   const out = await addFor(env, p, body, `${p.name} (float)`, { fetchImpl });
   const r = out.receipt;
+  const where = out.dest === 'wait' ? ' The office will say where it goes.'
+    : POS_SIDES.has(out.dest) ? ` It goes to the ${DESTS[out.dest].toLowerCase()}, in the POS.` : '';
   return {
     ok: true, duplicate: Boolean(out.duplicate), ref: out.ref || null,
     said: out.duplicate ? 'You sent this receipt before: it is counted once.'
-      : r.amount != null ? `Read: ${r.vendorText || r.vendorName || 'a receipt'}, ${ghs(r.amount)}. It is being checked.`
+      : r.amount != null ? `Read: ${r.vendorText || r.vendorName || 'a receipt'}, ${ghs(r.amount)}. It is being checked.${where}`
         : 'Sent. It could not be read, so the office will fill it in.',
   };
 }
@@ -454,7 +679,7 @@ async function statementOf(env, p, query) {
       what: `Receipt: ${r.vendor_name || r.vendor_text || 'not read'}${r.description ? `, ${r.description}` : ''}`,
       note: r.hint || '',
       title: r.vendor_name || r.vendor_text || 'Receipt, not read', detail: r.description || '', state: r.status,
-      ref: r.ref, po: r.po_name || '', status: { checking: 'Being checked', accepted: 'Accepted', refused: `Refused${r.reason ? `: ${r.reason}` : ''}` }[r.status],
+      ref: r.ref, po: r.po_name || (r.pos_no ? `${r.pos_no} (POS ${DESTS[r.dest] || ''})`.replace(' )', ')') : ''), status: { checking: 'Being checked', accepted: 'Accepted', refused: `Refused${r.reason ? `: ${r.reason}` : ''}` }[r.status],
       change: -spentBy(r),
     })),
   ].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));

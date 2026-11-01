@@ -328,7 +328,7 @@ async function readFloats(env) {
     });
   }
   if (look) {
-    out.push({ tab: 'decide', key: 'floats:look', sev: 'info', title: `${look} float receipt${look === 1 ? '' : 's'} to look at`, advice: 'A receipt sent from a float link that could not be made into a PO by itself.', actions: [{ label: 'Open floats', href: '#/floats', primary: true }] });
+    out.push({ tab: 'decide', key: 'floats:look', sev: 'info', title: `${look} float receipt${look === 1 ? '' : 's'} to look at`, advice: 'A receipt sent from a float link that could not be made into a PO by itself, or waits for somebody to say where it goes.', actions: [{ label: 'Open floats', href: '#/floats', primary: true }] });
   }
   return out;
 }

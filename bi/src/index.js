@@ -377,6 +377,9 @@ const ROUTES = [
   })],
   // Floats: money given to people to spend; their receipts become POs with their reference.
   ['GET', '/api/floats', 'insight', adminOnly((env) => floats.list(env))],
+  // Where each person's receipts may go, as ticked; and one receipt sent somewhere else, or placed.
+  ['POST', '/api/floats/dests', 'insight', adminOnly((env, ctx) => floats.saveDests(env, ctx.body))],
+  ['POST', '/api/floats/move', 'insight', adminOnly((env, ctx) => floats.moveReceipt(env, ctx.body, ctx.account))],
   ['GET', '/api/floats/:id', 'insight', adminOnly((env, ctx) => floats.detail(env, ctx.params.id))],
   ['GET', '/api/floats/:id/statement', 'insight', adminOnly((env, ctx) => floats.statement(env, ctx.params.id, ctx.query))],
   ['POST', '/api/floats/give', 'insight', adminOnly((env, ctx) => floats.give(env, ctx.body, ctx.account))],

@@ -19,6 +19,8 @@ const STATUS = {
   unread: ['short', '✕ No PO made'],
   failed: ['short', '✕ Odoo refused'],
   dismissed: ['none', 'Set aside'],
+  // A float's receipt for the POS (or still to be placed): read, and no PO in Odoo. See Money › Floats.
+  read: ['none', 'Float: not for Odoo'],
 };
 const when = (at) => {
   const d = new Date(`${String(at).replace(' ', 'T')}Z`);

@@ -1966,6 +1966,39 @@ html.viewing-as body::after { content: ''; position: fixed; inset: 0; border: 4p
 .fl-memo.fl-mnote { display: block; } .fl-memo.fl-mnote .sh-link { font-size: .8rem; }
 .fl-iacts { grid-column: 2 / 4; display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
 .fl-iacts .btn { padding: .25rem .6rem; font-size: .82rem; }
+/* Where a float's receipt went: Odoo, a side of the POS, or waiting. */
+.fl-place { display: inline-block; font-size: .75rem; font-weight: 700; padding: .1rem .5rem; border-radius: 999px; margin: 0 .15rem; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.fl-place.p-odoo { background: color-mix(in srgb, #714b67 16%, transparent); color: #5a3a52; }
+.fl-place.p-kitchen { background: color-mix(in srgb, #c2410c 15%, transparent); color: #9a3412; }
+.fl-place.p-bar { background: color-mix(in srgb, #7c3aed 15%, transparent); color: #5b21b6; }
+.fl-place.p-craft { background: color-mix(in srgb, #0f766e 15%, transparent); color: #115e59; }
+.fl-place.p-wait { background: color-mix(in srgb, var(--sh-warn, #e8a10c) 20%, transparent); color: var(--sh-warn-ink, #8a5a00); }
+/* Where each person's receipts go: a tick per place. */
+.fl-places { display: grid; gap: .6rem; margin-top: .6rem; }
+.fl-places h2 { margin: 0; }
+.fl-matrix { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow, 0 1px 2px rgba(0,0,0,.06)); overflow-x: auto; }
+.fl-matrix table { width: 100%; border-collapse: collapse; }
+.fl-matrix th, .fl-matrix td { padding: .65rem .8rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.fl-matrix thead th { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.fl-matrix .fl-who small { display: block; color: var(--muted); font-weight: 400; font-size: .8rem; }
+.fl-matrix tr.off .fl-who b { color: var(--muted); }
+.fl-matrix .fl-tick { text-align: center; width: 6.5rem; }
+.fl-matrix .fl-tick input { width: 1.3rem; height: 1.3rem; accent-color: var(--accent, #4f46e5); cursor: pointer; }
+.fl-wh { font-size: .88rem; }
+.fl-wh.choose { color: var(--accent, #4f46e5); font-weight: 600; }
+.fl-wh.none { color: var(--sh-bad-ink, #a12626); font-weight: 600; }
+.fl-placefoot { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--accent-2, #eef0ff); border-radius: 12px; padding: .6rem .9rem; }
+.fl-placefoot p { margin: 0; }
+@media (max-width: 760px) {
+  /* On a phone each person is a card: name, the four ticks in a row, what happens. */
+  .fl-matrix thead { display: none; }
+  .fl-matrix table, .fl-matrix tbody { display: block; }
+  .fl-matrix tr { display: grid; grid-template-columns: repeat(4, 1fr); padding: .6rem .4rem; border-bottom: 1px solid var(--border); }
+  .fl-matrix th, .fl-matrix td { border: 0; padding: .25rem .4rem; }
+  .fl-matrix .fl-who, .fl-matrix .fl-whcell { grid-column: 1 / -1; }
+  .fl-matrix .fl-tick { width: auto; display: grid; justify-items: center; gap: .15rem; }
+  .fl-matrix .fl-tick::before { content: attr(data-l); font-size: .7rem; color: var(--muted); font-weight: 700; }
+}
 @media (max-width: 899px) {
   .fl-split { grid-template-columns: minmax(0, 1fr); }
   .fl-split.picked .fl-people, .fl-split.picked ~ * { display: none; }
