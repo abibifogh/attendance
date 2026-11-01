@@ -58,6 +58,7 @@ import * as advance from './routes/advances.js';
 import * as approvals from './routes/approvals.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
+import { sendAdminShifts } from './lib/maintenance-shifts.js';
 import * as payAccess from './routes/payroll-access.js';
 import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
@@ -1257,6 +1258,14 @@ export default {
           console.log(`Maintenance: ${taken.added} late-report deduction(s) put on, ${taken.removed} taken back off`);
         }
         if (taken.unmatched.length) console.log(`Maintenance: not put on: ${taken.unmatched.join('; ')}`);
+
+        // And the other way: the Admin shifts, so Team Tasks can ask for
+        // every Admin day of a week to be planned before the plan goes.
+        const shifts = await sendAdminShifts(env).catch((err) => {
+          console.error('Admin shifts to Maintenance failed', err);
+          return { sent: 0, unmatched: [] };
+        });
+        if (shifts.unmatched.length) console.log(`Admin shifts: not matched: ${shifts.unmatched.join('; ')}`);
       }
 
       if (!nightly) return;
