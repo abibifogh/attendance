@@ -33,6 +33,8 @@ export const DID = {
   '/api/shifts/tasks': 'Gave a to-do',
   '/api/shifts/tasks/:id/done': 'Finished a to-do',
   '/api/assistant/app-done': 'Finished a Maintenance job or a task',
+  '/api/assets/register': 'Put a fixed asset on the register',
+  '/api/assets/decide': 'Decided a possible fixed asset',
   '/api/shifts/movement': 'Corrected a cash movement',
   '/api/safe/envelopes/receive': 'Marked envelopes received',
   '/api/np/pickups/record': 'Made a Nice Place pickup',

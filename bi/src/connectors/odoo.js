@@ -813,3 +813,56 @@ export async function oneInOdoo({ config: settings, token, kind, id, fetchImpl =
   return kind === 'vendor' ? { id: r.id, name: String(r.name || '').trim() }
     : { id: r.id, name: String(r.display_name || r.name || '').trim(), purchaseOk: r.purchase_ok !== false };
 }
+
+/**
+ * What may be a fixed asset, read from Odoo. Four read-only reads:
+ *
+ * - the fixed asset accounts (account type "Fixed Assets");
+ * - the assets in Odoo's Assets app, where it is installed (it is not in
+ *   every edition: a missing model is read as "no assets app", not a failure),
+ *   leaving out asset models and cancelled ones;
+ * - every posted debit on those accounts: what was capitalised, by a bill, a
+ *   journal entry or an opening balance (depreciation credits them, so is
+ *   left out);
+ * - posted vendor bill lines since `since` that cost at least `minEach` a
+ *   unit or `minLine` a line (minor units): the purchases that may be assets
+ *   whatever account they were booked to. Odoo filters by amount, so only
+ *   the few that could qualify come back.
+ */
+export async function fixedAssetData({ config: settings, token, since, minEach, minLine, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const accounts = (await searchRead(config, 'account.account', [['account_type', '=', 'asset_fixed']], ['id', 'code', 'name'], opts))
+    .map((a) => ({ id: a.id, code: String(a.code || ''), name: String(a.name || '') }));
+  let assets = null;
+  try {
+    assets = (await searchRead(config, 'account.asset', [['state', 'not in', ['model', 'cancelled']]],
+      ['id', 'name', 'original_value', 'acquisition_date', 'state', 'account_asset_id', 'original_move_line_ids'], opts))
+      .map((a) => ({
+        id: a.id, name: String(a.name || ''), value: toMinor(a.original_value), day: a.acquisition_date || null,
+        state: String(a.state || ''), account: refName(a.account_asset_id) || null,
+        lines: Array.isArray(a.original_move_line_ids) ? a.original_move_line_ids.map(Number) : [],
+      }));
+  } catch (err) {
+    if (!(err instanceof OdooError) || !/has no account\.asset model/.test(err.message)) throw err;
+  }
+  const line = (r) => ({
+    id: r.id, doc: refName(r.move_id) || String(r.move_name || ''), day: r.date || null,
+    name: String(refName(r.product_id) || r.name || 'Unnamed').trim(), product: refName(r.product_id) || null,
+    label: String(r.name || '').trim(), qty: Number(r.quantity) || 1,
+    unitCost: toMinor(r.price_unit), amount: toMinor(r.price_subtotal ?? r.debit),
+    supplier: refName(r.partner_id) || null, account: refName(r.account_id) || null, accountId: refId(r.account_id),
+  });
+  const FIELDS = ['id', 'move_id', 'move_name', 'name', 'product_id', 'quantity', 'price_unit', 'date', 'partner_id', 'account_id'];
+  const accountLines = accounts.length
+    ? (await searchRead(config, 'account.move.line', [['account_id', 'in', accounts.map((a) => a.id)], ['parent_state', '=', 'posted'], ['debit', '>', 0]],
+      [...FIELDS, 'debit'], opts)).map((r) => ({ ...line(r), amount: toMinor(r.debit) }))
+    : [];
+  const billLines = (await searchRead(config, 'account.move.line', [
+    ['move_id.move_type', '=', 'in_invoice'], ['parent_state', '=', 'posted'], ['date', '>=', since],
+    ['display_type', '=', 'product'],
+    '|', ['price_unit', '>=', minEach / 100], ['price_subtotal', '>=', minLine / 100],
+  ], [...FIELDS, 'price_subtotal'], opts)).map(line);
+  return { accounts, assets, accountLines, billLines };
+}
+
