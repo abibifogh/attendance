@@ -8327,3 +8327,15 @@ button.lp-row:disabled { cursor: default; }
 .clock-late { margin-left: .35rem; font-size: .7rem; font-weight: 700; color: var(--bad); background: var(--bad-soft, #fde4e2); border-radius: 6px; padding: 0 .35rem; white-space: nowrap; }
 .decide-why { display: block; margin-top: .3rem; }
 @media (max-width: 620px) { .clock-table { font-size: .78rem; max-width: 100%; } .clock-table > span { padding: .3rem .45rem; } .clock-table > .clock-h { font-size: .6rem; letter-spacing: .03em; } }
+
+/* ---- Rota › Publish: what is about to go out, a line each ---- */
+.publish-changes { margin: .9rem 0 1.1rem; }
+.publish-change-list { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: .25rem .75rem; }
+.publish-change-day + .publish-change-day { border-top: 1px solid var(--border); }
+.publish-change-date { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); padding: .55rem 0 .2rem; }
+.publish-change { display: grid; grid-template-columns: auto minmax(0, 9rem) minmax(0, 1fr); gap: .5rem; align-items: baseline; padding: .25rem 0 .35rem; font-size: .86rem; }
+.publish-change-tag { font-size: .7rem; font-weight: 750; border-radius: 999px; padding: .05rem .5rem; background: var(--good-soft); color: var(--good); }
+.publish-change-tag.is-changed { background: color-mix(in srgb, #f59e0b 18%, var(--surface)); color: #b45309; }
+.publish-change-who { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.publish-change-what s { margin-right: .1rem; }
+@media (max-width: 620px) { .publish-change { grid-template-columns: auto minmax(0, 1fr); } .publish-change-what { grid-column: 2; } }

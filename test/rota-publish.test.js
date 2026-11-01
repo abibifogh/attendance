@@ -77,6 +77,9 @@ const ctx = (db, { body = null, query = '' } = {}) => ({
 
 const WINDOW = '?from=2026-06-01&to=2026-06-14';
 
+/** The two counts, without the list of days the dialog shows under them. */
+const counts = ({ fresh, again }) => ({ fresh, again });
+
 test('a saved cell is a draft, and publishing turns it solid', async () => {
   const { db, raw } = setup();
   const kofi = giveKofiALogin(raw);
@@ -195,7 +198,8 @@ test('a new day and a changed one are counted apart', async () => {
   }));
 
   const out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
-  assert.deepEqual(out.publish, { fresh: 1, again: 1 });
+  assert.deepEqual(counts(out.publish), { fresh: 1, again: 1 });
+  assert.equal(out.publish.items?.length, 2, 'and each one listed for the dialog');
 
   const done = await (await publishRoster(ctx(db, {
     body: { from: '2026-06-01', to: '2026-06-14' },
@@ -205,7 +209,7 @@ test('a new day and a changed one are counted apart', async () => {
   assert.equal(done.published, 2);
 
   const after = await (await getRoster(ctx(db, { query: WINDOW }))).json();
-  assert.deepEqual(after.publish, { fresh: 0, again: 0 });
+  assert.deepEqual(counts(after.publish), { fresh: 0, again: 0 });
 });
 
 test('a day carries an optional title of its own', async () => {
@@ -353,11 +357,11 @@ test('moving a shift to somebody else and back needs no publish', async () => {
 
   await saveRoster(ctx(db, { body: { entries: [{ id, day: '2026-06-02', staffId: 2, shiftId: 1 }] } }));
   let out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
-  assert.deepEqual(out.publish, { fresh: 0, again: 1 }, 'moved, so it does need publishing');
+  assert.deepEqual(counts(out.publish), { fresh: 0, again: 1 }, 'moved, so it does need publishing');
 
   await saveRoster(ctx(db, { body: { entries: [{ id, day: '2026-06-02', staffId: 1, shiftId: 1 }] } }));
   out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
-  assert.deepEqual(out.publish, { fresh: 0, again: 0 }, 'and back, so it does not');
+  assert.deepEqual(counts(out.publish), { fresh: 0, again: 0 }, 'and back, so it does not');
   assert.equal(state(raw)[0].published, 1);
 });
 
@@ -404,7 +408,7 @@ test('a real change still needs publishing, and says which kind', async () => {
   }));
 
   const out = await (await getRoster(ctx(db, { query: WINDOW }))).json();
-  assert.deepEqual(out.publish, { fresh: 1, again: 1 });
+  assert.deepEqual(counts(out.publish), { fresh: 1, again: 1 });
 });
 
 test('a day published, changed, published again and put back is a change again', async () => {

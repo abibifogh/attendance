@@ -2276,6 +2276,48 @@ function leaveAskedFor(ds, staffId, day) {
   };
 }
 
+/**
+ * Every day in a window that Publish would send, with what it says now and,
+ * for one published before, what it said then. Read from `published_as`, the
+ * shape the last publish wrote beside the row.
+ */
+export async function publishList(db, ds, from, to, limit = 300) {
+  const rows = await db.prepare(
+    `SELECT r.day, r.staff_id, r.shift_id, r.title, r.ever_published, r.published_as
+       FROM att_roster r
+      WHERE r.day BETWEEN ?1 AND ?2 AND r.published = 0
+      ORDER BY r.day, r.staff_id, r.id
+      LIMIT ?3`,
+  ).bind(from, to, limit).all().catch(() => ({ results: [] }));
+  const shiftById = new Map((ds.shifts ?? []).map((s) => [String(s.id), s]));
+  const shiftOf = (id) => {
+    const s = id == null || id === '' ? null : shiftById.get(String(id));
+    return s ? { name: s.name, from: s.starts_at ?? null, to: s.ends_at ?? null } : null;
+  };
+  const nameOf = (id) => (id == null || id === '' ? null : ds.staffById?.get(Number(id))?.name ?? null);
+  return (rows.results ?? []).map((r) => {
+    const item = {
+      day: r.day,
+      staffId: r.staff_id == null ? null : Number(r.staff_id),
+      name: nameOf(r.staff_id),
+      shift: shiftOf(r.shift_id),
+      title: r.title || null,
+      changed: Boolean(Number(r.ever_published)),
+      was: null,
+    };
+    if (item.changed && r.published_as != null) {
+      const [staff, shift, title] = String(r.published_as).split('|');
+      item.was = {
+        staffId: staff === '' ? null : Number(staff),
+        name: nameOf(staff),
+        shift: shiftOf(shift),
+        title: title || null,
+      };
+    }
+    return item;
+  });
+}
+
 export async function getRoster(ctx) {
   const timezone = await timezoneOf(ctx.db);
   const from = startOfWeek(readDay(ctx.url.searchParams.get('from'), todayIn(timezone)));
@@ -2335,6 +2377,11 @@ export async function getRoster(ctx) {
   for (const row of waiting.results ?? []) {
     if (Number(row.was)) publish.again = Number(row.n);
     else publish.fresh = Number(row.n);
+  }
+  // And what those are, one line each, so the Publish dialog can say what is
+  // about to go out rather than only how much of it there is.
+  if (!reader && publish.fresh + publish.again) {
+    publish.items = await publishList(ctx.db, ds, from, to);
   }
   const days = rangeDays(from, to);
   const shifts = ds.shifts.filter((s) => s.active);

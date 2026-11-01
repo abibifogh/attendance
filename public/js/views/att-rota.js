@@ -2244,6 +2244,42 @@ export async function renderAttRota(params) {
 
   const conflicts = Object.keys(strain?.rows ?? {}).length;
 
+  /**
+   * The days Publish would send, by day: who, what it says now, and for a
+   * day published before, what it said then.
+   */
+  const changeList = (items, total) => {
+    if (!items.length) return null;
+    const timesOf = (sh) => (sh?.from && sh?.to && !String(sh.name).includes(sh.from) ? ` ${sh.from}–${sh.to}` : '');
+    const say = (sh, title) => (sh ? `${sh.name}${timesOf(sh)}${title ? ` · ${title}` : ''}` : 'Off');
+    const byDay = new Map();
+    for (const item of items) {
+      if (!byDay.has(item.day)) byDay.set(item.day, []);
+      byDay.get(item.day).push(item);
+    }
+    return h('div.publish-changes',
+      h('h3.publish-heading', 'What changed'),
+      h('div.publish-change-list',
+        [...byDay].map(([day, list]) => h('div.publish-change-day',
+          h('div.publish-change-date', fmtDayShort(day)),
+          list.map((item) => {
+            const who = item.name ?? 'Nobody yet';
+            const moved = item.was && item.was.staffId !== item.staffId;
+            return h('div.publish-change',
+              h('span', { class: item.changed ? 'publish-change-tag is-changed' : 'publish-change-tag' },
+                item.changed ? 'Changed' : 'New'),
+              h('span.publish-change-who', who),
+              h('span.publish-change-what',
+                item.changed && item.was
+                  ? [h('s.muted', moved ? `${item.was.name ?? 'Nobody'}: ${say(item.was.shift, item.was.title)}` : say(item.was.shift, item.was.title)),
+                    ' → ', h('strong', say(item.shift, item.title))]
+                  : h('strong', say(item.shift, item.title))));
+          })))),
+      items.length < total
+        ? h('small.muted', `And ${total - items.length} more.`)
+        : null);
+  };
+
   const publish = async () => {
     const tally = (n, label) => h('div.publish-tally',
       h('strong', String(n)), h('span', label));
@@ -2266,6 +2302,9 @@ export async function renderAttRota(params) {
         h('div.publish-tallies',
           tally(fresh, fresh === 1 ? 'New shift' : 'New shifts'),
           tally(again, again === 1 ? 'Changed shift' : 'Changed shifts')),
+
+        // What those are, a line each, so nothing goes out unseen.
+        changeList(data.publish?.items ?? [], unpublished),
 
         h('h3.publish-heading', 'Who is told'),
         h('div.answer-choices',
