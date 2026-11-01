@@ -242,6 +242,7 @@ export const ROUTES = [
   ['POST', '/api/link/till/expect', 'public', till.linkExpect],
   ['POST', '/api/link/till/summary', 'public', till.linkSummary],
   ['POST', '/api/link/mail', 'public', till.linkMail],
+  ['POST', '/api/link/pay/dock', 'public', till.linkDock],
   // Insight's Approvals page: what waits here for a decision, and the decision
   // itself, through HIVE's own routes as the person deciding. Signed by Insight.
   ['POST', '/api/link/approvals/list', 'public', (ctx) => approvals.linkList(ctx, asUser(ctx))],

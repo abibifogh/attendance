@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  answer, closeShift, closedSummary, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkCredit, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
+  answer, closeShift, closedSummary, linkDock, linkExpect, linkSummary, linkMail, linkMove, linkRecover, linkCredit, linkReopen, lookUpPo, myTill, poChanges, shiftAt,
 } from '../src/routes/till.js';
 import { signLink, verifyLink } from '../src/lib/till-link.js';
 import { getPepper, hashPin } from '../src/lib/auth.js';
@@ -336,6 +336,7 @@ test('an email from Insight can carry a small CSV, and nothing else', async () =
   globalThis.fetch = async (url, init) => { sent.push(JSON.parse(init.body)); return Response.json({ id: 'x' }); };
   try {
     await send([{ filename: 'prepaid-stays-2026-09.csv', content: btoa('Reservation,Charged\r\n1,2') }]);
+    assert.equal(sent[0].cc, undefined, 'nobody copied unless asked');
     assert.deepEqual(sent[0].attachments, [{ filename: 'prepaid-stays-2026-09.csv', content: btoa('Reservation,Charged\r\n1,2') }]);
     await assert.rejects(send([{ filename: 'run.exe', content: 'AAAA' }]), /Only a CSV/);
     await assert.rejects(send([{ filename: 'a.csv', content: 'not base64!' }]), /not a small CSV/);
@@ -639,4 +640,51 @@ test('Insight can pay a till surplus with salary: one per difference, into the o
   assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM till_credit').get().n, 1);
   await assert.rejects(send({ userId: 7, amount: 3000, key: 'k3', day: '2026-10-06', slot: 'night' }), /not been checked yet/);
   await assert.rejects(send({ userId: 8, amount: 3000, key: 'k4', day: '2026-10-06', slot: 'night', checked: true }), /not linked to a staff record/);
+});
+
+test('Insight can take a set amount off somebody’s bonus, once per key, for the login its account signs in as', async () => {
+  const { db, raw } = await setup();
+  raw.exec("UPDATE users SET email = 'ama@example.test' WHERE id = 7; UPDATE users SET email = 'kofi@example.test' WHERE id = 8;");
+  const path = '/api/link/pay/dock';
+  const call = async (payload, secret = SECRET) => {
+    const body = JSON.stringify(payload);
+    return linkDock({
+      db, env: { INSIGHT_SSO_SECRET: SECRET }, url: new URL(`https://x${path}`), session: null, executionContext: null,
+      request: new Request(`https://x${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(await signLink(secret, path, body)) }, body }),
+    });
+  };
+  const late = { email: 'AMA@example.test', amount: 5000, reason: 'Management report for week 45 sent more than 4 hours late', key: 'mgmt-late:2026-11-02', by: 'Insight' };
+  await assert.rejects(call(late, 'wrong'), /did not come from Insight/);
+  const out = await (await call(late)).json();
+  assert.equal(out.name, 'Ama Test');
+  const row = raw.prepare('SELECT p.*, r.month FROM pay_penalty p JOIN pay_run r ON r.id = p.run_id WHERE p.id = ?').get(out.id);
+  assert.deepEqual([row.staff_id, row.amount, row.reason, row.link_key, row.actor], [1, 50, late.reason, 'mgmt-late:2026-11-02', 'Insight (Insight)']);
+  assert.equal(row.month, out.month, 'on the open month');
+  const again = await (await call(late)).json();
+  assert.equal(again.again, true, 'asked twice, taken once');
+  assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM pay_penalty').get().n, 1);
+  assert.ok(raw.prepare("SELECT 1 FROM app_notices WHERE kind = 'payroll.penalty' AND user_id = 7").get(), 'told now');
+  await assert.rejects(call({ ...late, email: 'kofi@example.test', key: 'k2' }), /not linked to a staff record/);
+  await assert.rejects(call({ ...late, email: 'nobody@example.test', key: 'k3' }), /Nobody in HIVE signs in/);
+  await assert.rejects(call({ ...late, amount: 0, key: 'k4' }), /Whose bonus, and how much/);
+});
+
+test('an email from Insight can copy people in: the admins on a supervisor’s digest', async () => {
+  const { db, raw } = await setup();
+  raw.exec("INSERT INTO settings (key, value) VALUES ('email_from', 'desk@hotel.test') ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+  const path = '/api/link/mail';
+  const body = JSON.stringify({ to: 'sup@example.test', cc: ['boss@example.test', 'not an email', 'SUP@example.test', 'boss@example.test'], subject: 'Your day', html: '<p>Hi</p>', kind: 'insight_digest' });
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent.push(JSON.parse(init.body)); return Response.json({ id: 'x' }); };
+  try {
+    await linkMail({
+      db, env: { INSIGHT_SSO_SECRET: SECRET, RESEND_API_KEY: 'k' }, url: new URL(`https://x${path}`), session: null, executionContext: null,
+      request: new Request(`https://x${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(await signLink(SECRET, path, body)) }, body }),
+    });
+    assert.deepEqual(sent[0].to, ['sup@example.test']);
+    assert.deepEqual(sent[0].cc, ['boss@example.test'], 'once each, never the person it is to, never a bad address');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

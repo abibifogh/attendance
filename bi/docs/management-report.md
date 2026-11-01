@@ -42,6 +42,39 @@ carries the figures, what needs attention, both sections in short and a link
 back to the page; it is HTML, not a PDF attachment (HIVE, which sends
 Insight's email, attaches only CSV files).
 
+## The Saturday report and the morning digest
+
+Settings › Notifications › Management report, **Saturday report and morning
+digest**, an admin's:
+
+- **Saturday report.** One supervisor, chosen there, sends this week's report
+  (Monday to Friday) to everybody by **10:00 every Saturday**. Choosing them
+  shares the report with them. On Reports › Management report their page opens
+  on this week, with **Send to everybody**: for that week only, and nobody
+  else who is not an admin has it. The first send of the week counts.
+  - Friday **17:00**: a reminder, to them.
+  - Saturday **09:00**: a reminder, to them.
+  - Saturday **10:00** and **12:00**, if it has not gone: late, to them with
+    the admins copied, saying what happens at 14:00.
+  - Saturday **14:00**, if it still has not gone (more than four hours late):
+    **GH₵50 comes off their bonus in HIVE** (`/api/link/pay/dock`), on the
+    first payroll still open, with the reason, and HIVE tells them as it does
+    any deduction; they and the admins are emailed. Taken once a week, however
+    often it is asked; if HIVE cannot be reached it is asked again each hour
+    that Saturday.
+
+  Sent after 10:00 but before 14:00 is late, and nothing comes off. The last
+  weeks show under the setting: when it was sent and by whom, or what came off.
+  An admin who must undo a deduction removes it on the month's payroll in HIVE.
+- **Morning digest.** At **07:00** each supervisor gets their own Assistant
+  list by email (what waits on their yes or no, what is going wrong), with the
+  admins copied. Nothing waiting, no email; on the Saturday morning the person
+  on duty is reminded of the report in it too.
+
+Everything runs on an hourly schedule (`0 * * * *`, Accra's clock is UTC);
+each step is kept in a log (`mgmt_duty_log`), so an hour run twice does
+nothing twice.
+
 ## Who can open it
 
 Admins see it. Anybody else sees it when an admin ticks *Management* for them

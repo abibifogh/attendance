@@ -35,6 +35,7 @@ import * as odooact from './routes/odooact.js';
 import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
 import * as assistant from './routes/assistant.js';
+import * as duty from './routes/duty.js';
 import { meterDb, keep, speedView } from './lib/speed.js';
 import * as npPickup from './routes/nppickup.js';
 import * as approvals from './routes/approvals.js';
@@ -135,13 +136,20 @@ const ROUTES = [
     await till.requireAdmin(ctx.account);
     return mgmt.saveMailSettings(env, ctx.body, { origin: ctx.url.origin });
   }],
+  // The Saturday report: who sends it (an admin's to set), and where this week's stands.
+  ['GET', '/api/duty', 'session', adminOnly((env, ctx) => duty.dutyView(env, ctx.account))],
+  ['POST', '/api/duty', 'session', adminOnly((env, ctx) => duty.saveDuty(env, ctx.body, ctx.account))],
+  ['GET', '/api/duty/mine', 'session', (env, ctx) => duty.dutyMine(env, ctx.account)],
   ['POST', '/api/reports/management/send', 'insight', async (env, ctx) => {
     // To everybody it goes to (an admin), or to whoever presses it.
     // The sections chosen on the page ride along: a section left out there is left out of the email.
     const { period, at, skip } = ctx.body || {};
     if (ctx.body?.everyone) {
-      await till.requireAdmin(ctx.account);
-      return mgmt.sendReport(env, { period, at, skip, origin: ctx.url.origin });
+      // An admin, or the supervisor who sends this week's report on Saturdays.
+      if (!(await duty.maySendToEverybody(env, ctx.account, { period, at }))) await till.requireAdmin(ctx.account);
+      const out = await mgmt.sendReport(env, { period, at, skip, origin: ctx.url.origin });
+      if (out.sent && (period || 'week') === 'week') await duty.recordSent(env, { key: out.key, by: ctx.account?.name || ctx.account?.email || 'An admin' });
+      return out;
     }
     if (!ctx.account?.email) throw badRequest('Your account has no email address to send it to.');
     return mgmt.sendReport(env, { period, at, skip, to: ctx.account.email, origin: ctx.url.origin });
@@ -499,6 +507,8 @@ function locked(handler, ids = {}, path = '') {
 
 /** The morning schedule in wrangler.toml: the daily till summary, at 06:45 in Accra (UTC). */
 const SUMMARY_CRON = '45 6 * * *';
+/** Every hour on the hour: the supervisors' 07:00 digest, and the Saturday report's reminders and deduction. */
+const HOURLY_CRON = '0 * * * *';
 
 /** Everything an uploader may call, beyond signing in and the hub. */
 const UPLOADER_MAY = new Set([
@@ -634,7 +644,13 @@ export default {
   },
 
   async scheduled(event, env, execution) {
-    // Two schedules: the nightly load, and the morning summary once the
+    if (event?.cron === HOURLY_CRON) {
+      execution.waitUntil(duty.dutyDue(env, { now: event.scheduledTime || Date.now() })
+        .then((out) => { if (out.digest?.error || out.digest?.failed?.length || out.saturday?.error) console.error('Duty', JSON.stringify(out)); })
+        .catch((err) => console.error('Duty', err)));
+      return;
+    }
+    // Two more schedules: the nightly load, and the morning summary once the
     // night shift has handed over.
     if (event?.cron === SUMMARY_CRON) {
       execution.waitUntil(sendDailySummary(env).then((out) => { if (out.error) console.error('Daily summary', out.error); }));
