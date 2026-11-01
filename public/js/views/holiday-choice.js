@@ -1,7 +1,7 @@
 import { api } from '../api.js';
-import { navigate, replaceParams } from '../app.js';
+import { can, navigate, replaceParams } from '../app.js';
 import { fmtDay, h, mount, toast } from '../util.js';
-import { emptyState } from './components.js';
+import { emptyState, face } from './components.js';
 import { field, formDialog } from './att-shared.js';
 
 /**
@@ -27,7 +27,11 @@ function sayRange(from, to) {
 
 export async function renderHolidayBoard(params = {}) {
   const host = h('div.hc');
-  const data = await api.holidays(params.id || null);
+  const [data, plans] = await Promise.all([
+    api.holidays(params.id || null),
+    // Next year's plans sit at the foot of this page as a card.
+    api.leavePlans().catch(() => null),
+  ]);
   const reload = async (id = data.round?.id) => {
     if (id) replaceParams('holidays', { id });
     mount(host, ...(await renderHolidayBoard({ id })).childNodes);
@@ -48,7 +52,8 @@ export async function renderHolidayBoard(params = {}) {
       head('Christmas or New Year'),
       emptyState('Nobody has been asked yet',
         'Offer Christmas and New Year, say how many of each department can have each, and everybody on the rota chooses on their phone.'),
-      h('div', { style: { textAlign: 'center' } }, startNew));
+      h('div', { style: { textAlign: 'center', marginBottom: '1rem' } }, startNew),
+      plansCard(plans));
     return host;
   }
 
@@ -115,6 +120,33 @@ export async function renderHolidayBoard(params = {}) {
       ? `${round.title} · answers by ${fmtDay(round.dueOn)} · ${round.mode === 'first' ? 'first come, first served' : 'you decide where it is over'}`
       : `${round.title} · saved, nobody asked yet`;
 
+  const answered = people.length - waiting.length;
+  const done = people.length ? Math.round((answered / people.length) * 100) : 0;
+  const hues = ['var(--c5)', 'var(--c1)', 'var(--c2)', 'var(--c4)', 'var(--c3)', 'var(--c6)'];
+
+  // Every choice a department has filled, said once at the top rather than
+  // found by reading every card.
+  const full = [];
+  for (const d of departments) {
+    for (const o of round.options) {
+      const c = d.options.find((x) => x.id === o.id);
+      if (c && c.places != null && c.taken >= c.places && c.places > 0) full.push({ dept: d.name, option: o.label, ...c });
+    }
+  }
+  const fullNote = full.length && !confirmed
+    ? h('div.lv-warn', full.length === 1
+      ? [h('strong', `${full[0].dept} ${full[0].option} is ${full[0].taken > full[0].places ? 'over' : 'full'}`),
+        ` (${full[0].taken} of ${full[0].places}). ${round.mode === 'first'
+          ? `Anybody else in ${full[0].dept} sees it as full and picks another.`
+          : 'You decide who has it before it is confirmed.'}`]
+      : [h('strong', `${full.length} choices are full`), `: ${full.map((f) => `${f.dept} ${f.option} (${f.taken} of ${f.places})`).join(', ')}.`])
+    : null;
+
+  const chip = (p) => h('div.lv-chip',
+    face(p.name, { size: '1.35rem' }),
+    h('span.lv-chip-name', { title: p.name }, shortName(p.name, people), p.byOffice ? h('small', ' · by the office') : null),
+    mover(p, 'Move'));
+
   mount(host,
     head(status,
       !confirmed ? h('button.btn-sm', { type: 'button', onclick: () => setUp(round, reload) }, 'Settings') : null,
@@ -124,52 +156,104 @@ export async function renderHolidayBoard(params = {}) {
       live ? h('button.btn.btn-primary', { type: 'button', onclick: confirmAll, disabled: problems.length > 0 }, 'Confirm and put on the rota') : null,
       round.status === 'draft' ? h('button.btn.btn-primary', { type: 'button', onclick: () => setUp(round, reload, { open: true }) }, 'Ask everybody now') : null),
 
-    problems.length
-      ? h('div.alert.warn', h('span.alert-icon', '⚠️'),
-        h('div', h('div.alert-title', 'Before it can be confirmed'), h('div.alert-detail', problems.join(' '))))
-      : null,
+    h(`div.lv-hc-top${problems.length || fullNote ? '' : '.is-single'}`,
+      h('section.card.lv-hc-hero',
+        h('div.lv-ring', { style: { '--done': `${done}%` }, role: 'img', 'aria-label': `${answered} of ${people.length} ${confirmed ? 'on the rota' : 'answered'}` },
+          h('b', `${answered}/${people.length}`)),
+        h('div.lv-hc-title',
+          h('strong', round.title),
+          h('span', confirmed
+            ? `Confirmed and on the rota.${round.chargeLeave ? ' Days that are not public holidays came off annual leave.' : ''}`
+            : `${live ? `Answers by ${fmtDay(round.dueOn)}` : 'Nobody asked yet'} · ${round.mode === 'first' ? 'first come, first served' : 'you decide where it is over'}`
+              + `${round.chargeLeave ? ' · days that are not public holidays come off annual leave' : ''}`)),
+        h('div.lv-hc-counts',
+          round.options.map((o, i) => h('div',
+            h('b', { style: { color: hues[i % hues.length] } }, String(people.filter((p) => p.optionId === o.id).length)),
+            h('small', o.label))),
+          confirmed ? null : h(`div${waiting.length ? '.is-waiting' : ''}`, h('b', String(waiting.length)), h('small', 'not answered')))),
+      problems.length || fullNote
+        ? h('div.lv-hc-notes',
+          problems.length
+            ? h('div.alert.warn', h('span.alert-icon', '⚠️'),
+              h('div', h('div.alert-title', 'Before it can be confirmed'), h('div.alert-detail', problems.join(' '))))
+            : null,
+          fullNote)
+        : null),
 
-    h('div.home-tiles',
-      tile(String(people.length - waiting.length), `/ ${people.length}`, confirmed ? 'On the rota' : 'Answered'),
-      ...round.options.map((o) => tile(String(people.filter((p) => p.optionId === o.id).length), '', `${o.label} off`)),
-      confirmed ? null : tile(String(waiting.length), '', 'Not answered', waiting.length ? 'bad' : '')),
-
-    h('div.hc-depts', departments.map((d) => {
+    h('div.lv-hc-depts', departments.map((d) => {
       const inDept = people.filter((p) => p.department === d.name);
       const notYet = inDept.filter((p) => !p.optionId);
-      return h('section.card.hc-dept',
+      return h('section.card.lv-hc-dept',
         h('div.card-head', h('h2', d.name), h('span.card-note', `${d.people} on the rota`)),
-        h('div.hc-cols', round.options.map((o) => {
-          const counts = d.options.find((x) => x.id === o.id);
+        h('div.lv-hc-cols', { style: { '--cols': String(Math.min(round.options.length, 3)) } }, round.options.map((o) => {
+          const counts = d.options.find((x) => x.id === o.id) ?? { taken: 0, places: null };
           const chose = inDept.filter((p) => p.optionId === o.id);
-          const full = counts.places != null && counts.taken >= counts.places;
+          const isFull = counts.places != null && counts.taken >= counts.places;
           const over = counts.places != null && counts.taken > counts.places;
-          return h('div.hc-col',
-            h('h3', o.label,
-              h('span.hc-count', counts.places == null ? String(counts.taken) : `${counts.taken} of ${counts.places}`,
-                over ? h('span.pill.bad', 'Over') : full ? h('span.pill.warn', 'Full') : null)),
+          const fill = counts.places ? Math.min(100, (counts.taken / counts.places) * 100) : counts.places === 0 ? 100 : 0;
+          return h(`div.lv-hc-col${over ? '.is-over' : isFull ? '.is-full' : ''}`,
+            h('div.lv-hc-col-head',
+              h('span', `${o.label} off`),
+              h('span', counts.places == null
+                ? `${counts.taken}, no limit`
+                : counts.places === 0 && !counts.taken
+                  ? 'none allowed'
+                  : `${counts.taken} of ${counts.places}${over ? ' · over' : isFull ? ' · full' : ''}`)),
+            counts.places == null || (counts.places === 0 && !counts.taken) ? null : h('div.lv-hc-cap', h('i', { style: { width: `${fill}%` } })),
             chose.length
-              ? h('ul', chose.map((p) => h('li', h('span', p.name, p.byOffice ? h('small.muted', ' · by the office') : null), mover(p, 'Move'))))
-              : h('p.muted', 'Nobody yet'));
+              ? h('div.lv-hc-chips', chose.map(chip))
+              : h('p.lv-hc-empty', 'Nobody yet.'));
         })),
         notYet.length
-          ? h('div.hc-wait',
-            h('h3', 'Not answered', h('span.hc-count', String(notYet.length))),
-            h('ul', notYet.map((p) => h('li', h('span', p.name), mover(p, 'Choose for them')))))
+          ? h('div.lv-hc-waiting',
+            h('span.lv-hc-waiting-label', `Not answered · ${notYet.length}`),
+            notYet.map((p) => h('span.lv-wait-chip', h('span', { title: p.name }, shortName(p.name, people)), mover(p, 'Choose'))))
           : null);
     })),
 
     h('p.muted.hc-note', confirmed
       ? 'Each choice is on the rota as "Holiday chosen". A change now is a change to that person\'s leave, under Leave › Booked.'
       : `Confirming tells everybody, marks the days they have off on the rota, and leaves the days they work for you to put shifts on. ${round.unanswered === 'room' ? 'Anybody not answered by then is given whichever has room.' : 'Anybody not answered has to be chosen for first.'}`),
+    plansCard(plans),
   );
   return host;
 }
 
-function tile(value, unit, label, tone = '') {
-  return h(`div.card.home-tile${tone ? `.is-${tone}` : ''}`,
-    h('span.home-tile-n', value, unit ? h('small.muted', ` ${unit}`) : null), h('span.home-tile-l', label));
+/**
+ * A first name, or a first name and an initial where two people share it.
+ * A chip has room for a word, and "Ama" is only enough when there is one Ama.
+ */
+function shortName(name, everybody) {
+  const [first, ...rest] = String(name || '').split(/\s+/);
+  const twin = everybody.some((p) => p.name !== name && String(p.name).split(/\s+/)[0] === first);
+  return twin && rest.length ? `${first} ${rest[rest.length - 1][0]}.` : first;
 }
+
+/**
+ * Next year's leave plans, as a card on Holidays: what state it is in and the
+ * way into it. The board itself is under Leave › Plans.
+ */
+function plansCard(plans) {
+  if (!plans) return null;
+  const sets = can('att_setup');
+  const year = plans.round?.year ?? plans.year;
+  if (!plans.round || plans.round.status !== 'open') {
+    return h('section.card.lv-plan-card',
+      h('strong', `Plans for ${year}`),
+      h('span', plans.round
+        ? 'Saved, not opened yet. Nobody has been asked.'
+        : 'Ask everybody for their leave plan at once, remind them until it is in, and approve the year in one place. Not open yet.'),
+      plans.round
+        ? h('button.btn', { type: 'button', onclick: () => navigate('leave-plans', { year }) }, 'Open plans')
+        : sets ? h('button.btn', { type: 'button', onclick: () => navigate('settings', { section: 'leave', panel: 'planning' }) }, 'Set up planning') : null);
+  }
+  const c = plans.counts ?? {};
+  return h('section.card.lv-plan-card',
+    h('strong', `Plans for ${year}`),
+    h('span', `${c.sent ?? 0} of ${c.eligible ?? 0} sent · ${c.clashes ?? 0} clash${c.clashes === 1 ? '' : 'es'} to settle · due ${fmtDay(plans.round.dueOn)}`),
+    h('button.btn', { type: 'button', onclick: () => navigate('leave-plans', { year }) }, 'Open plans'));
+}
+
 
 /** Set a round up, or change one. */
 async function setUp(round, reload, { open = false } = {}) {
