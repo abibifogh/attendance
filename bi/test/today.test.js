@@ -119,3 +119,53 @@ test('placing: by the day it is due; without one, by how urgent it is', () => {
   assert.deepEqual(doneWords([{ path: '/api/till/check', at: '2026-10-31 08:12:00' }, { path: '/api/x', at: '2026-10-31 08:13:00' }]),
     { lines: [{ what: 'Checked a shift', n: 1, at: '08:12' }], other: 1 });
 });
+
+test('their Maintenance jobs and Team Tasks on Today, with Done sent to the app as them', async () => {
+  const { env } = await world();
+  const assistant = await import('../src/routes/assistant.js');
+  env.MAINTENANCE_APPROVALS_URL = 'https://mx.example.test/functions/v1/approvals';
+  env.SSO_SECRET_MAINTENANCE = 'test-secret';
+  const asked = [];
+  const J = 'aaaaaaaa-0000-0000-0000-000000000001';
+  const T = 'bbbbbbbb-0000-0000-0000-000000000001';
+  const R = 'bbbbbbbb-0000-0000-0000-000000000002';
+  const had = assistant.io.fetch;
+  assistant.io.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    asked.push({ url, body, signed: Boolean(init.headers['X-Till-Sig'] || init.headers['x-till-sig']) });
+    if (body.action === 'list') {
+      return Response.json({ ok: true, items: [
+        { system: 'maintenance', id: J, title: 'Plumbing — R1', why: 'Tap drips', due: '2026-10-30', urgent: true, at: '2026-10-29T09:00:00Z', canDone: true, link: `https://tasks.example.test/maintenance/?task=${J}` },
+        { system: 'teamtasks', id: T, title: 'Send the stock sheet', due: '2026-11-03', from: 'Ama Test', at: '2026-10-30T09:00:00Z', canDone: true, link: `https://tasks.example.test/teamtasks/?task=${T}` },
+        { system: 'teamtasks', id: R, title: 'Weekly fridge check', due: '2026-10-31', canDone: false, whyNot: 'It repeats: tick it in Team Tasks, which sets the next one.', link: `https://tasks.example.test/teamtasks/?task=${R}` },
+      ] });
+    }
+    return Response.json({ ok: true, said: 'Done in Team Tasks' });
+  };
+  try {
+    const t = await today(env, SAM, { now: SAT });
+    assert.equal(asked[0].url, 'https://mx.example.test/functions/v1/tasks', 'next to the approvals function');
+    assert.deepEqual([asked[0].body, asked[0].signed], [{ action: 'list', email: 'sam@example.test' }, true]);
+    const by = (k) => t.items.find((x) => x.key === k);
+    const job = by(`app:maintenance:${J}`);
+    assert.deepEqual([job.area, job.tag, job.when, job.late, job.sev], ['maintenance', 'Maintenance', 'overdue', 1, 'warn']);
+    assert.deepEqual(job.actions.map((a) => a.label), ['Done', 'Open in Maintenance']);
+    const task = by(`app:teamtasks:${T}`);
+    assert.deepEqual([task.area, task.from, task.when], ['teamtasks', 'Ama Test', 'later']);
+    const rep = by(`app:teamtasks:${R}`);
+    assert.deepEqual(rep.actions.map((a) => [a.label, a.primary]), [['Open in Team Tasks', true]], 'a repeating one is opened, not done');
+    assert.equal(rep.blocked, 'It repeats: tick it in Team Tasks, which sets the next one.');
+    assert.equal(t.areas.teamtasks, 2);
+
+    const out = await assistant.appDone(env, { system: 'teamtasks', id: T }, SAM);
+    assert.deepEqual(out, { ok: true, said: 'Done in Team Tasks' });
+    assert.deepEqual(asked.at(-1).body, { action: 'done', email: 'sam@example.test', system: 'teamtasks', id: T }, 'as the person, by their email');
+    await assert.rejects(assistant.appDone(env, { system: 'other', id: T }, SAM), /Which app/);
+    await assert.rejects(assistant.appDone(env, { system: 'teamtasks', id: 'x' }, SAM), /Which one/);
+    await assert.rejects(assistant.appDone({ DB: env.DB }, { system: 'teamtasks', id: T }, SAM), /not linked/);
+  } finally { assistant.io.fetch = had; }
+  // Not linked: not asked at all.
+  asked.length = 0;
+  await today({ DB: env.DB }, SAM, { now: SAT });
+  assert.equal(asked.length, 0);
+});
