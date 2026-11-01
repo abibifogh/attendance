@@ -627,6 +627,9 @@ export async function day(ctx) {
     terminalWarnings(ctx.db),
   ]);
   const rows = [];
+  // People on the rota with a rest day, who are not rows on this screen but
+  // are counted in its "off or on leave" tile.
+  let resting = 0;
 
   for (const staff of ds.staff) {
     if (!activeOn(staff, target)) continue;
@@ -654,14 +657,25 @@ export async function day(ctx) {
     const wasOn = record.scheduled || record.status === 'leave';
     const happened = record.first_in || record.last_out || record.resolution === 'resolved';
     if (!onRota(staff) && !happened) continue;
-    if (!wasOn && !happened) continue;
+    if (!wasOn && !happened) {
+      if (record.status === 'rest' || record.status === 'holiday') resting += 1;
+      continue;
+    }
 
     const isAbsent = (r) => r && (r.status === 'absent' || r.reason_code === 'absent');
     const isLate = (r) => r && (r.status === 'late' || r.status === 'late_early');
 
+    const shown = present(ds, record);
+    // The colour the rota draws the shift in, and the grace that decides
+    // lateness, so Today's timeline matches the rota and its "late" count.
+    const shift = shown.shift ? ds.shiftById.get(shown.shift.id) : null;
+    if (shift) {
+      shown.shift = { ...shown.shift, colour: shift.colour ?? null, grace_in_minutes: shift.grace_in_minutes ?? null };
+    }
+
     rows.push({
       staff: { id: staff.id, name: staff.name, employee_no: staff.employee_no, department: staff.department },
-      ...present(ds, record),
+      ...shown,
       streak: isAbsent(record) ? streakOf(window, window.length - 1, isAbsent) : 0,
       weekCount: isLate(record) ? weekCountOf(window, window.length - 1, isLate) : 0,
     });
@@ -679,6 +693,9 @@ export async function day(ctx) {
     // Sunday nobody is working and an empty list because nothing has been set
     // up yet look identical and need opposite advice.
     anybody: ds.staff.some((s) => onRota(s)),
+    // 'YYYY-MM-DD HH:MM' where the property is, for the timeline's now line.
+    now: ds.now,
+    resting,
     totals: summarise(rows, { shifts: ds.shiftById, reasons: ds.reasonBy }),
     clockWarnings: clocks,
     // Terminals nothing has been heard from. Shown above the list, because

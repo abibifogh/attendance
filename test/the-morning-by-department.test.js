@@ -209,18 +209,19 @@ test('the screen is built from the departments and not from the old four lists',
   const view = readFileSync('public/js/views/att-today.js', 'utf8');
   assert.match(view, /byDepartment\(data\.rows\)/);
   assert.match(view, /sayHowItStands\(group\)/);
-  // The colour beside the name, which is the whole point of the change.
-  assert.match(view, /today-dot/);
-  assert.match(view, /is-\$\{standing\(r\)\}/);
+  // The colour beside the name, which is the whole point of the change. Since
+  // the timeline it is the status pill under the name and the clock-in dot.
+  assert.match(view, /tday-pill/);
+  assert.match(view, /is-\$\{s\.tone\}/);
 
   for (const gone of ["section('Absent'", "section('Late or left early'", "section('Everybody else'"]) {
     assert.equal(view.includes(gone), false, `${gone} should be gone`);
   }
 
-  // Every dot has to have a colour behind it, or it is not saying anything.
-  const css = readFileSync('public/styles.css', 'utf8');
-  for (const state of ['red', 'amber', 'green', 'open', 'grey']) {
-    assert.match(css, new RegExp(`\\.today-dot\\.is-${state}`), state);
+  // Every pill has to have a colour behind it, or it is not saying anything.
+  const css = readFileSync('public/css/att-today.css', 'utf8');
+  for (const tone of ['good', 'warn', 'bad', 'info', 'leave']) {
+    assert.match(css, new RegExp(`\\.tday-pill\\.is-${tone}`), tone);
   }
 });
 
