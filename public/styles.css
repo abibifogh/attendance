@@ -8301,3 +8301,118 @@ button.lp-row:disabled { cursor: default; }
 .adv-in-dialog > .card-head h2 { display: none; }
 .adv-tools { margin: .2rem 0 .1rem; }
 .adv-panel-head .btn-sm { white-space: nowrap; }
+
+/* ---------------------------------------------------------------------------
+   Rota planner: hours against each person's week, cover under each day, a
+   side panel, a paint bar, and livelier shift cards.
+   --------------------------------------------------------------------------- */
+.rota-page { --hrs-ok: #16a34a; --hrs-under: #2563eb; --hrs-over: #f59e0b; --hrs-far: #ef4444; }
+.rota-meter { margin-top: .35rem; min-width: 9rem; }
+.rota-meter-track { position: relative; height: 7px; border-radius: 999px; background: var(--surface-3, #eceef3); }
+.rota-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--text-faint); transition: width .25s ease, background .25s ease; }
+.rota-meter-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 2px; background: var(--text); opacity: .5; }
+.rota-meter-nums { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: .4rem; margin-top: .2rem; font-size: .76rem; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rota-meter-nums b { color: var(--text); }
+.rota-meter-badge { font-weight: 700; }
+.rota-meter.is-ok .rota-meter-fill { background: var(--hrs-ok); }
+.rota-meter.is-ok .rota-meter-badge { color: var(--hrs-ok); }
+.rota-meter.is-under .rota-meter-fill { background: var(--hrs-under); }
+.rota-meter.is-under .rota-meter-badge { color: var(--hrs-under); }
+.rota-meter.is-over .rota-meter-fill { background: var(--hrs-over); }
+.rota-meter.is-over .rota-meter-badge { color: #b45309; }
+.rota-meter.is-far .rota-meter-fill { background: var(--hrs-far); }
+.rota-meter.is-far .rota-meter-badge { color: var(--bad); }
+
+.rota-cover { display: flex; flex-direction: column; gap: .15rem; margin-top: .3rem; font-size: .7rem; font-weight: 700; color: var(--good); text-transform: none; letter-spacing: 0; }
+.rota-cover-bar { display: block; height: 4px; border-radius: 999px; background: var(--hrs-ok); }
+.rota-cover.has-gap { color: #c2410c; }
+.rota-cover.has-gap .rota-cover-bar { background: linear-gradient(90deg, #f97316 var(--covered, 60%), var(--surface-3, #eceef3) var(--covered, 60%)); }
+
+.rota-filters, .rota-depts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.rota-filters { margin: .1rem 0 .6rem; }
+.rota-filter, .rota-dept { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: .32rem .75rem; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.rota-filter.on, .rota-dept.on { background: var(--text); border-color: var(--text); color: var(--surface); }
+.rota-filter-n { opacity: .65; font-variant-numeric: tabular-nums; }
+.rota-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--text-faint); }
+.rota-dot.is-over { background: var(--hrs-over); } .rota-dot.is-far { background: var(--hrs-far); }
+.rota-dot.is-under { background: var(--hrs-under); } .rota-dot.is-rest { background: var(--hrs-far); } .rota-dot.is-ok { background: var(--hrs-ok); }
+
+.rota-layout { display: grid; grid-template-columns: minmax(0, 1fr) 17.5rem; gap: 1rem; align-items: start; }
+.rota-layout > .card { margin: 0; min-width: 0; }
+@media (max-width: 1360px) { .rota-layout { grid-template-columns: minmax(0, 1fr); } .rota-panel { position: static; max-height: none; } }
+.rota-panel { position: sticky; top: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1rem; display: flex; flex-direction: column; gap: .7rem; max-height: calc(100vh - 2rem); overflow: auto; }
+.rota-panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+.rota-panel-head h2 { margin: .1rem 0 0; font-size: 1.1rem; }
+.rota-panel-head small, .rota-panel-label { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.rota-panel-x { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; width: 2rem; height: 2rem; cursor: pointer; color: var(--text); }
+.rota-panel-now { border-radius: 10px; padding: .55rem .7rem; font-size: .85rem; font-weight: 600; background: var(--surface-2); }
+.rota-panel-now.is-ok { background: var(--good-soft); color: var(--good); }
+.rota-panel-now.is-under { background: color-mix(in srgb, var(--hrs-under) 12%, var(--surface)); color: var(--hrs-under); }
+.rota-panel-now.is-over { background: color-mix(in srgb, var(--hrs-over) 16%, var(--surface)); color: #b45309; }
+.rota-panel-now.is-far { background: var(--bad-soft, #fde8e8); color: var(--bad); }
+.rota-panel-cover { display: flex; flex-direction: column; gap: .1rem; border-radius: 12px; padding: .65rem .75rem; background: var(--good-soft); color: var(--good); }
+.rota-panel-cover.has-gap { background: color-mix(in srgb, #f97316 14%, var(--surface)); color: #c2410c; }
+.rota-panel-cover small { color: var(--text-dim); font-weight: 500; }
+.rota-panel-tip { font-size: .78rem; margin: 0; }
+.rota-gaps, .rota-hours-list, .rota-pick-list { display: flex; flex-direction: column; gap: .4rem; }
+.rota-panel .rota-gap { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: .3rem .55rem; align-items: center; border: 1px solid var(--border); border-radius: 12px; padding: .5rem .6rem; color: var(--text); font-weight: 400; }
+.rota-panel .rota-gap .rota-gap-go { grid-column: 2; justify-self: start; }
+.rota-panel .rota-gap b { font-size: .84rem; } .rota-panel .rota-gap small { display: block; color: var(--text-dim); font-size: .74rem; }
+.rota-gap-swatch { width: 8px; height: 28px; border-radius: 4px; background: var(--shift, var(--accent)); }
+.rota-gap-go { white-space: nowrap; }
+.rota-hours-row { display: flex; align-items: center; gap: .5rem; border: 0; background: transparent; padding: .2rem 0; font-size: .85rem; color: var(--text); cursor: pointer; text-align: left; }
+.rota-hours-row span { flex: 1; }
+.rota-hours-row b.is-under { color: var(--hrs-under); } .rota-hours-row b.is-over { color: #b45309; } .rota-hours-row b.is-far { color: var(--bad); }
+.rota-pick { display: flex; justify-content: space-between; align-items: center; gap: .5rem; width: 100%; border: 1.5px solid var(--border); border-radius: 12px; padding: .5rem .65rem; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
+.rota-pick[data-shift-colour]:not([data-shift-colour="0"]) { border-color: color-mix(in srgb, var(--shift) 45%, var(--border)); }
+.rota-pick.on[data-shift-colour] { background: color-mix(in srgb, var(--shift) 22%, var(--surface)); border-color: var(--shift); }
+.rota-pick span { display: flex; flex-direction: column; } .rota-pick small { color: var(--text-dim); font-size: .74rem; }
+.rota-pick em { font-style: normal; font-size: .76rem; font-weight: 700; white-space: nowrap; }
+.rota-pick-off.on { background: var(--surface-2); border-color: var(--text-faint); }
+
+.rota-dock { position: sticky; bottom: .9rem; z-index: 30; margin: 1rem auto 0; width: max-content; max-width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: .5rem; padding: .5rem .6rem; border-radius: 16px; background: #10131a; color: #fff; box-shadow: 0 18px 40px -16px rgba(16,19,26,.6); overflow-x: auto; }
+.rota-dock-label { font-size: .8rem; font-weight: 600; color: #b9bfcc; padding: 0 .3rem; white-space: nowrap; }
+.rota-dock-brushes { display: flex; gap: .35rem; }
+.rota-brush { border: 2px solid transparent; border-radius: 11px; padding: .4rem .65rem; font-size: .8rem; font-weight: 700; white-space: nowrap; cursor: pointer; background: #2a2f3b; color: #e7e9ee; }
+.rota-brush[data-shift-colour]:not([data-shift-colour="0"]) { background: color-mix(in srgb, var(--shift) 30%, #fff); color: #10131a; }
+.rota-brush.on { box-shadow: 0 0 0 3px #f0a94c; }
+.rota-dock-done { white-space: nowrap; }
+.rota-save-state:empty { display: none; }
+.rota-save-state { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: #b9bfcc; white-space: nowrap; padding: 0 .3rem; }
+.rota-undo { border: 1px solid #3a4050; background: transparent; color: #fff; border-radius: 8px; padding: .2rem .5rem; font-size: .76rem; font-weight: 700; cursor: pointer; }
+.rota-painting .rota-cellwrap { cursor: crosshair; }
+.rota-painting .rota-cellwrap select { pointer-events: none; }
+.rota-painting .rota-cellwrap:hover { outline: 2px dashed #f0a94c; outline-offset: 1px; }
+
+/* Livelier cards: rounder, a stronger tint, a lift on hover. */
+.rota-cellwrap { border-radius: 11px; transition: transform .12s ease, box-shadow .12s ease; position: relative; }
+.rota-cellwrap:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -10px rgba(16,19,26,.45); }
+.rota-cellwrap[data-shift-colour]:not([data-shift-colour="0"]) { background: color-mix(in srgb, var(--shift) 26%, var(--surface)); }
+.rota-cellwrap.rota-rest-short::after { content: '!'; position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--hrs-far); color: #fff; font-size: .7rem; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface); }
+.rota-cellwrap.rota-rest-short { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--hrs-far) 55%, transparent); }
+@media (prefers-reduced-motion: reduce) { .rota-cellwrap, .rota-meter-fill { transition: none; } .rota-cellwrap:hover { transform: none; } }
+
+/* A phone gets the department as a menu; the chips are for a wider screen. */
+.rota-dept-select { display: none; }
+@media (max-width: 620px) { .rota-depts { display: none; } .rota-dept-select { display: inline-block; } }
+
+/* Inbox: a clock-time correction shows its shift and what changes. */
+.clock-card { display: flex; flex-direction: column; gap: .55rem; margin-top: .35rem; text-align: left; }
+.clock-shift { display: inline-flex; align-self: flex-start; border-radius: 11px; overflow: hidden; border: 1px solid color-mix(in srgb, #3b82f6 30%, var(--border)); }
+.clock-day { background: var(--surface-2); padding: .4rem .65rem; font-size: .82rem; font-weight: 650; color: var(--text-dim); display: flex; align-items: center; }
+.clock-name { background: color-mix(in srgb, #3b82f6 14%, var(--surface)); padding: .35rem .7rem; display: flex; flex-direction: column; }
+.clock-name b { font-size: .9rem; color: var(--text); }
+.clock-time { font-size: .95rem; font-weight: 750; color: #1d4ed8; font-variant-numeric: tabular-nums; }
+.clock-time small { font-size: .72rem; font-weight: 600; }
+.clock-shift.is-night .clock-name { background: #262a5c; } .clock-shift.is-night .clock-name b { color: #fff; } .clock-shift.is-night .clock-time { color: #c7d2fe; }
+.clock-shift.is-none { border-color: color-mix(in srgb, var(--bad) 35%, var(--border)); }
+.clock-shift.is-none .clock-name { background: var(--bad-soft, #fdecec); } .clock-shift.is-none .clock-name b, .clock-shift.is-none .clock-time { color: var(--bad); font-size: .85rem; }
+.clock-table { display: grid; grid-template-columns: max-content max-content max-content; justify-self: start; align-self: flex-start; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: .86rem; font-variant-numeric: tabular-nums; }
+.clock-table > span { padding: .32rem .75rem; white-space: nowrap; border-top: 1px solid var(--surface-2); }
+.clock-table > .clock-h { border-top: 0; background: var(--surface-2); font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.clock-k { color: var(--text-dim); }
+.clock-none { color: var(--text-faint); }
+.clock-new { font-weight: 750; background: color-mix(in srgb, #f0a94c 28%, var(--surface)); border-radius: 6px; padding: 0 .35rem; color: var(--text); }
+.clock-late { margin-left: .35rem; font-size: .7rem; font-weight: 700; color: var(--bad); background: var(--bad-soft, #fde4e2); border-radius: 6px; padding: 0 .35rem; white-space: nowrap; }
+.decide-why { display: block; margin-top: .3rem; }
+@media (max-width: 620px) { .clock-table { font-size: .78rem; max-width: 100%; } .clock-table > span { padding: .3rem .45rem; } .clock-table > .clock-h { font-size: .6rem; letter-spacing: .03em; } }

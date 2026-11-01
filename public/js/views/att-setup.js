@@ -843,6 +843,12 @@ async function staffTab(reload) {
           'What the month expects of them, and the most the rota will put them down for. '
           + 'Blank uses the property default',
         ),
+        field(
+          'Hours a week',
+          h('input', { type: 'number', name: 'weeklyHours', min: 1, max: 100, step: 0.5, value: existing?.weekly_hours ?? '' }),
+          'What the rota measures their plan against, to show who is over and who is under. '
+          + 'Blank is their days a week at eight hours',
+        ),
       )),
       rotaOnly,
 
@@ -901,6 +907,7 @@ async function staffTab(reload) {
           leftOn: form.get('leftOn') || null,
           leaveDays: form.get('leaveDays') || null,
           daysPerWeek: form.get('daysPerWeek') || null,
+          weeklyHours: form.get('weeklyHours') || null,
           note: form.get('note') || null,
           active: form.get('active') !== 'false',
           onClock: form.get('tracking') !== 'payroll',

@@ -90,6 +90,14 @@ export async function departmentOptions(db) {
  * real contract and rounding it to six would quietly cost somebody
  * twenty-six days a year.
  */
+/** Hours a week, where the form sent the field: blank works it out from days a week. */
+async function saveWeeklyHours(db, staffId, body) {
+  if (!body || !('weeklyHours' in body)) return;
+  const v = body.weeklyHours;
+  const hours = v == null || v === '' ? null : num(v, 'Hours a week', { min: 1, max: 100 });
+  await db.prepare('UPDATE att_staff SET weekly_hours = ?1 WHERE id = ?2').bind(hours, staffId).run();
+}
+
 function readDaysPerWeek(value) {
   if (value == null || value === '') return null;
   return num(value, 'Days a week', { min: 0.5, max: 7 });
@@ -249,6 +257,8 @@ export async function createStaff(ctx) {
     });
   }
 
+  await saveWeeklyHours(ctx.db, row.id, body);
+
   // Punches held under that number are theirs, unless the number was invented
   // to give somebody a payslip — in which case it belongs to whoever really
   // holds that card, and handing them a stranger's punches is the one mistake
@@ -322,6 +332,7 @@ export async function updateStaff(ctx, id) {
   }
 
   await setEmployer(ctx.db, staffId, body.companyId);
+  await saveWeeklyHours(ctx.db, staffId, body);
 
   // A changed employee number means the punches under the old one are theirs no
   // longer and the ones under the new one are.

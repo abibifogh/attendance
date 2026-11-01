@@ -122,6 +122,8 @@ const KINDS = {
           // A correction for a day nobody had them on is worth a second look.
           tag: e.shift ? null : shift,
           askedAt: e.at_utc,
+          // The shift and its times, and what changes, drawn as such on the card.
+          clock: clockCard(e),
           details: [
             ['Day', shortDay(e.day)],
             ['Shift', shift],
@@ -488,6 +490,56 @@ export async function linkDecide(ctx, runAs) {
  * separate screens would allow. A kind they may not decide is left out.
  */
 /** The shift a correction was for, or why there was none. */
+/**
+ * A clock-time correction as the Inbox card draws it: the day and the shift
+ * with its times, then what the terminal saw against what is asked for, with
+ * how late or early the terminal's times were against the shift.
+ */
+export function clockCard(e) {
+  const toMin = (t) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t ?? ''));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const say = (mins) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h && m ? `${h}h ${String(m).padStart(2, '0')}m` : h ? `${h}h` : `${m}m`;
+  };
+  const shift = e.shift ? {
+    name: e.shift.name, from: e.shift.starts_at, to: e.shift.ends_at,
+    overnight: toMin(e.shift.ends_at) != null && toMin(e.shift.ends_at) <= toMin(e.shift.starts_at),
+  } : null;
+  const start = shift ? toMin(shift.from) : null;
+  let end = shift ? toMin(shift.to) : null;
+  if (shift?.overnight && end != null) end += 24 * 60;
+  const inSaw = e.observed_in || null;
+  const outSaw = e.observed_out || null;
+  const inV = toMin(inSaw);
+  let outV = toMin(outSaw);
+  // A night's clock-out after midnight belongs to the next morning.
+  if (outV != null && shift?.overnight && start != null && outV < start) outV += 24 * 60;
+  return {
+    day: e.day,
+    shift,
+    noShift: shift ? null : ({
+      leave: 'On leave that day', holiday: 'Public holiday, no shift', off: 'Day off on the rota',
+    }[e.shift_state] ?? 'No shift on the rota'),
+    rows: [
+      {
+        label: 'Clocked in', saw: inSaw, asked: e.now_in || null,
+        // Late only within the shift; a time hours away from it is a different question.
+        note: inV != null && start != null && inV - start > 5 && inV - start < 8 * 60 ? `${say(inV - start)} late` : null,
+      },
+      {
+        label: 'Clocked out', saw: outSaw, asked: e.now_out || null,
+        note: outV != null && end != null && end - outV > 5 && end - outV < 8 * 60 ? `${say(end - outV)} early` : null,
+      },
+    ],
+    reason: e.reason || null,
+    by: e.actor || null,
+  };
+}
+
 function shiftSaid(e) {
   if (e.shift) return `${e.shift.name} ${e.shift.starts_at}–${e.shift.ends_at}`;
   return {

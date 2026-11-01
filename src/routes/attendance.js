@@ -4,7 +4,7 @@ import {
 import {
   alwaysOff, colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
   offDays, onRota, worksIn, worksShifts,
-  calendarFor, dayCredit, dayLedger, daysPerWeekFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toMinutes,
+  calendarFor, dayCredit, dayLedger, daysPerWeekFor, weeklyHoursFor, loadDataset, overUnder, rotationWeekOf, scheduleFor, shiftWindow, streakOf, summarise, toMinutes,
   weekCountOf,
 } from '../lib/attendance.js';
 import {
@@ -2377,6 +2377,9 @@ export async function getRoster(ctx) {
         worksIn: worksIn(staff),
         worksShifts: worksShifts(staff),
         offDays: offDays(staff) ?? [],
+        // What their plan is measured against: over, under or on target.
+        weeklyHours: weeklyHoursFor(staff, ds.settings ?? {}),
+        daysPerWeek: daysPerWeekFor(staff, ds.settings ?? {}),
       },
       // The whole cycle, one entry per week, so the dialog can show a rotation
       // without asking for it a week at a time.

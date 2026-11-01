@@ -1578,6 +1578,16 @@ export function maxDaysPerWeekFor(staff, settings = {}) {
   return Math.min(daysPerWeekFor(staff, settings), 7);
 }
 
+/**
+ * The hours a week somebody's rota is measured against. Their own figure
+ * where one is set, otherwise their days a week at eight hours a day.
+ */
+export function weeklyHoursFor(staff, settings = {}) {
+  const own = Number(staff?.weekly_hours);
+  if (Number.isFinite(own) && own > 0) return own;
+  return Math.round(daysPerWeekFor(staff, settings) * 8 * 10) / 10;
+}
+
 export function daysPerWeekFor(staff, settings = {}) {
   const own = Number(staff?.days_per_week);
   if (Number.isFinite(own) && own > 0) return own;

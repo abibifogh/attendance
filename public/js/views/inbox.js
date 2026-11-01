@@ -209,6 +209,28 @@ function chip(label, count, on, onclick) {
     label, h('small', String(count)));
 }
 
+/**
+ * A clock-time correction: the shift and its times under the label, then what
+ * the terminal saw against what is asked for, the changed times marked.
+ */
+function clockBlock(c) {
+  const dayText = new Date(`${c.day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return h('span.clock-card',
+    h(`span.clock-shift${c.shift ? '' : '.is-none'}${c.shift?.overnight ? '.is-night' : ''}`,
+      h('span.clock-day', dayText),
+      c.shift
+        ? h('span.clock-name', h('b', c.shift.name),
+          h('span.clock-time', `${c.shift.from} – ${c.shift.to}`, c.shift.overnight ? h('small', ' next day') : null))
+        : h('span.clock-name', h('b', c.noShift), h('span.clock-time', 'a day nobody had them on'))),
+    h('span.clock-table',
+      h('span.clock-h'), h('span.clock-h', 'Terminal saw'), h('span.clock-h', 'Asked for'),
+      c.rows.flatMap((r) => [
+        h('span.clock-k', r.label),
+        h('span', r.saw ? r.saw : h('span.clock-none', 'nothing'), r.note ? h('span.clock-late', r.note) : null),
+        h('span', r.asked && r.asked !== r.saw ? h('span.clock-new', r.asked) : (r.asked || r.saw || h('span.clock-none', 'nothing'))),
+      ])));
+}
+
 /** One request, with its answer on the row where there is nothing to fill in. */
 function row(item, { open, onPick, decide, ticked = false, onTick = null }) {
   const quick = (item.decisions ?? []).filter((d) => !(d.fields ?? []).length && d.note !== 'required');
@@ -225,9 +247,10 @@ function row(item, { open, onPick, decide, ticked = false, onTick = null }) {
       h('span.decide-text',
         h('span.decide-who', h('strong', item.who || item.title),
           h(`span.pill${TONE[item.kind] ? `.${TONE[item.kind]}` : ''}`, item.kindLabel),
-          item.tag ? h('span.pill.bad', item.tag) : null),
-        h('span', item.sub || item.title),
-        item.askedAt ? h('small.muted', fmtSince(item.askedAt)) : null)),
+          item.tag && !item.clock ? h('span.pill.bad', item.tag) : null),
+        item.clock ? clockBlock(item.clock) : h('span', item.sub || item.title),
+        item.clock?.reason ? h('small.muted.decide-why', `“${item.clock.reason}”${item.clock.by ? ` · asked by ${item.clock.by}` : ''}${item.askedAt ? ` · ${fmtSince(item.askedAt)}` : ''}`)
+          : item.askedAt ? h('small.muted', fmtSince(item.askedAt)) : null)),
     h('div.decide-actions',
       !(item.decisions ?? []).length && item.link
         ? h('a.btn-sm.btn-primary', { href: item.link }, 'Open')
