@@ -1,12 +1,13 @@
 # Finding your way around
 
-Insight has five places. On a computer they run down the left; on a phone
-they are the five buttons along the bottom.
+Insight has six places. On a computer they run down the left; on a phone
+they are the six buttons along the bottom.
 
 | Place | Pages |
 |---|---|
 | **Assistant** | Today (your one list, by when each thing is due; see assistant.md) · Approvals (everything waiting for an admin, in every system) · Brief |
-| **Front desk** | Shifts (with To sort out and Closing reports) · People · Safe · Nice Place (Counters & money, Pickups) |
+| **To sort out** | Everything to act on from the shifts and Odoo: drawer, card & bank, POs, to-dos, Nice Place, Odoo |
+| **Front desk** | Shifts (with Closing reports) · People · Safe · Nice Place (Counters & money, Pickups) |
 | **Buying** | Suppliers · Receipts · Floats · Spend · Fixed assets (admins; see fixed-assets.md) |
 | **Reports** | Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) · Staff costs |
 | **Settings** | People & access (People, Supervisors, Reports they see) · Connections & files (Connections, Shift files) · Rules (Front desk, Nice Place, Receipts) · Notifications (HIVE alerts, Management report, Prepaid summary) · Shared reports |
@@ -34,7 +35,7 @@ given nothing in Insight gets the other systems.
 | Today › Hub | the apps button |
 | Today › Brief | Assistant › Brief |
 | ✓ Approvals | Assistant › Approvals, its count on Assistant |
-| Shifts › Inbox | Front desk › Shifts › To sort out |
+| Shifts › Inbox | To sort out, its own place on the menu (was Front desk › Shifts › To sort out) |
 | Shifts › People | Front desk › People |
 | Shifts › Closing reports | Front desk › Shifts › Closing reports |
 | Shifts › Files | Settings › Connections & files › Shift files |

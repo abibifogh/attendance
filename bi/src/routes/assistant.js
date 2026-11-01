@@ -352,12 +352,41 @@ async function readBills(env, account, now) {
   });
 }
 
-/** Answers waiting for an admin, and to-dos nobody has been given. */
-async function readTodos(env, account) {
+/**
+ * POs in Odoo still using a stand-in vendor or item, given to this person:
+ * one line each with the PO to open in Odoo (a few), or one line for them all.
+ */
+function placeholderLines(mine, now) {
+  const items = mine.filter((t) => t.kind === 'placeholder' && t.state === 'open');
+  if (!items.length) return [];
+  const needs = (d) => [d?.vendorToConfirm ? 'the real vendor' : null, d?.itemToConfirm ? 'the real item' : null].filter(Boolean).join(' and ') || 'its real vendor and item';
+  if (items.length > 8) {
+    return [{
+      tab: 'fix', key: 'todos:placeholder', sev: 'warn', tag: 'Odoo', title: `${items.length} POs in Odoo with a stand-in vendor or item`,
+      why: items.slice(0, 3).map((t) => t.ref).join(', '), age: Math.max(...items.map((t) => daysSince(t.day || t.openedAt, now) || 0)),
+      advice: 'Open each in Odoo and put in the real vendor and item. Each one leaves this list once Odoo is read again.',
+      actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }],
+    }];
+  }
+  return items.map((t) => ({
+    tab: 'fix', key: `todo:${t.id}`, sev: 'info', tag: 'Odoo',
+    title: `${t.ref}: put in ${needs(t.detail)}`,
+    why: [t.detail?.vendor, t.detail?.orderedOn ? `ordered ${t.detail.orderedOn}` : null, t.detail?.ref || t.detail?.origin].filter(Boolean).join(' · '),
+    amount: Number(t.amount) || 0, age: daysSince(t.day || t.openedAt, now), system: 'Odoo',
+    advice: 'Open it in Odoo and change the vendor or item to the real one. It leaves this list once Odoo is read again.',
+    actions: [
+      t.detail?.url ? { label: 'Open in Odoo', href: t.detail.url, external: true, primary: true } : null,
+      { label: 'Open To sort out', href: '#/inbox', primary: !t.detail?.url },
+    ].filter(Boolean),
+  }));
+}
+
+/** Answers waiting for an admin, to-dos nobody has been given, and an admin's own stand-in POs. */
+async function readTodos(env, account, now) {
   const { items } = await listTodos(env, account);
   const answered = items.filter((t) => t.state === 'answered');
   const nobody = items.filter((t) => t.state === 'open' && !t.assignee);
-  const out = [];
+  const out = account?.id != null ? placeholderLines(items.filter((t) => Number(t.assignee?.id) === Number(account.id)), now) : [];
   if (answered.length) out.push({ tab: 'decide', key: 'todos:answered', sev: 'info', title: `${answered.length} answer${answered.length === 1 ? '' : 's'} on POs to chase to decide`, advice: 'A supervisor said what happened; accept it, or send it back.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   if (nobody.length) out.push({ tab: 'fix', key: 'todos:nobody', sev: 'warn', title: `${nobody.length} PO${nobody.length === 1 ? '' : 's'} to chase that nobody has been given`, advice: 'Give each to a supervisor so somebody chases it.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   return out;
@@ -421,9 +450,9 @@ async function readFiles(env, account, now, { href = '#/files' } = {}) {
 /** A supervisor's own to-dos: given to them, and sent back. */
 async function readMyTodos(env, account, now) {
   const { items } = await listTodos(env, account);
-  const open = items.filter((t) => t.state === 'open');
+  const out = placeholderLines(items, now);
+  const open = items.filter((t) => t.state === 'open' && t.kind !== 'placeholder');
   const back = open.filter((t) => t.sentBack);
-  const out = [];
   if (back.length) {
     out.push({ tab: 'fix', key: 'mytodos:back', sev: 'warn', title: `${back.length} PO item${back.length === 1 ? '' : 's'} sent back to you`, why: back.slice(0, 3).map((t) => `${t.kindLabel}${t.ref ? ` ${t.ref}` : ''}: ${t.sentBack}`).join(' · '), advice: 'An admin asked for more: say what happened, or what you found.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   }

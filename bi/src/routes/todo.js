@@ -17,6 +17,12 @@ import { roleOf } from './till.js';
  * A third, `nopo` (a bill with no PO), is no longer raised; its old items
  * were closed when it stopped.
  *
+ * And `placeholder`: a PO in Odoo still using the stand-in vendor ("Vendor to
+ * confirm") or item ("Item to classify") a receipt was given when it could
+ * not be matched. It goes to whoever an admin chose to put them right
+ * (`todo_placeholder_to`), and closes itself once the PO has its real vendor
+ * and item, or is cancelled.
+ *
  * Each new item is given to the supervisor with the fewest open, so the list
  * shares itself out. A supervisor sees their own; an admin sees everything,
  * can give an item to somebody else, and decides every answer: approved and
@@ -54,7 +60,23 @@ export const KIND_LABEL = {
   unbilled: 'PO with no posted bill in Odoo',
   differs: 'Paid is not what the PO says',
   nopo: 'A bill with no PO',
+  placeholder: 'PO with a stand-in vendor or item',
 };
+
+/** Who stand-in POs go to: an active supervisor or admin an admin chose, or null (shared out like the rest). */
+async function placeholderPerson(env, settings) {
+  const id = Number(settings.todo_placeholder_to);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return (await people(env)).find((p) => Number(p.id) === id) || null;
+}
+
+/** Who can be given an item: active supervisors and admins of Insight. */
+async function people(env) {
+  try {
+    return await all(env.DB, `SELECT a.id, a.name, a.email, g.role FROM accounts a JOIN account_access g ON g.account_id = a.id
+      WHERE g.system_id = 'insight' AND g.role IN ('supervisor', 'admin') AND a.active = 1 ORDER BY a.name, a.id`);
+  } catch { return []; }
+}
 
 /** Active supervisors, fewest open items first. */
 async function supervisors(env) {
@@ -104,6 +126,20 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
     });
   }
 
+  // POs still using a stand-in vendor or item, as Odoo was last read.
+  let stand = [];
+  try { stand = await all(env.DB, 'SELECT * FROM odoo_placeholder_po'); } catch { stand = []; }
+  for (const o of stand) {
+    wanted.set(`placeholder:${o.po}`, {
+      kind: 'placeholder', ref: o.po, day: o.ordered_on, amount: o.total,
+      detail: {
+        po: o.po, vendor: o.vendor, poTotal: o.total, orderedOn: o.ordered_on, state: o.state, origin: o.origin, ref: o.ref,
+        vendorToConfirm: Boolean(o.vendor_to_confirm), itemToConfirm: Boolean(o.item_to_confirm), url: o.url,
+      },
+    });
+  }
+  const standNames = new Set(stand.map((o) => o.po));
+
   // What has put itself right.
   const pastPo = new Map(pos.map((p) => [p.po, p]));
   const openPo = new Map(recent.map((o) => [o.po, o]));
@@ -113,6 +149,8 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
   let reopened = 0;
   for (const t of existing) {
     if (wanted.has(t.key)) {
+      // A stand-in PO: what it still needs, as Odoo says now.
+      if (t.kind === 'placeholder') await run(env.DB, 'UPDATE money_todo SET detail = ?2, amount = ?3 WHERE id = ?1', t.id, JSON.stringify(wanted.get(t.key).detail), wanted.get(t.key).amount);
       // Closed by itself, and wrong again: open it again. Closed by a person stays closed.
       if (t.state === 'closed' && t.closed_by === 'Insight') {
         await run(env.DB, "UPDATE money_todo SET state = 'open', closed_by = NULL, closed_at = NULL, closed_why = NULL WHERE id = ?1", t.id);
@@ -130,17 +168,21 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
     else if (t.kind === 'differs' && !pastPo.has(t.ref)) why = 'It is no longer paid from the drawer or the safe.';
     // Bills without a PO are no longer raised: a PO without a bill is.
     else if (t.kind === 'nopo') why = 'Bills without a PO are no longer chased; POs without a bill are.';
+    else if (t.kind === 'placeholder' && !standNames.has(t.ref)) why = 'The PO has its real vendor and item in Odoo now, or was cancelled.';
     if (!why) continue;
     await run(env.DB, "UPDATE money_todo SET state = 'closed', closed_by = 'Insight', closed_at = ?2, closed_why = ?3 WHERE id = ?1", t.id, now(), why);
     closed += 1;
   }
 
   const have = new Set(existing.map((t) => t.key));
+  // Stand-in POs go to the one person chosen for them, when there is one.
+  const fixer = await placeholderPerson(env, settings);
   let raised = 0;
   for (const [key, t] of wanted) {
     if (have.has(key)) continue;
-    await run(env.DB, `INSERT INTO money_todo (key, kind, ref, day, amount, detail, opened_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`, key, t.kind, t.ref, t.day, t.amount, JSON.stringify(t.detail), now());
+    const to = t.kind === 'placeholder' && fixer ? fixer : null;
+    await run(env.DB, `INSERT INTO money_todo (key, kind, ref, day, amount, detail, opened_at, assignee_id, assignee_name)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`, key, t.kind, t.ref, t.day, t.amount, JSON.stringify(t.detail), now(), to?.id ?? null, to ? (to.name || to.email) : null);
     raised += 1;
   }
   const assigned = await shareOut(env);
@@ -205,6 +247,11 @@ export async function listTodos(env, account, { closed = false } = {}) {
     unbilledDays: settings.todo_unbilled_days !== undefined && settings.todo_unbilled_days !== '' ? Number(settings.todo_unbilled_days) : DEFAULT_DAYS,
     lookbackDays: lookbackDays(settings),
     laundryDays: laundryDays(settings),
+    // Who stand-in POs go to, and who could.
+    ...(admin ? {
+      placeholderTo: (await placeholderPerson(env, settings))?.id ?? null,
+      placeholderPeople: (await people(env)).map((p) => ({ id: p.id, name: p.name || p.email, role: p.role })),
+    } : {}),
   };
 }
 
@@ -227,7 +274,8 @@ export async function answerTodo(env, id, body, account) {
     throw forbidden('That item is on somebody else’s list.');
   }
   const answer = str(body?.answer, 'What happened', { required: true, max: 600 });
-  if (t.kind === 'unbilled') {
+  // A PO waiting for its bill, or for its real vendor and item: a note of where it has got to. Odoo closes it.
+  if (t.kind === 'unbilled' || t.kind === 'placeholder') {
     await run(env.DB, 'UPDATE money_todo SET answer = ?2, answered_by = ?3, answered_at = ?4, sent_back = NULL WHERE id = ?1',
       t.id, answer, who(account), now());
     return { ok: true, state: t.state };
@@ -261,8 +309,8 @@ export async function decideTodo(env, id, body, account) {
 export async function assignTodo(env, id, body, account) {
   if (roleOf(account) !== 'admin') throw forbidden('Only an admin can do that.');
   const t = await item(env, id);
-  const person = (await supervisors(env)).find((s) => Number(s.id) === Number(body?.accountId));
-  if (!person) throw badRequest('Choose a supervisor.');
+  const person = (await people(env)).find((s) => Number(s.id) === Number(body?.accountId));
+  if (!person) throw badRequest('Choose a supervisor or an admin.');
   await run(env.DB, 'UPDATE money_todo SET assignee_id = ?2, assignee_name = ?3 WHERE id = ?1', t.id, person.id, person.name || person.email);
   return { ok: true };
 }
@@ -312,6 +360,16 @@ export async function saveTodoSettings(env, body, account, { today } = {}) {
     const n = Math.round(Number(body.laundryDays));
     if (!Number.isFinite(n) || n < 1 || n > LAUNDRY_MAX) throw badRequest(`Read the laundry for 1 to ${LAUNDRY_MAX} days.`);
     await setSetting(env.DB, 'laundry_check_days', String(n));
+  }
+  // Who stand-in POs go to: a supervisor or admin, or nobody (shared out). Their open ones move with the choice.
+  if (body?.placeholderTo !== undefined) {
+    const id = body.placeholderTo === '' || body.placeholderTo === null ? null : Number(body.placeholderTo);
+    const person = id == null ? null : (await people(env)).find((p) => Number(p.id) === id);
+    if (id != null && !person) throw badRequest('Choose a supervisor or an admin for POs with a stand-in.');
+    await setSetting(env.DB, 'todo_placeholder_to', person ? String(person.id) : '');
+    if (person) {
+      await run(env.DB, "UPDATE money_todo SET assignee_id = ?1, assignee_name = ?2 WHERE kind = 'placeholder' AND state != 'closed'", person.id, person.name || person.email);
+    }
   }
   let lookbackChanged = false;
   if (body?.lookbackDays !== undefined) {

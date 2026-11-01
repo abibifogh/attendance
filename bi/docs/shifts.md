@@ -301,7 +301,7 @@ get that email, is reminded each morning instead. Past the due day, Today, the
 email and To sort out say it is overdue. The card shows
 its open to-dos ("To-do for …, due …").
 
-To-dos are in Front desk › Shifts › To sort out › **To-do**. An admin sees all of them; a
+To-dos are in To sort out › **To-do**. An admin sees all of them; a
 supervisor, those for them and those they made. **Done** is for whoever it
 is for, whoever made it, or an admin; **Change** (what, for whom, when) and
 **Remove** are for whoever made it, or an admin. Given to somebody else, they
@@ -309,6 +309,23 @@ are emailed. A to-do is separate from its difference: answering the
 difference does not close the to-do, and Done on the to-do does not answer
 the difference. Making, changing, removing and finishing one each go in the
 difference's history (`shift_task`, migration 0045).
+
+### POs with a stand-in vendor or item
+
+A PO Insight made from a receipt it could not match uses the stand-in vendor
+("Vendor to confirm") or item ("Item to classify") chosen in Settings › Rules
+› Receipts. Each time Odoo is read (nightly, or **Refresh now**), every PO in
+Odoo still using either, and not cancelled, becomes a to-do on the POs list
+in To sort out: **PO with a stand-in vendor or item**, saying which of the two
+to put right, with **Open … in Odoo**.
+
+It goes to the person chosen in Settings › Rules › Front desk › Limits, **POs
+with a stand-in vendor or item go to** (a supervisor or an admin); choosing
+somebody moves the open ones to them too. Nobody chosen: shared out among
+supervisors like the rest. It is on their **Today**, one line per PO (one
+line for them all past eight). A note on it stays a note: the item closes by
+itself once the PO has its real vendor and item in Odoo, or is cancelled. If
+Odoo cannot be read, nothing closes (`odoo_placeholder_po`, migration 0066).
 
 ### A shift's reconciliation report
 
@@ -760,7 +777,7 @@ count said; the daily summary lists it.
 
 ## Unpaid stays
 
-Front desk › Shifts › To sort out → **Unpaid stays** lists guests leaving in the next 24 hours who still
+To sort out → **Unpaid stays** lists guests leaving in the next 24 hours who still
 owe, and guests who have checked out owing (the last 60 days).
 
 Each ASSD reservation is one transaction in the journal, with every night and
