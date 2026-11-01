@@ -119,9 +119,9 @@ export async function sendAdminShifts(env, { fetchImpl = fetch, today = null } =
  * "The at the desk info should be picked from hive's rota."
  *
  * Maintenance's front desk page names whoever sends a guest's problem. It
- * takes the name from here: every reception shift on the rota, sent with the
- * Admin shifts each night, from yesterday (a night shift that began then is
- * still on at 00:30) to two weeks ahead. A reception shift is the till's own
+ * takes the name from here: every reception shift on the rota, sent every
+ * hour (a swap made this morning shows by the next hour), from yesterday (a
+ * night shift that began then is still on after midnight) to two weeks ahead. A reception shift is the till's own
  * test: the shift's department (or position, or name) says Reception or Front
  * Office, or failing those the person's department does; an Admin shift
  * filed under Reception is not one. Receptionists are often not in
@@ -158,7 +158,7 @@ export async function deskShiftsBetween(db, from, to) {
   return out;
 }
 
-/** Send them, with the Admin shifts, once a day. Throws with a sentence a person can act on. */
+/** Send them, every hour. Throws with a sentence a person can act on. */
 export async function sendDeskShifts(env, { fetchImpl = fetch, today = null } = {}) {
   const out = { sent: 0 };
   if (!env?.MAINTENANCE_LINK || !env.DB) return out;
