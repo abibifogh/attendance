@@ -252,6 +252,14 @@ staff account, and a payment moved to another shift or put back. This is kept
 from the day notes were added (`shift_history`, migration 0044); an answer
 changed before then left no trace of what it was.
 
+What staff answered in HIVE (My till › To sort out) is there too, with an
+amber dot, whenever they gave it: HIVE keeps every answer. It covers the
+exception itself, every time it was put on somebody's account (an undone
+placement too: undoing and putting it on again leaves an answer under the
+first one, and the history says so), and, opened from a shift, that shift's
+own drawer and closing report. The count on **Notes and history** includes
+answers on the exception and its placements.
+
 ### To-dos from a difference
 
 Every exception has **＋ To-do** above its notes. An admin or a supervisor

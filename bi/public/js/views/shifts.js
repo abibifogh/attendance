@@ -3118,7 +3118,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     const draw = async () => {
       mount(body, h('p.small.muted', 'Reading…'));
       let d;
-      try { d = await api(`/shifts/notes?key=${encodeURIComponent(x.key)}`); } catch (err) { mount(body, h('p.small', err.message)); return; }
+      try { d = await api(`/shifts/notes?key=${encodeURIComponent(x.key)}${x.day && x.slot ? `&day=${x.day}&slot=${x.slot}` : ''}`); } catch (err) { mount(body, h('p.small', err.message)); return; }
       if (!notePeople) notePeople = (await api('/shifts/notes/people').catch(() => ({ people: [] }))).people;
       toggle.textContent = `▾ Notes and history${d.items.length ? ` · ${d.items.length}` : ''}`;
       const text = h('textarea', { rows: 2, maxlength: 1000, placeholder: 'Add a note (seen by admins and supervisors)' });
@@ -3142,12 +3142,15 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         },
       }, 'Add note');
       mount(body,
-        d.items.length ? h('ul.sh-hist', d.items.map((it) => h(`li${it.type === 'note' ? '.note' : ''}`,
+        d.items.length ? h('ul.sh-hist', d.items.map((it) => h(`li${it.type === 'note' ? '.note' : it.type === 'staff' ? '.staff' : ''}`,
           it.type === 'note'
             ? [h('b', it.by), ' (note)', it.tags?.length ? h('span.small.muted', ` · tagged ${it.tags.map((t) => t.name).join(', ')}`) : null, h('div.txt', it.text)]
-            : [it.text, it.by ? h('span.small.muted', ` · ${it.by}`) : null],
+            // What they said in HIVE, kept there whatever happened to it here.
+            : it.type === 'staff'
+              ? [h('b', it.by), ' in HIVE', it.about ? h('span.small.muted', ` · ${it.about}`) : null, h('div.txt', it.text)]
+              : [it.text, it.by ? h('span.small.muted', ` · ${it.by}`) : null],
           h('small', String(it.at).slice(0, 16).replace('T', ' ')))))
-          : h('p.small.muted', 'Nothing yet. Answers, approvals, proof and moves are kept here from now on.'),
+          : h('p.small.muted', 'Nothing yet. Answers, approvals, proof and moves are kept here, with what staff said in HIVE.'),
         h('div.sh-noteform', text, tags, h('div.sh-safeinline', add, said, h('span.sh-notesaid'))),
         h('p.small.muted', 'Notes never change the answer, and whoever answered is not told.'));
     };

@@ -70,3 +70,32 @@ test('moving a payment is in its history', async () => {
   assert.match(items[0].text, /Moved to the afternoon shift of 2026-10-08/);
   assert.match(items[1].text, /Put back/);
 });
+
+test('what staff said in HIVE shows in the history, even on a placement since undone', async () => {
+  const { env } = setUp();
+  const { raw: hraw, db: hdb } = freshDb('../migrations');
+  hraw.exec(`INSERT INTO users (id, name, role, active) VALUES (8, 'Kofi Test', 'staff', 1), (7, 'Ama Test', 'staff', 1)`);
+  env.ATT_DB = hdb;
+  const key = 'not-found:t:900001';
+  // Put on Kofi's account, he answers, it is undone and put on again.
+  await env.DB.prepare(`INSERT INTO till_move (id, key, kind, day, slot, amount, shares, reason, by_name, at, undone_by, undone_at)
+    VALUES (3, ?1, 'not-found', '2026-10-02', 'morning', -7000, '[]', 'Unpaid laundry', 'Test Owner', '2026-10-05 10:00:00', 'Test Owner', '2026-10-20 17:55:00'),
+           (4, ?1, 'not-found', '2026-10-02', 'morning', -7000, '[]', 'Unpaid laundry', 'Test Owner', '2026-10-20 18:01:00', NULL, NULL),
+           (30, 'other:key', 'not-found', '2026-10-02', 'morning', -100, '[]', 'x', 'Test Owner', '2026-10-05 10:00:00', NULL, NULL)`).bind(key).run();
+  hraw.exec(`INSERT INTO till_answer (key, user_id, how, text, at) VALUES
+    ('moved:3:8', 8, 'explain', 'The guest paid at the laundry by card, slip in the drawer.', '2026-10-06 09:00:00'),
+    ('moved:30:8', 8, 'explain', 'Not about this one.', '2026-10-06 09:00:00'),
+    ('drawer:2026-10-02:morning', 7, 'repay', 'I will pay the 20 back.', '2026-10-03 08:00:00'),
+    ('drawer:2026-10-09:morning', 7, 'repay', 'Another day.', '2026-10-10 08:00:00')`);
+  await notes.addNote(env, { key, text: 'Asked Kofi for the slip' }, OWNER, { fetchImpl: async () => new Response('{}') });
+  const { items } = await notes.history(env, { key, day: '2026-10-02', slot: 'morning' }, SUP);
+  const staff = items.filter((x) => x.type === 'staff');
+  assert.deepEqual(staff.map((x) => [x.by, x.about, x.text]), [
+    ['Ama Test', 'about the shift’s drawer', 'Will pay it back: I will pay the 20 back.'],
+    ['Kofi Test', 'on an earlier placement on their account, undone 2026-10-20', 'Their explanation: The guest paid at the laundry by card, slip in the drawer.'],
+  ]);
+  assert.equal(items[items.length - 1].type, 'note', 'oldest first, the note written today last');
+  const { counts } = await notes.counts(env, { keys: [key] }, SUP);
+  assert.equal(counts[key], 2, 'the note and Kofi’s answer on its placement');
+  assert.deepEqual((await notes.history(env, { key }, SUP)).items.filter((x) => x.type === 'staff').length, 1, 'without the shift, only its own');
+});

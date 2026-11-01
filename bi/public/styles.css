@@ -2064,6 +2064,7 @@ details.bf-down[open] > summary { margin-bottom: .4rem; }
 .sh-hist li { position: relative; padding-left: .9rem; font-size: .84rem; }
 .sh-hist li::before { content: ""; position: absolute; left: -6px; top: .35rem; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink-2); }
 .sh-hist li.note::before { border-color: var(--series-1); background: var(--series-1); }
+.sh-hist li.staff::before { border-color: var(--am); background: var(--am); }
 .sh-hist small { display: block; color: var(--ink-2); font-size: .74rem; }
 .sh-hist .txt { background: var(--surface-2); border-radius: 8px; padding: .35rem .55rem; margin-top: .2rem; white-space: pre-wrap; }
 .sh-noteform { display: grid; gap: .4rem; }
