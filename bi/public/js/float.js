@@ -106,6 +106,7 @@ function line(i) {
   return `<div class="item"><div class="ico ${refused ? 'no' : 'out'}">🧾</div>
     <div><b>${esc(s.vendor || 'Receipt')}</b><small>${esc([s.description, s.ref].filter(Boolean).join(' · '))}</small>${chip}</div>
     <div class="amt num ${refused ? 'off' : ''}">${s.amount != null ? `−${esc(ghs(s.amount))}` : '—'}${refused && s.amount != null ? '<small><br>not counted</small>' : ''}</div>
+    ${s.where ? `<div class="memo">${esc(s.where)}</div>` : ''}
     ${refused && s.reason ? `<div class="memo why">Why: ${esc(s.reason)}</div>` : ''}
     ${s.unread && s.status === 'checking' ? '<div class="memo">The office will fill it in.</div>' : ''}
     ${s.change ? changeBox(s) : ''}</div>`;
@@ -122,6 +123,20 @@ function changeBox(s) {
     <span class="askbtns"><button type="button" class="btn pri" data-yes="${s.id}">Yes, ${esc(ghs(c.now))}</button><button type="button" class="btn" data-amount="dispute" data-id="${s.id}">No, it is not right</button></span>
     <span class="askwhy" hidden><label>Why did the amount change?<input maxlength="300" placeholder="e.g. The repairer added a part after the receipt"></label>
       <button type="button" class="btn pri" data-amount="accept" data-id="${s.id}">Accept ${esc(ghs(c.now))}</button></span>`}</div>`;
+}
+
+/**
+ * Where these receipts go. More than one place: they choose. One in the POS:
+ * said, not asked. Odoo only, or none (the office decides): nothing to say.
+ */
+function placesHtml() {
+  const places = d.places || [];
+  if (places.length > 1) {
+    return `<div class="places"><span class="lbl">What was it for?</span><div class="opts">${places.map((p) => `<button type="button" data-place="${esc(p.key)}">${esc(p.label)}</button>`).join('')}</div>
+      <small class="needs">Choose one, so it goes to the right place.</small></div>`;
+  }
+  if (places.length === 1 && places[0].key !== 'odoo') return `<p class="goes">Goes to the ${esc(places[0].label.toLowerCase())}, in the POS.</p>`;
+  return '';
 }
 
 function listHtml() {
@@ -215,11 +230,22 @@ pick.onchange = () => {
   const urls = files.map((f) => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null));
   overlay.innerHTML = `<div class="sheet"><div class="in"><h2>Send ${files.length === 1 ? 'this receipt' : `these ${files.length} receipts`}</h2>
     <div class="thumbs">${urls.map((u, i) => (u ? `<img src="${u}" alt="">` : `<span>${esc(files[i].name.slice(0, 12))}</span>`)).join('')}</div>
+    ${placesHtml()}
     <label>What it was for (if the receipt does not say)<input id="hint" placeholder="e.g. Diesel for the generator"></label>
     <div class="btns"><button type="button" class="btn" id="cancel">Cancel</button><button type="button" class="btn pri" id="go">Send ${files.length === 1 ? 'it' : 'them'}</button></div></div></div>`;
   const close = () => { overlay.innerHTML = ''; urls.forEach((u) => u && URL.revokeObjectURL(u)); pick.value = ''; };
+  // More than one place: they say which, for all the receipts sent together.
+  let dest = (d.places || []).length === 1 ? d.places[0].key : null;
+  overlay.querySelectorAll('[data-place]').forEach((b) => {
+    b.onclick = () => {
+      dest = b.dataset.place;
+      overlay.querySelectorAll('[data-place]').forEach((x) => x.classList.toggle('on', x === b));
+      overlay.querySelector('.places').classList.remove('need');
+    };
+  });
   document.getElementById('cancel').onclick = close;
   document.getElementById('go').onclick = async () => {
+    if ((d.places || []).length > 1 && !dest) { overlay.querySelector('.places').classList.add('need'); return; }
     const hint = document.getElementById('hint').value;
     close();
     sendButton.disabled = true;
@@ -228,7 +254,7 @@ pick.onchange = () => {
       sendButton.textContent = `Sending ${f.name}…`;
       try {
         // eslint-disable-next-line no-await-in-loop
-        const out = await call('send', { file: await shrink(f), name: f.name, hint });
+        const out = await call('send', { file: await shrink(f), name: f.name, hint, ...(dest ? { dest } : {}) });
         said.push({ text: `${out.ref ? `${out.ref}: ` : ''}${out.said}` });
       } catch (err) { said.push({ err: true, text: `${f.name}: ${err.message}` }); }
     }

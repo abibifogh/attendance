@@ -118,7 +118,7 @@ function needsSaying({ vendorOk, itemOk, vendorText, description, unsure = null 
  * One receipt in: read, matched, made into a draft PO, kept here with what
  * became of it. Returns the row as the list shows it.
  */
-export async function addReceipt(env, { mime, data, name = '', thumb = null, came, byName, fromEmail = null, subject = null, hint = '' }, { fetchImpl, mark = null } = {}) {
+export async function addReceipt(env, { mime, data, name = '', thumb = null, came, byName, fromEmail = null, subject = null, hint = '' }, { fetchImpl, mark = null, readOnly = false } = {}) {
   const at = now();
   const today = todayIn('UTC');
   const hash = await sha256(data);
@@ -131,6 +131,10 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
   const twin = await first(env.DB, "SELECT id, po_name, at FROM receipt WHERE hash = ?1 AND status NOT IN ('dismissed', 'duplicate') ORDER BY id LIMIT 1", hash);
   if (twin) {
     Object.assign(r, { status: 'duplicate', same_as: twin.id, po_name: twin.po_name, problem: `The same file came in on ${twin.at.slice(0, 16)}${twin.po_name ? ` and is ${twin.po_name}` : ''}. No PO made: make it anyway if it is another one.` });
+  } else if (readOnly) {
+    // Read, and no PO in Odoo: a float's receipt for the POS, or one waiting
+    // for somebody to say where it goes. Its file is kept, to go wherever it goes.
+    await readOnly_(env, r, { data, today });
   } else {
     await makePo(env, r, { data, today, fetchImpl, mark }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });
     keep = ['unread', 'failed', 'duplicate'].includes(r.status) || r.attachFailed;
@@ -141,7 +145,67 @@ export async function addReceipt(env, { mime, data, name = '', thumb = null, cam
   r.hash, r.name, r.mime, r.thumb, r.came, r.by_name, r.from_email, r.subject, r.hint, r.at, r.status, r.vendor_text, r.amount, r.day, r.description,
   r.vendor_name, r.product_name, r.vendor_ok, r.item_ok, r.problem, r.po_id, r.po_name, r.po_url, r.todo, r.same_as, r.item_by);
   if (keep && data.length <= FILE_MAX) await keepFile(env, row.id, data);
-  return shape({ ...r, id: row.id, has_file: keep && data.length <= FILE_MAX ? 1 : 0 });
+  return { ...shape({ ...r, id: row.id, has_file: keep && data.length <= FILE_MAX ? 1 : 0 }), ...(readOnly ? { lines: r.lines || [] } : {}) };
+}
+
+/**
+ * Only read: what it says (who sold it, the total, the day, each thing
+ * bought), with no PO made. Status "read"; "unread" when it could not be.
+ */
+async function readOnly_(env, r, { data, today }) {
+  if (/heic|heif/.test(r.mime)) { r.problem = 'An iPhone HEIC picture cannot be read: send it as a JPEG, or take a screenshot of it.'; return; }
+  if (data.length > ATTACH_MAX) { r.problem = 'Too large to read: send a smaller photo, or a PDF under 7 MB.'; return; }
+  if (!env.AI) { r.problem = 'The reader (Workers AI) is not available just now.'; return; }
+  const got = await readReceipt(env, { mime: r.mime, data, name: r.name, hint: r.hint, today, lines: true }).catch((err) => ({ read: null, said: String(err?.message || err) }));
+  const read = got.read;
+  if (read) Object.assign(r, { vendor_text: read.vendor || null, amount: read.amount, day: read.date || today, description: read.description || null, lines: read.lines || [] });
+  if (!read || read.amount == null) {
+    r.problem = got.said || (read?.problem ? `Could not be read: ${read.problem}` : 'Could not be read: no total was found for certain.');
+    return;
+  }
+  r.status = 'read';
+}
+
+/**
+ * Read again, from the file kept here, with no PO made: a float's receipt
+ * for the POS that could not be read the first time. Returns the row as the
+ * list shows it, with the lines read.
+ */
+export async function readAgain(env, receiptId) {
+  const row = await first(env.DB, 'SELECT * FROM receipt WHERE id = ?1', Number(receiptId));
+  if (!row) throw new HttpError(404, 'No such receipt.');
+  const data = await keptData(env, row.id);
+  if (!data) throw badRequest('Its file is not kept here any more: type in what it says.');
+  const r = { ...row, status: 'unread', problem: null };
+  await readOnly_(env, r, { data, today: todayIn('UTC') });
+  await run(env.DB, 'UPDATE receipt SET status = ?2, vendor_text = ?3, amount = ?4, day = ?5, description = ?6, problem = ?7 WHERE id = ?1',
+    row.id, r.status, r.vendor_text, r.amount, r.day, r.description, r.problem);
+  return { ...shape({ ...r, has_file: 1 }), lines: r.lines || [] };
+}
+
+/** What a float's receipt says, typed in by an admin when it could not be read: no PO made. */
+export async function typedIn(env, receiptId, { vendor, amount, description, day }) {
+  await run(env.DB, "UPDATE receipt SET status = 'read', vendor_text = ?2, amount = ?3, description = ?4, day = COALESCE(?5, day, substr(at, 1, 10)), problem = NULL WHERE id = ?1",
+    Number(receiptId), vendor || null, amount, description || null, day || null);
+}
+
+/** A kept receipt's file, as base64, or null when it is not kept here. */
+export async function keptData(env, id) {
+  const parts = await all(env.DB, 'SELECT data FROM receipt_file WHERE receipt_id = ?1 ORDER BY part', Number(id));
+  return parts.length ? parts.map((p) => p.data).join('') : null;
+}
+
+/**
+ * A float's receipt that was read and not made in Odoo (it went to the POS,
+ * or waited): made into a draft PO in Odoo now, from the file kept here,
+ * carrying the float's reference. Same row, so it is still one receipt.
+ */
+export async function makeInOdoo(env, receiptId, { fetchImpl } = {}) {
+  const row = await first(env.DB, 'SELECT * FROM receipt WHERE id = ?1', Number(receiptId));
+  if (!row) throw new HttpError(404, 'No such receipt.');
+  // Made in Odoo already (it went there before, or was filled in by hand): that PO.
+  if (row.po_name && !['unread', 'failed', 'duplicate', 'read'].includes(row.status)) return shape({ ...row, has_file: 0 });
+  return (await redo(env, row, { fetchImpl, byName: row.by_name || 'Insight' })).receipt;
 }
 
 /**
@@ -316,12 +380,19 @@ export async function retry(env, body, account, { fetchImpl } = {}) {
   // One that looked like a receipt seen before is made only when asked: "Make it anyway".
   const anyway = row.status === 'duplicate' && Boolean(body?.anyway);
   if (!['unread', 'failed'].includes(row.status) && !anyway) throw badRequest(row.status === 'duplicate' ? 'It looked like one seen before: choose Make it anyway.' : 'That one has a PO already.');
-  const parts = await all(env.DB, 'SELECT data FROM receipt_file WHERE receipt_id = ?1 ORDER BY part', row.id);
-  if (!parts.length) throw badRequest('Its file is not kept here any more: use Fill it in, or send it again.');
-  const data = parts.map((p) => p.data).join('');
+  // A float's receipt for the POS is not made in Odoo by trying again: Floats says where it goes.
+  const dest = await first(env.DB, 'SELECT dest FROM float_receipt WHERE receipt_id = ?1', row.id).catch(() => null);
+  if (dest?.dest && dest.dest !== 'odoo') throw badRequest('That receipt is a float’s, for the POS or still to be placed: open it in Money › Floats.');
+  return redo(env, row, { fetchImpl, anyway, byName: row.by_name || account?.name || 'Insight' });
+}
+
+/** Read it again and make its PO in Odoo, from the file kept here. */
+async function redo(env, row, { fetchImpl, anyway = false, byName }) {
+  const data = await keptData(env, row.id);
+  if (!data) throw badRequest('Its file is not kept here any more: use Fill it in, or send it again.');
   const r = {
     ...row, status: 'unread', vendor_text: null, amount: null, day: null, description: null, vendor_name: null, product_name: null,
-    vendor_ok: null, item_ok: null, item_by: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: row.by_name || account?.name || 'Insight',
+    vendor_ok: null, item_ok: null, item_by: null, problem: null, po_id: null, po_name: null, po_url: null, todo: 0, by_name: byName,
     same_as: anyway ? null : row.same_as,
   };
   await makePo(env, r, { data, today: todayIn('UTC'), fetchImpl, mark: await floatMark(env, row.id), anyway }).catch((err) => { Object.assign(r, { status: 'failed', problem: String(err?.message || err).slice(0, 400) }); });

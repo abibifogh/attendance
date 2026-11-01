@@ -157,7 +157,7 @@ async function posBase(env) {
  * One signed call to the POS, the same signature HIVE's link uses, with the
  * POS's own shared secret: the POS checks it before reading anything.
  */
-async function pos(env, path, body, { fetchImpl = fetch } = {}) {
+export async function pos(env, path, body, { fetchImpl = fetch } = {}) {
   const base = await posBase(env);
   if (!base || !env.SSO_SECRET_POS) throw new Error('The POS is not linked: it needs its reports address in Settings › Connections & files and SSO_SECRET_POS.');
   const text = JSON.stringify(body ?? {});
@@ -165,7 +165,7 @@ async function pos(env, path, body, { fetchImpl = fetch } = {}) {
   let response;
   try { response = await fetchImpl(`${base}${path}`, { method: 'POST', headers, body: text }); } catch (err) { throw new Error(`The POS could not be reached: ${err.message}`); }
   const data = await response.json().catch(() => ({}));
-  if (response.status === 404 && !data?.error) throw new Error('The POS does not take approvals from Insight yet: its notify function needs updating.');
+  if (response.status === 404 && !data?.error) throw new Error(`The POS does not answer ${path} yet: its notify function needs updating.`);
   if (!response.ok || data?.ok === false) {
     const error = new Error(data?.error || `The POS answered ${response.status}.`);
     error.status = response.status;

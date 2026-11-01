@@ -70,7 +70,10 @@ test('a sentence read without the reader: the amount, the day and what to buy', 
   assert.deepEqual(newpo.plainRead('Gas GH₵ 1,250.50 yesterday', '2026-10-16').amount, 125050);
   assert.equal(newpo.plainRead('Gas GH₵ 1,250.50 yesterday', '2026-10-16').date, '2026-10-15');
   assert.deepEqual(newpo.parseAnswer({ response: 'Here: {"vendor":"A Hardware Shop","amount":"GH₵145.00","description":"2 padlocks","date":"2026-10-15","problem":""}' }),
-    { vendor: 'A Hardware Shop', amount: 14500, description: '2 padlocks', date: '2026-10-15', problem: '' });
+    { vendor: 'A Hardware Shop', amount: 14500, description: '2 padlocks', date: '2026-10-15', problem: '', lines: [] });
+  // Each thing bought, when the reader listed them: for a receipt going to the POS.
+  assert.deepEqual(newpo.linesOf([{ name: 'Tonic water 330ml, crate of 24', qty: '4', amount: 'GH₵640.00' }, { name: '', qty: '1', amount: '5' }, { name: 'Limes', qty: '', amount: '' }]),
+    [{ name: 'Tonic water 330ml, crate of 24', qty: 4, amount: 64000 }, { name: 'Limes', qty: 1, amount: null }]);
 });
 
 test('typed: filled in, the vendor last used for the item suggested; checked for one like it; created as a draft', async () => {

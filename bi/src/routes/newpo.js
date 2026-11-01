@@ -133,6 +133,15 @@ const SCHEMA = {
   },
   required: ['vendor', 'amount', 'description', 'date', 'problem'],
 };
+/** The same, with each thing bought on its own line: for a receipt going to the POS. */
+const SCHEMA_LINES = {
+  ...SCHEMA,
+  properties: {
+    ...SCHEMA.properties,
+    lines: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, qty: { type: 'string' }, amount: { type: 'string' } }, required: ['name', 'qty', 'amount'] } },
+  },
+  required: [...SCHEMA.required, 'lines'],
+};
 
 function prompt(kind, today) {
   return [
@@ -147,7 +156,9 @@ function prompt(kind, today) {
   ].join('\n');
 }
 
-/** The reader's answer, however it comes back, as the four fields. */
+const LINES_ASK = 'Also list each thing bought, as written, in "lines": [{"name": "", "qty": "", "amount": ""}], where qty is how many and amount is that line\'s total in cedis. [] if the lines cannot be read.';
+
+/** The reader's answer, however it comes back, as the four fields (and the lines, when asked for). */
 export function parseAnswer(result) {
   let raw = result?.response ?? result;
   if (typeof raw === 'string') {
@@ -164,7 +175,23 @@ export function parseAnswer(result) {
     description: text(raw.description ?? raw.items, 200),
     date: isDay(date) ? date : null,
     problem: text(raw.problem, 300),
+    lines: linesOf(raw.lines),
   };
+}
+
+/** Each thing bought, as the reader listed it: a name, how many, and its total in pesewas. */
+export function linesOf(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 40).map((l) => {
+    const name = String(l?.name ?? l?.item ?? '').trim().slice(0, 160);
+    const qty = Number(String(l?.qty ?? l?.quantity ?? '').replace(/[^0-9.]/g, ''));
+    const amount = Number(String(l?.amount ?? l?.total ?? '').replace(/[^0-9.]/g, ''));
+    return {
+      name,
+      qty: Number.isFinite(qty) && qty > 0 ? Math.round(qty * 1000) / 1000 : 1,
+      amount: Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : null,
+    };
+  }).filter((l) => l.name);
 }
 
 /** Without the reader: the amount and the day from a sentence, the rest as typed. */
@@ -178,12 +205,12 @@ export function plainRead(text, today) {
   return { vendor: '', amount: amount > 0 ? amount : null, description: description ? description.charAt(0).toUpperCase() + description.slice(1) : '', date, problem: '' };
 }
 
-async function ask(env, messages) {
+async function ask(env, messages, { lines = false } = {}) {
   const errors = [];
-  for (const extra of [{ response_format: { type: 'json_schema', json_schema: SCHEMA } }, {}]) {
+  for (const extra of [{ response_format: { type: 'json_schema', json_schema: lines ? SCHEMA_LINES : SCHEMA } }, {}]) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const out = parseAnswer(await env.AI.run(READ_MODEL, { messages, max_tokens: 300, temperature: 0, ...extra }));
+      const out = parseAnswer(await env.AI.run(READ_MODEL, { messages, max_tokens: lines ? 900 : 300, temperature: 0, ...extra }));
       if (out) return { out, errors };
       errors.push('Answer not understood.');
     } catch (err) { errors.push(String(err?.message || err).slice(0, 200)); }
@@ -205,17 +232,19 @@ async function pdfText(env, base64, name) {
  * the generator"), to help, never to be taken over what the receipt says.
  * `noText` is a PDF with no text in it, which a photo would read.
  */
-export async function readReceipt(env, { mime, data, name = null, hint = '', today = todayIn('UTC') }) {
-  const ask_ = prompt('receipt', today) + (hint ? `\nWhoever sent it wrote: "${String(hint).slice(0, 300)}". Use it only to help read the receipt.` : '');
+export async function readReceipt(env, { mime, data, name = null, hint = '', today = todayIn('UTC'), lines = false }) {
+  const ask_ = prompt('receipt', today) + (hint ? `\nWhoever sent it wrote: "${String(hint).slice(0, 300)}". Use it only to help read the receipt.` : '')
+    // For the POS: each thing bought on its own line, to be matched to its stock items.
+    + (lines ? `\n${LINES_ASK}` : '');
   if (mime === 'application/pdf') {
     let content = '';
     let note = '';
     try { content = await pdfText(env, data, name); } catch (err) { note = String(err?.message || err); }
     if (!content) return { read: null, noText: true, said: note || 'This PDF has no text in it (a scan). Take a photo of the receipt instead, or fill in the details by hand.' };
-    const { out } = await ask(env, [{ role: 'user', content: `${ask_}\n\nThe receipt, as text:\n${content.slice(0, 6000)}` }]);
+    const { out } = await ask(env, [{ role: 'user', content: `${ask_}\n\nThe receipt, as text:\n${content.slice(0, 6000)}` }], { lines });
     return { read: out };
   }
-  const { out } = await ask(env, [{ role: 'user', content: [{ type: 'text', text: ask_ }, { type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } }] }]);
+  const { out } = await ask(env, [{ role: 'user', content: [{ type: 'text', text: ask_ }, { type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } }] }], { lines });
   return { read: out };
 }
 

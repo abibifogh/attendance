@@ -36,6 +36,7 @@ import * as newpo from './routes/newpo.js';
 import * as proof from './routes/proof.js';
 import * as assistant from './routes/assistant.js';
 import * as today from './routes/today.js';
+import * as fixedAssets from './routes/fixedassets.js';
 import * as duty from './routes/duty.js';
 import * as audit from './lib/audit.js';
 import { meterDb, keep, speedView } from './lib/speed.js';
@@ -126,6 +127,12 @@ const ROUTES = [
   // The management report: a week or a month of breakfast and maintenance, from each app.
   // Who sees which reports: an admin shares report pages with people who are not admins.
   ['GET', '/api/report-access', 'session', adminOnly((env) => reportAccess.list(env))],
+  // Fixed assets: found in Odoo, confirmed here, kept in Maintenance's equipment register.
+  ['GET', '/api/assets', 'session', adminOnly((env, ctx) => fixedAssets.faView(env, ctx.account))],
+  ['POST', '/api/assets/scan', 'session', adminOnly((env) => fixedAssets.scan(env))],
+  ['POST', '/api/assets/rules', 'session', adminOnly((env, ctx) => fixedAssets.saveRules(env, ctx.body, ctx.account))],
+  ['POST', '/api/assets/register', 'session', adminOnly((env, ctx) => fixedAssets.register(env, ctx.body, ctx.account))],
+  ['POST', '/api/assets/decide', 'session', adminOnly((env, ctx) => fixedAssets.decide(env, ctx.body, ctx.account))],
   // How long each page takes, and where the Worker runs, for Settings › Connections & files › Speed.
   ['GET', '/api/admin/speed', 'session', adminOnly((env) => speedView(env))],
   ['POST', '/api/report-access', 'session', adminOnly((env, ctx) => reportAccess.save(env, ctx.body, ctx.account))],
@@ -370,6 +377,9 @@ const ROUTES = [
   })],
   // Floats: money given to people to spend; their receipts become POs with their reference.
   ['GET', '/api/floats', 'insight', adminOnly((env) => floats.list(env))],
+  // Where each person's receipts may go, as ticked; and one receipt sent somewhere else, or placed.
+  ['POST', '/api/floats/dests', 'insight', adminOnly((env, ctx) => floats.saveDests(env, ctx.body))],
+  ['POST', '/api/floats/move', 'insight', adminOnly((env, ctx) => floats.moveReceipt(env, ctx.body, ctx.account))],
   ['GET', '/api/floats/:id', 'insight', adminOnly((env, ctx) => floats.detail(env, ctx.params.id))],
   ['GET', '/api/floats/:id/statement', 'insight', adminOnly((env, ctx) => floats.statement(env, ctx.params.id, ctx.query))],
   ['POST', '/api/floats/give', 'insight', adminOnly((env, ctx) => floats.give(env, ctx.body, ctx.account))],
@@ -698,6 +708,8 @@ export default {
       console.error('Scheduled refresh failed', err);
     }));
     // Odoo's suppliers, for Buying › Suppliers, and on to the breakfast app and the maintenance store.
+    // What may be a fixed asset, read from Odoo again.
+    execution.waitUntil(fixedAssets.scan(env).catch((err) => { if (err?.status !== 409) console.error('Fixed assets from Odoo', err); }));
     execution.waitUntil(supplierBook.refreshFromOdoo(env).then(() => supplierBook.pushSuppliers(env))
       .catch((err) => console.error('Suppliers from Odoo', err)));
   },
