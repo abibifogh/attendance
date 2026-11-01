@@ -2201,10 +2201,11 @@ export async function renderShifts(root, { range, section: only = null, onSectio
       }
     }
     const placed = dots.filter((d) => d.at).map((d) => ({ ...d, p: pos(d.at) })).sort((a, b) => a.p - b.p);
-    // Dots closer than a dot's width go up or down a level, so none hides another.
+    // Dots closer than a dot's width go up or down a level, so none hides
+    // another: 5% of the narrowest the strip gets (on a phone) is a dot and a gap.
     const lastAt = [-10, -10, -10];
     for (const d of placed) {
-      const level = [0, 1, 2].find((lv) => d.p - lastAt[lv] >= 3.2) ?? 0;
+      const level = [0, 1, 2].find((lv) => d.p - lastAt[lv] >= 5) ?? 0;
       d.level = level;
       lastAt[level] = d.p;
     }
@@ -2223,7 +2224,7 @@ export async function renderShifts(root, { range, section: only = null, onSectio
           + `${d.how && d.how !== 'exact' ? ` · ${{ late: 'just outside the hours', together: 'paid together', parts: 'paid in parts', regrouped: 'split differently', 'by-day': 'by day' }[d.how] || d.how}` : ''}`
           + `${d.flagged ? ' · see below' : ''}`;
         const left = Math.max(1, Math.min(99, d.p));
-        const dot = h(`button.sh-dot.${d.declined ? 'decl' : d.kind === 'momo' ? 'momo' : 'card'}${d.flagged && !d.declined ? '.flag' : ''}${d.level ? `.l${d.level}` : ''}`, {
+        const dot = h(`button.sh-dot.${d.declined ? 'decl' : d.kind === 'momo' ? 'momo' : 'cardpay'}${d.flagged && !d.declined ? '.flag' : ''}${d.level ? `.l${d.level}` : ''}`, {
           type: 'button', style: `left:${left}%`, 'aria-label': text,
         }, d.declined ? '×' : '');
         const show = () => { tip.textContent = text; tip.style.left = `${left}%`; tip.style.top = `${[34, 6, 62][d.level] - 6}px`; tip.hidden = false; };

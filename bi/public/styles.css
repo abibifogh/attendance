@@ -856,14 +856,15 @@ details.rangemenu[open] > summary::after { content: ' ▴'; }
 .sh-tl { position: relative; margin: 1rem 0 .4rem; height: 112px; }
 .sh-tl .band { position: absolute; top: 34px; height: 24px; border-radius: 6px; background: var(--surface-2); left: 0; right: 0; }
 .sh-tl .core { position: absolute; top: 34px; height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--series-1) 12%, var(--surface-2)); }
-.sh-tl .tick { position: absolute; top: 92px; font-size: .72rem; color: var(--muted); transform: translateX(-50%); }
+.sh-tl .tick { position: absolute; top: 92px; font-size: .72rem; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
 .sh-dot {
   position: absolute; top: 34px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%; padding: 0; cursor: pointer;
   border: 3px solid var(--surface); display: grid; place-items: center; color: #fff; font-size: .62rem; font-weight: 800;
   transition: transform .15s; box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
 }
 .sh-dot:hover, .sh-dot:focus-visible { transform: scale(1.25); z-index: 3; }
-.sh-dot.card { background: var(--sh-card); } .sh-dot.momo { background: var(--sh-safe); color: #111; }
+/* Not .card: that is the page's card box, whose padding would blow the dot up. */
+.sh-dot.cardpay { background: var(--sh-card); } .sh-dot.momo { background: var(--sh-safe); color: #111; }
 .sh-dot.flag { box-shadow: 0 0 0 3px var(--sh-bad); }
 .sh-dot.decl { background: var(--surface); border: 3px dashed var(--sh-bad); color: var(--sh-bad); }
 .sh-dot.l1 { top: 6px; } .sh-dot.l2 { top: 62px; }
