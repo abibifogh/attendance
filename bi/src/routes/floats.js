@@ -1,6 +1,7 @@
 import { all, first, run } from '../lib/db.js';
 import { badRequest, csvResponse, HttpError, str } from '../lib/http.js';
 import { todayIn } from '../lib/dates.js';
+import { pdf, wrap, widthOf, A4 } from '../lib/pdf.js';
 import { purchaseOrders } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
 import { addReceipt, markFor } from './receipts.js';
@@ -483,12 +484,144 @@ async function statementOf(env, p, query) {
       ['', 'Held at the end', '', '', '', '', cedis(s.given), cedis(s.spent + s.back), cedis(held)],
     ]);
   }
-  s.csv = `?${new URLSearchParams({ ...Object.fromEntries(Object.entries(query || {}).filter(([k]) => ['t', 's'].includes(k))), from, to, format: 'csv' })}`;
+  const link = (format) => `?${new URLSearchParams({ ...Object.fromEntries(Object.entries(query || {}).filter(([k]) => ['t', 's'].includes(k))), from, to, format })}`;
+  if (query?.format === 'pdf') {
+    // Inline: a phone opens it in its own viewer, which shares, saves and prints it.
+    return new Response(statementPdf(s, file), {
+      headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${file.replace(/[^\w .-]/g, '')}.pdf"`, 'Cache-Control': 'no-store' },
+    });
+  }
+  s.csv = link('csv');
+  s.pdf = link('pdf');
+  // Where Back goes when there is no page to go back to: their own page, or Insight's floats.
+  s.home = query?.t ? `/float.html?${new URLSearchParams(Object.fromEntries(Object.entries(query).filter(([k]) => ['t', 's'].includes(k))))}` : '/#/floats';
   return new Response(statementPage(s, file), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const longDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * The statement as a PDF: the same heading, totals and lines as the page, set
+ * on A4 with the column heads again on each page and page numbers at the foot.
+ */
+export function statementPdf(s, title) {
+  const amount = (minor) => (Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const monthOf = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const shortDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const INK = [0.08, 0.09, 0.1];
+  const DIM = [0.42, 0.45, 0.5];
+  const LINE = [0.86, 0.88, 0.91];
+  const SOFT = [0.95, 0.95, 0.97];
+  const M = 40;
+  const W = A4.w - 2 * M;
+  const BOTTOM = A4.h - 56;
+  // Date, What, Reference, In, Out, Balance: What takes what is left.
+  const COL = { date: M, what: M + 52, ref: M + W - 270, inR: M + W - 150, outR: M + W - 85, balR: M + W };
+  const WHAT_W = COL.ref - COL.what - 10;
+  const doc = pdf({ title });
+  let top = 0;
+
+  const heads = () => {
+    doc.box(M, top, W, 20, { fill: SOFT });
+    const t = top + 13.5;
+    doc.text(COL.date + 4, t, 'DATE', { size: 7.5, bold: true, color: DIM })
+      .text(COL.what, t, 'WHAT', { size: 7.5, bold: true, color: DIM })
+      .text(COL.ref, t, 'REFERENCE', { size: 7.5, bold: true, color: DIM })
+      .text(COL.inR, t, 'IN', { size: 7.5, bold: true, color: DIM, align: 'right' })
+      .text(COL.outR, t, 'OUT', { size: 7.5, bold: true, color: DIM, align: 'right' })
+      .text(COL.balR - 4, t, 'BALANCE', { size: 7.5, bold: true, color: DIM, align: 'right' });
+    top += 24;
+  };
+  const newPage = (withHeads = true) => {
+    doc.page();
+    top = M;
+    if (doc.pages.length > 1) {
+      doc.text(M, top + 10, `Float statement · ${s.name} · FLT/${s.code}`, { size: 9, bold: true })
+        .text(M + W, top + 10, `${longDay(s.from)} to ${longDay(s.to)}`, { size: 9, color: DIM, align: 'right' });
+      top += 22;
+    }
+    if (withHeads) heads();
+  };
+  const room = (h) => { if (top + h > BOTTOM) newPage(); };
+
+  // The heading.
+  newPage(false);
+  doc.text(M, top + 22, 'Float statement', { size: 22, bold: true })
+    .text(M + W, top + 14, 'Insight', { size: 12, bold: true, align: 'right' })
+    .text(M + W, top + 28, `Printed ${longDay(todayIn('UTC'))}`, { size: 9, color: DIM, align: 'right' })
+    .text(M, top + 42, `${s.name} · FLT/${s.code}`, { size: 11, color: DIM })
+    .text(M, top + 58, `${longDay(s.from)} to ${longDay(s.to)}`, { size: 11, color: DIM });
+  top += 68;
+  doc.line(M, top, M + W, top, { width: 1.5, color: INK });
+  top += 14;
+
+  // The totals.
+  const boxes = [['At the start', s.opening], ['Given', s.given], ['Spent (receipts)', s.spent], ['Given back', s.back], ['Still with them', s.closing]];
+  const gap = 8;
+  const bw = (W - gap * 4) / 5;
+  boxes.forEach(([label, v], i) => {
+    const x = M + i * (bw + gap);
+    const last = i === boxes.length - 1;
+    doc.box(x, top, bw, 44, last ? { fill: INK } : { stroke: LINE, width: 0.8 });
+    const figure = `GHS ${amount(v)}${last && v < 0 ? ' over' : ''}`;
+    // A long figure is set smaller, to stay inside its box.
+    let size = 10.5;
+    while (size > 6 && widthOf(figure, size, true) > bw - 14) size -= 0.5;
+    doc.text(x + 8, top + 15, label, { size: 8, color: last ? [0.8, 0.81, 0.84] : DIM })
+      .text(x + 7, top + 33, figure, { size, bold: true, color: last ? [1, 1, 1] : INK });
+  });
+  top += 58;
+
+  // The lines, month by month.
+  heads();
+  let month = '';
+  if (!s.lines.length) { doc.text(M + 4, top + 12, 'Nothing in these dates.', { size: 9.5, color: DIM }); top += 22; }
+  for (const l of s.lines) {
+    if (monthOf(l.day) !== month) {
+      month = monthOf(l.day);
+      room(22 + 30);
+      doc.text(M + 4, top + 12, month, { size: 9, bold: true, color: DIM });
+      top += 18;
+    }
+    const status = l.state === 'accepted' ? `Accepted${l.po ? ` · PO ${l.po}` : ''}`
+      : l.state === 'refused' ? `${l.status} (does not count)` : l.state ? `Being checked${l.po ? ` · PO ${l.po}` : ''}` : '';
+    const what = [
+      ...wrap(l.title, 9.5, WHAT_W, true).map((t) => [t, 9.5, true, INK]),
+      ...(l.detail ? wrap(l.detail, 8.5, WHAT_W).map((t) => [t, 8.5, false, DIM]) : []),
+      ...(l.note ? wrap(`"${l.note}"`, 8.5, WHAT_W).map((t) => [t, 8.5, false, DIM]) : []),
+      ...(status ? wrap(status, 8, WHAT_W).map((t) => [t, 8, false, l.state === 'refused' ? [0.72, 0.11, 0.11] : l.state === 'accepted' ? [0.08, 0.5, 0.24] : DIM]) : []),
+    ];
+    const h = Math.max(1, what.length) * 11.5 + 9;
+    room(h);
+    const base = top + 13;
+    doc.text(COL.date + 4, base, shortDay(l.day), { size: 9.5 });
+    what.forEach(([t, size, bold, color], i) => doc.text(COL.what, base + i * 11.5, t, { size, bold, color }));
+    if (l.ref) doc.text(COL.ref, base, l.ref, { size: 8.5, color: DIM });
+    if (l.change > 0) doc.text(COL.inR, base, amount(l.change), { size: 9.5, align: 'right' });
+    if (l.change < 0) doc.text(COL.outR, base, amount(l.change), { size: 9.5, align: 'right' });
+    else if (l.state === 'refused') doc.text(COL.outR, base, '-', { size: 9.5, color: DIM, align: 'right' });
+    doc.text(COL.balR - 4, base, `${amount(l.held)}${l.held < 0 ? ' over' : ''}`, { size: 9.5, bold: true, align: 'right' });
+    top += h;
+    doc.line(M, top, M + W, top, { color: LINE });
+  }
+
+  // The note and the signatures, kept together.
+  room(90);
+  top += 16;
+  doc.text(M, top, 'Amounts in GHS. A refused receipt does not count against them; one being checked counts until it is refused.', { size: 8, color: DIM });
+  top += 54;
+  const half = (W - 40) / 2;
+  doc.line(M, top, M + half, top, { color: [0.6, 0.6, 0.6] }).line(M + half + 40, top, M + W, top, { color: [0.6, 0.6, 0.6] });
+  doc.text(M, top + 12, `Received by ${s.name}`, { size: 8.5, color: DIM }).text(M + half + 40, top + 12, 'Checked by', { size: 8.5, color: DIM });
+
+  // Page numbers, now the count is known.
+  const n = doc.pages.length;
+  doc.pages.forEach((ops, i) => {
+    ops.push(`BT ${DIM.join(' ')} rg /F1 8 Tf ${(A4.w / 2 - 20).toFixed(2)} 28 Td (Page ${i + 1} of ${n}) Tj ET`);
+  });
+  return doc.bytes();
+}
 
 function statementPage(s, title) {
   const amount = (minor) => (Math.abs(minor) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -501,9 +634,9 @@ function statementPage(s, title) {
   const rows = s.lines.map((l) => {
     const head = monthOf(l.day) !== month ? `<tr class="month"><td colspan="6">${esc((month = monthOf(l.day)))}</td></tr>` : '';
     const out = l.change < 0 ? amount(l.change) : l.state === 'refused' ? '<span class="none">—</span>' : '';
-    return `${head}<tr><td>${esc(shortDay(l.day))}</td>
-      <td><b>${esc(l.title)}</b>${l.detail ? ` · ${esc(l.detail)}` : ''}${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}${statusOf(l) ? `<div class="st ${l.state || ''}">${esc(statusOf(l))}</div>` : ''}</td>
-      <td class="ref">${esc(l.ref)}</td><td class="n">${l.change > 0 ? amount(l.change) : ''}</td><td class="n">${out}</td><td class="n"><b>${esc(amount(l.held))}</b>${l.held < 0 ? ' over' : ''}</td></tr>`;
+    return `${head}<tr><td class="d">${esc(shortDay(l.day))}</td>
+      <td class="w"><b>${esc(l.title)}</b>${l.detail ? ` · ${esc(l.detail)}` : ''}${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}${statusOf(l) ? `<div class="st ${l.state || ''}">${esc(statusOf(l))}</div>` : ''}</td>
+      <td class="ref">${esc(l.ref)}</td><td class="n i" data-l="In">${l.change > 0 ? amount(l.change) : ''}</td><td class="n o" data-l="Out">${out}</td><td class="n b" data-l="Balance"><b>${esc(amount(l.held))}</b>${l.held < 0 ? ' over' : ''}</td></tr>`;
   }).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
 <style>
@@ -513,7 +646,7 @@ body{font:14px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;co
 main{max-width:900px;margin:0 auto;padding:20px 16px 40px}
 .bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .bar button,.bar a{font:inherit;font-weight:700;padding:10px 16px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;text-decoration:none}
-.bar button{background:var(--accent);border-color:var(--accent);color:#fff}
+.bar .pri{background:var(--accent);border-color:var(--accent);color:#fff}.bar .back{margin-right:auto}.bar [hidden]{display:none}
 .paper{background:#fff;border-radius:16px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 4px 14px rgba(16,24,40,.06);padding:28px}
 .ph{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:14px}
 h1{font-size:24px;margin:0;letter-spacing:-.01em}.ph p{margin:2px 0 0;color:var(--ink-2)}
@@ -530,10 +663,22 @@ tr.month td{background:var(--soft);font-weight:700;font-size:13px;color:var(--in
 .note{font-style:italic;color:var(--ink-2);font-size:13px}.st{color:var(--muted);font-size:12px}.st.accepted{color:#15803d}.st.refused{color:#b91c1c}.none{color:var(--muted)}
 .foot{color:var(--muted);font-size:12px;margin-top:10px}
 .sign{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:44px}.sign div{border-top:1px solid #999;padding-top:6px;color:var(--muted);font-size:12px}
-@media (max-width:700px){.sum{grid-template-columns:repeat(2,minmax(0,1fr))}.paper{padding:18px}}
+@media (max-width:700px){.sum{grid-template-columns:repeat(2,minmax(0,1fr))}.paper{padding:18px}
+/* On a phone each line is a small card: date and reference, what it was, then the money. */
+.wrap{overflow:visible}table,tbody{display:block}thead{display:none}
+tbody tr{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+tbody td{border:0;padding:0}tbody td.d{font-weight:600}tbody td.ref{text-align:right;overflow:hidden;text-overflow:ellipsis}
+tbody td.w{grid-column:1/-1}tbody td.n{grid-column:1/-1;display:flex;justify-content:space-between;text-align:right}
+tbody td.n:empty{display:none}tbody td.n::before{content:attr(data-l);color:var(--muted);font-size:12px}
+tbody tr.month{display:block;padding:0;border:0}tbody tr.month td{display:block;padding:6px 8px;border-radius:8px;margin-top:8px}
+tbody tr:has(td[colspan]):not(.month) td{grid-column:1/-1}}
 @media print{body{background:#fff}.bar{display:none}main{padding:0}.paper{box-shadow:none;padding:0}}
 </style></head><body><main>
-<div class="bar"><button onclick="print()">Print or save as PDF</button><a href="${esc(s.csv || '')}">Spreadsheet</a></div>
+<div class="bar"><a class="back" href="${esc(s.home || '/')}" onclick="if (1 < history.length) { history.back(); return false; }">← Back</a><a class="pri" href="${esc(s.pdf || '')}">Download PDF</a><button type="button" class="print" onclick="print()">Print</button><a href="${esc(s.csv || '')}">Spreadsheet</a></div>
+<script>
+// A phone that opened Insight from its home screen cannot print a web page: the PDF is the way there.
+if (navigator.standalone || matchMedia('(display-mode: standalone)').matches) document.querySelector('.bar .print').hidden = true;
+</script>
 <div class="paper">
 <div class="ph"><div><h1>Float statement</h1><p>${esc(s.name)} · <span class="mono">FLT/${esc(s.code)}</span></p><p>${esc(longDay(s.from))} to ${esc(longDay(s.to))}</p></div>
 <div class="brand"><b>Insight</b>Printed ${esc(longDay(todayIn('UTC')))}</div></div>
