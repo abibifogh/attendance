@@ -1,1 +1,218 @@
 /* Attendance › today: the redesign. Styles for this area only; tokens come from /styles.css. */
+
+.tday { --tday-who: 16rem; --tday-act: 6.5rem; --tday-row-h: 58px; }
+
+/* ---- the head ---- */
+.tday-head .sub { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .9rem; }
+.tday-live { display: inline-flex; align-items: center; gap: .4rem; font-size: .82rem; color: var(--text-dim); }
+.tday-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+
+/* ---- the four counts ---- */
+.tday-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: .9rem; }
+.tday-tile {
+  --tone: var(--text); --tint: var(--surface);
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; min-width: 0;
+  padding: .8rem 1rem; border-radius: 16px; cursor: pointer; text-align: left; font: inherit;
+  background: var(--tint); color: var(--tone);
+  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--border));
+}
+.tday-tile.is-good { --tone: var(--good); --tint: var(--good-soft); }
+.tday-tile.is-warn { --tone: var(--warn); --tint: var(--warn-soft); }
+.tday-tile.is-bad { --tone: var(--bad); --tint: var(--bad-soft); }
+.tday-tile.is-idle { --tone: var(--text); --tint: var(--surface); border-color: var(--border); }
+.tday-tile b { font-size: 1.85rem; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; font-weight: 750; }
+.tday-tile b small { font-size: .95rem; font-weight: 600; color: color-mix(in srgb, var(--tone) 70%, var(--text-dim)); }
+.tday-tile span { font-size: .84rem; font-weight: 650; }
+.tday-tile.is-idle span { color: var(--text-dim); }
+.tday-tile[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--tone); }
+.tday-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tday-short { display: none; }
+
+/* ---- the layout: the timeline, and what needs you beside it ---- */
+.tday-layout { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1rem; align-items: start; }
+.tday-main { min-width: 0; }
+
+/* ---- filter chips ---- */
+.tday-chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .75rem; }
+.tday-chip {
+  display: inline-flex; align-items: center; gap: .45rem; font: inherit;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: .36rem .8rem; font-size: .82rem; font-weight: 600; cursor: pointer;
+}
+.tday-chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--text); }
+.tday-chip i.is-good { background: var(--good); }
+.tday-chip i.is-warn { background: var(--warn); }
+.tday-chip i.is-bad { background: var(--bad); }
+.tday-chip i.is-idle { background: var(--text-faint); }
+.tday-chip-n { opacity: .65; font-variant-numeric: tabular-nums; }
+.tday-chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--surface); }
+.tday-chip[aria-pressed="true"] i { background: var(--surface); }
+.tday-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- the timeline ---- */
+.tday-board { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
+.tday-row {
+  display: grid; grid-template-columns: var(--tday-who) minmax(0, 1fr) var(--tday-act);
+  align-items: center; min-height: var(--tday-row-h); border-top: 1px solid var(--surface-2);
+}
+.tday-row[hidden], .tday-dept[hidden] { display: none; }
+.tday-axis { min-height: 44px; border-top: 0; background: var(--surface-2); }
+.tday-axis-label, .tday-panel-label {
+  font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim);
+}
+.tday-axis-label { padding: 0 1rem; }
+.tday-tick { position: absolute; top: 7px; transform: translateX(-50%); font-size: .72rem; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tday-now-label {
+  position: absolute; bottom: 4px; transform: translateX(-50%); z-index: 2;
+  font-size: .66rem; font-weight: 750; color: #fff; background: var(--bad); border-radius: 6px; padding: 0 .3rem; white-space: nowrap;
+}
+
+.tday-dept-head {
+  display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+  padding: .45rem 1rem; background: color-mix(in srgb, var(--surface-2) 60%, var(--surface));
+  border-top: 1px solid var(--border);
+}
+.tday-dept-head b { font-size: .76rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; color: var(--text); }
+.tday-dept-head small { font-size: .78rem; color: var(--text-dim); }
+
+.tday-who {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "face name" "face pill";
+  column-gap: .65rem; row-gap: .15rem; align-items: center; padding: .45rem 1rem; min-width: 0;
+}
+.tday-who > .face { grid-area: face; }
+.tday-name { grid-area: name; min-width: 0; font-size: .88rem; font-weight: 650; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tday-name:hover { text-decoration: underline; }
+.tday-sub { grid-area: sub; display: none; min-width: 0; font-size: .78rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tday-who > .tday-pill { grid-area: pill; justify-self: start; }
+
+.tday-pill {
+  --tone: var(--text-dim); --tint: var(--surface-2);
+  display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  font-size: .72rem; font-weight: 750; border-radius: 999px; padding: .1rem .55rem; white-space: nowrap;
+  background: var(--tint); color: var(--tone);
+}
+.tday-pill.is-good { --tone: var(--good); --tint: var(--good-soft); }
+.tday-pill.is-warn { --tone: var(--warn); --tint: var(--warn-soft); }
+.tday-pill.is-bad { --tone: var(--bad); --tint: var(--bad-soft); }
+.tday-pill.is-info { --tone: var(--info); --tint: color-mix(in srgb, var(--info) 14%, var(--surface)); }
+.tday-pill.is-leave { --tone: var(--good); --tint: color-mix(in srgb, var(--good) 9%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 30%, transparent); }
+
+.tday-track { position: relative; align-self: stretch; min-height: var(--tday-row-h); margin-right: 1.1rem; }
+.tday-axis .tday-track { min-height: 44px; }
+.tday-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--bad); opacity: .5; z-index: 2; pointer-events: none; }
+.tday-shift {
+  position: absolute; top: 50%; height: 26px; margin-top: -13px; box-sizing: border-box;
+  border-radius: 9px; border: 1.5px dashed var(--shift, var(--text-faint));
+  background: color-mix(in srgb, var(--shift, var(--text-faint)) 12%, var(--surface));
+  display: flex; align-items: center; padding: 0 .55rem; overflow: hidden;
+}
+.tday-shift.runs-on { border-right-style: solid; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tday-shift span {
+  position: relative; z-index: 1; font-size: .72rem; font-weight: 700; white-space: nowrap;
+  color: color-mix(in srgb, var(--shift, var(--text-dim)) 62%, var(--text));
+}
+.tday-worked {
+  position: absolute; top: 50%; height: 26px; margin-top: -13px; border-radius: 9px; z-index: 0;
+  background: color-mix(in srgb, var(--shift, var(--good)) 34%, transparent);
+}
+.tday-worked.is-info { background: color-mix(in srgb, var(--info) 30%, transparent); }
+.tday-worked.is-open { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tday-in {
+  position: absolute; top: 50%; width: 12px; height: 12px; margin: -19px 0 0 -6px; border-radius: 50%; z-index: 3;
+  background: var(--good); box-shadow: 0 0 0 2px var(--surface);
+}
+.tday-in.is-warn { background: var(--warn); }
+.tday-in.is-info { background: var(--info); }
+.tday-out {
+  position: absolute; top: 50%; width: 3px; height: 18px; margin: -9px 0 0 -1.5px; border-radius: 2px; z-index: 3;
+  background: var(--text-dim); opacity: .7;
+}
+.tday-note { position: absolute; top: 50%; transform: translateY(-50%); font-size: .78rem; color: var(--text-faint); white-space: nowrap; }
+
+.tday-act { display: flex; justify-content: flex-end; padding-right: .75rem; }
+.tday-act .menu-btn { font-size: .76rem; padding: .25rem .5rem; }
+.tday-act .menu-drop { right: 0; left: auto; min-width: 13rem; z-index: 20; }
+.tday-nobody { margin: 0; padding: 1.2rem 1rem; color: var(--text-dim); font-size: .88rem; border-top: 1px solid var(--surface-2); }
+
+/* ---- needs you ---- */
+.tday-panel {
+  position: sticky; top: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  padding: 1rem; display: flex; flex-direction: column; gap: .7rem; max-height: calc(100vh - 2rem); overflow: auto;
+}
+.tday-need {
+  display: flex; flex-direction: column; gap: .55rem; border-radius: 14px; padding: .75rem;
+  border: 1px solid var(--border); background: var(--surface);
+}
+.tday-need.is-bad { border-color: color-mix(in srgb, var(--bad) 35%, var(--border)); background: color-mix(in srgb, var(--bad-soft) 55%, var(--surface)); }
+.tday-need b { display: block; font-size: .86rem; line-height: 1.35; }
+.tday-need small { display: block; margin-top: .15rem; font-size: .77rem; line-height: 1.45; color: var(--text-dim); }
+.tday-need-act { display: flex; flex-wrap: wrap; gap: .35rem; }
+.tday-mini {
+  display: inline-flex; align-items: center; justify-content: center; font: inherit; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 9px; padding: .36rem .65rem; font-size: .77rem; font-weight: 650; text-decoration: none; line-height: 1.2;
+}
+.tday-mini:hover { border-color: var(--text-faint); }
+.tday-mini.is-link { border-color: transparent; background: none; color: var(--text-dim); text-decoration: underline; padding-left: .3rem; padding-right: .3rem; }
+.tday-mini.is-primary { background: var(--text); border-color: var(--text); color: var(--surface); }
+.tday-mini:disabled { opacity: .55; cursor: progress; }
+.tday-mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tday-clear { border-radius: 12px; padding: .7rem .8rem; background: var(--good-soft); color: var(--good); font-weight: 650; font-size: .86rem; }
+.tday-legend { margin: 0; font-size: .76rem; line-height: 1.5; color: var(--text-dim); }
+.tday-unfold { display: none; }
+
+/* A narrower desk: the panel goes above the timeline rather than squeezing it. */
+@media (max-width: 1180px) {
+  .tday-layout { grid-template-columns: minmax(0, 1fr); }
+  .tday-panel { position: static; max-height: none; order: -1; }
+  .tday-panel .tday-need { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .tday-panel .tday-need > div:first-child { flex: 1 1 16rem; }
+  .tday-panel.is-folded .tday-need.is-extra { display: none; }
+  .tday-unfold { display: inline-flex; align-self: flex-start; }
+}
+@media (max-width: 900px) {
+  .tday { --tday-who: 13rem; --tday-act: 5.5rem; }
+}
+
+/* ---- a phone: counts in a row, what needs you, then a plain list ---- */
+@media (max-width: 620px) {
+  .tday-tiles { gap: .4rem; margin-bottom: .7rem; }
+  .tday-tile { padding: .55rem .6rem; border-radius: 13px; }
+  .tday-tile b { font-size: 1.35rem; }
+  .tday-tile b small { display: none; }
+  .tday-tile span { font-size: .72rem; }
+  .tday-long { display: none; }
+  .tday-short { display: inline; }
+
+  .tday-layout { gap: .7rem; }
+  .tday-panel { padding: .75rem; border-radius: 15px; gap: .55rem; }
+  .tday-panel .tday-need { flex-direction: column; align-items: stretch; }
+  .tday-panel .tday-need > div:first-child { flex: none; }
+  .tday-need-act { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
+  .tday-need-act .tday-mini { padding: .6rem .5rem; font-size: .8rem; border-radius: 10px; text-align: center; }
+  .tday-legend { display: none; }
+
+  .tday-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: .55rem; }
+  .tday-chip { flex: none; }
+
+  .tday-board { border-radius: 15px; }
+  .tday-axis, .tday-track { display: none; }
+  .tday-row { grid-template-columns: minmax(0, 1fr) auto; min-height: 0; }
+  .tday-who {
+    grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "face name pill" "face sub pill";
+    padding: .6rem .75rem; column-gap: .6rem;
+  }
+  .tday-sub { display: block; }
+  .tday-who > .tday-pill { justify-self: end; max-width: 9.5rem; }
+  .tday-act { padding-right: .6rem; }
+  .tday-act:empty, .tday-row.has-need .tday-act { display: none; }
+  .tday-dept-head { padding: .4rem .75rem; }
+}
+
+/* ---- on paper: everything, no buttons ---- */
+@media print {
+  .tday-layout { grid-template-columns: minmax(0, 1fr); }
+  .tday-chips, .tday-act, .tday-need-act, .tday-panel { display: none !important; }
+  .tday-row, .tday-dept { break-inside: avoid; }
+  .tday-board, .tday-tile, .tday-pill, .tday-shift, .tday-worked, .tday-in { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
