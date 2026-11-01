@@ -18,7 +18,7 @@
  */
 
 const SHELL = 'hive-shell-v2';
-const SHELL_FILES = ['/', '/index.html', '/styles.css', '/manifest.webmanifest'];
+const SHELL_FILES = ['/', '/index.html', '/styles.css', '/css/att-today.css', '/css/att-reports.css', '/css/att-leave.css', '/css/att-signoff.css', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
