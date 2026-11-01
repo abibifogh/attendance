@@ -1,5 +1,5 @@
 import { all } from '../lib/db.js';
-import { gatherOnce, arrange } from './assistant.js';
+import { gatherOnce, arrange, myStaffAnswers } from './assistant.js';
 import { insightList } from './approvals.js';
 import { dutyCard, mondayOf } from './duty.js';
 import { roleOf, accessOf } from './till.js';
@@ -85,12 +85,23 @@ async function checkedLately(env, now) {
   return { checked: Number(done), of: days * 3 };
 }
 
-/** What this person sent up that waits for an admin: a supervisor's answers, reconciliations, accepts and corrections. */
-async function sentUp(env, account) {
+/**
+ * What this person sent up that waits for somebody else: a supervisor's
+ * answers, reconciliations, accepts and corrections waiting for an admin, and
+ * their own answers in HIVE (as staff, by the same email) waiting for a
+ * decision, oldest first.
+ */
+async function sentUp(env, account, now) {
   const name = account?.name || account?.email;
   if (!name) return [];
-  const { items } = await insightList(env).catch(() => ({ items: [] }));
-  return items.filter((x) => x.who === name).map((x) => ({ key: `${x.kind}:${x.id}`, title: x.title, why: x.sub, at: x.askedAt, kind: x.kindLabel }));
+  const [{ items }, mine] = await Promise.all([
+    insightList(env).catch(() => ({ items: [] })),
+    myStaffAnswers(env, account, { now }).catch(() => []),
+  ]);
+  return [
+    ...items.filter((x) => x.who === name).map((x) => ({ key: `${x.kind}:${x.id}`, title: x.title, why: x.sub, at: x.askedAt, kind: x.kindLabel })),
+    ...mine,
+  ].sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
 }
 
 /** The whole page. */
@@ -105,7 +116,7 @@ export async function today(env, account, { now = Date.now() } = {}) {
   const access = admin || role !== 'supervisor' ? {} : await accessOf(env, account).catch(() => ({}));
   const [duty, waiting, week, todayRows, checks] = await Promise.all([
     dutyCard(env, account, { now, admin }).catch(() => null),
-    admin ? [] : sentUp(env, account),
+    sentUp(env, account, now),
     didSince(env, account, `${mondayOf(day)} 00:00:00`),
     didSince(env, account, `${day} 00:00:00`),
     admin || (access.check || 0) >= 1 ? checkedLately(env, now) : null,

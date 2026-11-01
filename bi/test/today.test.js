@@ -169,3 +169,59 @@ test('their Maintenance jobs and Team Tasks on Today, with Done sent to the app 
   await today({ DB: env.DB }, SAM, { now: SAT });
   assert.equal(asked.length, 0);
 });
+
+test('somebody’s own answers in HIVE are not theirs to decide: they are on their list as sent up', async () => {
+  const { env } = await world();
+  const { raw: hraw, db: hdb } = freshDb('../migrations');
+  hraw.exec(`INSERT INTO users (id, name, role, active, email) VALUES (8, 'Kofi Test', 'staff', 1, 'kofi@example.test'), (9, 'Sam Test', 'staff', 1, 'SAM@example.test');
+    INSERT INTO till_answer (key, user_id, how, text, at) VALUES
+      ('drawer:2026-10-27:morning', 8, 'explain', 'A guest paid by MoMo.', '2026-10-28 09:00:00'),
+      ('drawer:2026-10-29:night', 9, 'explain', 'An expense of 1125 was moved twice.', '2026-10-30 09:00:00')`);
+  env.ATT_DB = hdb;
+  const t = await today(env, SAM, { now: SAT });
+  const decide = t.items.filter((x) => x.key.startsWith('staffanswer:')).map((x) => x.title);
+  assert.deepEqual(decide, ['Kofi Test answered: “A guest paid by MoMo.”'], 'Kofi’s to decide; Sam’s own not');
+  assert.deepEqual(t.waiting.map((w) => [w.title, w.why]), [
+    ['Your answer in HIVE: “An expense of 1125 was moved twice.”', 'Thu 29 Oct night'],
+    ['Answered “Explained”', 'The drawer count, Wed 28 Oct morning · by Sam Test'],
+  ], 'their own answer waiting for a decision, and what they sent up, oldest first');
+});
+
+test('a warning when somebody’s emails do not match Maintenance or Team Tasks', async () => {
+  const { env, raw } = await world();
+  const assistant = await import('../src/routes/assistant.js');
+  env.MAINTENANCE_APPROVALS_URL = 'https://mx.example.test/functions/v1/approvals';
+  env.SSO_SECRET_MAINTENANCE = 'test-secret';
+  raw.exec("INSERT INTO accounts (id, email, name, active, is_owner) VALUES (4, 'kofi@example.test', 'Kofi Test', 1, 0), (5, '', 'Efua Test', 1, 0); INSERT INTO account_access (account_id, system_id, role) VALUES (4, 'insight', 'supervisor'), (5, 'insight', 'supervisor')");
+  const people = [
+    { app: 'maintenance', name: 'Sam Test', email: 'sam@example.test' },
+    { app: 'teamtasks', name: 'Sam Kwame Test', email: 'sam.test@other.test' },
+    { app: 'teamtasks', name: 'Kofi Test', email: 'kofi@example.test' },
+    { app: 'teamtasks', name: 'Efua Test', email: 'efua@example.test' },
+    { app: 'maintenance', name: 'Ama Test', email: 'ama@example.test' },
+  ];
+  const had = assistant.io.fetch;
+  assistant.io.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.action === 'people') return Response.json({ ok: true, people });
+    return Response.json({ ok: true, items: [], found: { maintenance: body.email === 'sam@example.test' || body.email === 'ama@example.test', teamtasks: body.email === 'kofi@example.test' } });
+  };
+  try {
+    // Sam: found in Maintenance; in Team Tasks somebody of his name has another email.
+    let t = await today(env, SAM, { now: SAT });
+    const mine = t.items.find((x) => x.key === 'emails:teamtasks');
+    assert.deepEqual([mine.title, mine.why, mine.when, mine.area], ['Your email doesn’t match Team Tasks',
+      'Insight has sam@example.test; Team Tasks has sa•••@other.test. Your Team Tasks tasks can’t show here until they are the same.', 'today', 'people']);
+    assert.equal(t.items.some((x) => x.key === 'emails:maintenance'), false, 'matched there');
+    // An admin: everybody's, with both addresses.
+    t = await today(env, OWNER, { now: SAT });
+    const all = t.items.filter((x) => x.key.startsWith('emails:')).map((x) => [x.title, x.why]);
+    assert.deepEqual(all, [
+      ['Efua Test’s email doesn’t match Team Tasks', 'Insight: no email · Team Tasks: Efua Test efua@example.test'],
+      ['Sam Test’s email doesn’t match Team Tasks', 'Insight: sam@example.test · Team Tasks: Sam Kwame Test sam.test@other.test'],
+    ], 'Kofi matches; Ama is not in Insight; nobody of Ama Test’s (the owner’s) name in Team Tasks');
+  } finally { assistant.io.fetch = had; }
+  assert.equal(assistant.sameName('Godfred', 'Godfred Mensah'), true);
+  assert.equal(assistant.sameName('Ama Test', 'Ama B. Test'), true);
+  assert.equal(assistant.sameName('Ama Test', 'Ama Other'), false);
+});

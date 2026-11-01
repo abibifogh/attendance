@@ -84,6 +84,27 @@ const appsLinked = (env) => Boolean(env.SSO_SECRET_MAINTENANCE && tasksUrl(env))
 const askTasks = (env, body) => mgmt.ask({ url: tasksUrl(env), secret: env.SSO_SECRET_MAINTENANCE, path: '/tasks', body, fetchImpl: io.fetch, what: 'Maintenance' })
   .catch((err) => { throw new Error(/management report/.test(err.message) ? 'Maintenance does not list tasks for Insight yet: its tasks function is not deployed.' : err.message); });
 const APP_LABEL = { maintenance: 'Maintenance', teamtasks: 'Team Tasks' };
+const APP_THINGS = { maintenance: 'jobs', teamtasks: 'tasks' };
+/** An admin's: whose emails in Insight differ from theirs in Maintenance or Team Tasks. */
+const EMAILS = { id: 'emails', label: 'Emails in Maintenance and Team Tasks', read: readEmailMismatches, area: 'people', tag: 'People' };
+
+const normName = (n) => String(n || '').toLowerCase().replace(/[^a-z\u00c0-\u024f]+/g, ' ').trim().split(' ').filter(Boolean);
+/**
+ * Whether two names look like the same person: the same words; or the same
+ * first and last name (a middle name on one side only); or one is a single
+ * name that is the other's first.
+ */
+export function sameName(a, b) {
+  const x = normName(a);
+  const y = normName(b);
+  if (!x.length || !y.length) return false;
+  if (x.join(' ') === y.join(' ')) return true;
+  if (x.length > 1 && y.length > 1) return x[0] === y[0] && x.at(-1) === y.at(-1);
+  return x[0] === y[0];
+}
+const lowerEmail = (e) => String(e || '').trim().toLowerCase();
+/** "go•••@example.test": enough to recognise one's own address, not to read somebody else's. */
+export const maskEmail = (e) => { const [u, d] = String(e || '').split('@'); return d ? `${u.slice(0, 2)}•••@${d}` : '•••'; };
 
 /**
  * The last list read for each admin, for a minute: the summary and Ask come
@@ -114,7 +135,7 @@ async function requireMember(account) {
 export async function sourcesFor(env, account) {
   const role = roleOf(account);
   const apps = appsLinked(env) && account?.email ? [APPS] : [];
-  if (role === 'admin') return [GIVEN, PROOF, ...apps, ...SOURCES, ENVELOPES];
+  if (role === 'admin') return [GIVEN, PROOF, ...apps, ...SOURCES, ENVELOPES, ...(appsLinked(env) ? [EMAILS] : [])];
   const access = await accessOf(env, account);
   const reports = await reportsOf(env, account).catch(() => []);
   const out = [];
@@ -431,8 +452,27 @@ async function readGiven(env, account, now) {
 
 /** Their open Maintenance jobs and Team Tasks, found by their email, each with Done where the app allows it from here. */
 async function readAppTasks(env, account, now) {
-  const { items } = await askTasks(env, { action: 'list', email: account.email });
-  return (items || []).map((x) => {
+  const { items, found } = await askTasks(env, { action: 'list', email: account.email });
+  // Not found in an app by their email, but somebody there has their name:
+  // their emails do not match, so that app's work cannot show. An admin has
+  // the whole list of these instead.
+  const warnings = [];
+  const missing = Object.keys(APP_LABEL).filter((app) => found && found[app] === false);
+  if (missing.length && roleOf(account) !== 'admin') {
+    const { people } = await askTasks(env, { action: 'people' }).catch(() => ({ people: [] }));
+    for (const app of missing) {
+      const them = (people || []).find((p) => p.app === app && p.email && p.email !== lowerEmail(account.email) && sameName(p.name, account.name));
+      if (!them) continue;
+      warnings.push({
+        tab: 'fix', key: `emails:${app}`, area: 'people', tag: 'Your email', sev: 'warn',
+        title: `Your email doesn’t match ${APP_LABEL[app]}`,
+        why: `Insight has ${account.email}; ${APP_LABEL[app]} has ${maskEmail(them.email)}. Your ${APP_LABEL[app]} ${APP_THINGS[app]} can’t show here until they are the same.`,
+        advice: 'Ask an admin to make them the same: in Insight under Settings › People & access, or in that app.',
+        actions: [],
+      });
+    }
+  }
+  return [...warnings, ...(items || []).map((x) => {
     const app = APP_LABEL[x.system] || 'Maintenance';
     return {
       tab: 'fix', key: `app:${x.system}:${x.id}`, area: x.system === 'teamtasks' ? 'teamtasks' : 'maintenance', tag: app,
@@ -443,7 +483,33 @@ async function readAppTasks(env, account, now) {
         x.link ? { label: `Open in ${app}`, href: x.link, external: true, primary: !x.canDone } : null,
       ].filter(Boolean),
     };
-  });
+  })];
+}
+
+/** Everybody with Insight whose email is not in Maintenance or Team Tasks, where somebody there has their name. */
+async function readEmailMismatches(env) {
+  const { people } = await askTasks(env, { action: 'people' });
+  const accounts = await all(env.DB, `SELECT DISTINCT a.id, a.name, a.email FROM accounts a
+    LEFT JOIN account_access x ON x.account_id = a.id AND x.system_id = 'insight'
+    WHERE a.active = 1 AND (x.account_id IS NOT NULL OR a.is_owner = 1) ORDER BY a.name`).catch(() => []);
+  const out = [];
+  for (const a of accounts) {
+    const email = lowerEmail(a.email);
+    for (const app of Object.keys(APP_LABEL)) {
+      const inApp = (people || []).filter((p) => p.app === app);
+      if (email && inApp.some((p) => p.email === email)) continue;
+      const them = inApp.filter((p) => sameName(p.name, a.name) && p.email !== email);
+      if (!them.length) continue;
+      out.push({
+        tab: 'fix', key: `emails:${a.id}:${app}`, sev: 'warn',
+        title: `${a.name || a.email}’s email doesn’t match ${APP_LABEL[app]}`,
+        why: `Insight: ${a.email || 'no email'} · ${APP_LABEL[app]}: ${them.map((p) => `${p.name} ${p.email || '(no email)'}`).join(', ')}`,
+        advice: `Make them the same, in Insight (Settings › People & access) or in ${APP_LABEL[app]}. Until then their ${APP_LABEL[app]} ${APP_THINGS[app]} are not on their Today.`,
+        actions: [],
+      });
+    }
+  }
+  return out;
 }
 
 /** Done on a Maintenance job or a Team Tasks task, from Today: the app marks it done, as the person. */
@@ -551,22 +617,41 @@ async function readUnchecked(env, account, now) {
 
 /** Answers staff gave in HIVE in the last month that nobody has decided yet. */
 async function readStaffAnswers(env, account, now) {
+  const mine = String(account?.email || '').trim().toLowerCase();
+  // Somebody's own answers are never theirs to decide: they are on their list as sent up instead.
+  const waiting = (await staffAnswersWaiting(env, now)).filter((a) => !mine || a.email !== mine);
+  // One line each, due the day after it was given.
+  return waiting.map((a) => ({
+    tab: 'decide', key: `staffanswer:${a.key}|${a.user_id}`, sev: 'info',
+    title: `${a.name || 'Somebody'} answered${quote(a.text)}`,
+    why: shiftOfKey(a.key), due: plusDay(String(a.at).slice(0, 10), 1), age: daysSince(a.at, now),
+    advice: 'Read what they said: accept it, ask for proof, or send it back.',
+    actions: [{ label: 'Decide', href: '#/inbox', primary: true }],
+  }));
+}
+
+const quote = (text) => (text ? `: “${String(text).slice(0, 90)}${String(text).length > 90 ? '…' : ''}”` : '');
+
+/** Answers staff gave in HIVE in the last month that nobody has decided yet, each with who gave it and their email. */
+async function staffAnswersWaiting(env, now) {
   if (!env.ATT_DB) return [];
   const since = new Date(now - 30 * DAY).toISOString().slice(0, 19).replace('T', ' ');
-  const answers = await all(env.ATT_DB, `SELECT a.key, a.user_id, a.at, a.text, u.name FROM till_answer a LEFT JOIN users u ON u.id = a.user_id
+  const answers = await all(env.ATT_DB, `SELECT a.key, a.user_id, a.at, a.text, u.name, LOWER(TRIM(u.email)) AS email FROM till_answer a LEFT JOIN users u ON u.id = a.user_id
     WHERE a.how <> 'note' AND a.at >= ?1 ORDER BY a.id`, since).catch(() => []);
   if (!answers.length) return [];
   const decided = await all(env.DB, 'SELECT key, hive_user_id, at FROM till_resolution WHERE at >= ?1', since).catch(() => []);
   const latest = new Map();
   for (const a of answers) latest.set(`${a.key}|${a.user_id}`, a);
-  const waiting = [...latest.values()].filter((a) => !decided.some((d) => d.key === a.key && Number(d.hive_user_id) === Number(a.user_id) && String(d.at) >= String(a.at)));
-  // One line each, due the day after it was given.
-  return waiting.map((a) => ({
-    tab: 'decide', key: `staffanswer:${a.key}|${a.user_id}`, sev: 'info',
-    title: `${a.name || 'Somebody'} answered${a.text ? `: “${String(a.text).slice(0, 90)}${String(a.text).length > 90 ? '…' : ''}”` : ''}`,
-    why: shiftOfKey(a.key), due: plusDay(String(a.at).slice(0, 10), 1), age: daysSince(a.at, now),
-    advice: 'Read what they said: accept it, ask for proof, or send it back.',
-    actions: [{ label: 'Decide', href: '#/inbox', primary: true }],
+  return [...latest.values()].filter((a) => !decided.some((d) => d.key === a.key && Number(d.hive_user_id) === Number(a.user_id) && String(d.at) >= String(a.at)));
+}
+
+/** This person's own answers from HIVE (as staff, by the same email) still waiting for somebody to decide. */
+export async function myStaffAnswers(env, account, { now = Date.now() } = {}) {
+  const mine = String(account?.email || '').trim().toLowerCase();
+  if (!mine) return [];
+  return (await staffAnswersWaiting(env, now)).filter((a) => a.email === mine).map((a) => ({
+    key: `staffanswer:${a.key}|${a.user_id}`, title: `Your answer in HIVE${quote(a.text)}`,
+    why: shiftOfKey(a.key), at: a.at, kind: 'Staff answer',
   }));
 }
 
