@@ -229,7 +229,7 @@ other way, such as laundry the laundry system took that ASSD does not show,
 is shown with a −; cash moved out with no label, expenses with no PO and
 expenses above their POs are −, POs above the expenses and a laundry card
 payment not in ASSD are +; a chargeback, a prepaid stay or a safe deposit the
-bank does not show, and money on another register are −). **Reconcile
+bank does not show are −). **Reconcile
 together** is offered only when they net to nothing; when they leave
 something, the rest goes in suspense or on a staff account (below). Any number can be reconciled together, and
 each then counts as answered. Where an exception of the same amount pulling
@@ -626,7 +626,6 @@ amount in those 24 hours. It is shown as a warning to confirm, not a note.
 | Money received that ASSD does not show | Approved on the terminal or received by MoMo during the shift, and not in ASSD. |
 | Did not reach the bank, or went back out | No bank credit six days after approval, a card reversal, or a refund keyed in ASSD. A refund pairs itself with a bank reversal of the same amount, even one on a later day. A refund with no reversal six days on is a difference to answer, not a note: if no money went back to a guest's card (stock put right as a card return, say), ASSD shows that much less card money than was taken. It counts as + in the month table. |
 | Matched only because the amounts add up — confirm | See above: matches made on sums alone, and shifts where the search was cut short. |
-| Money on another register | An ASSD entry on a register other than the front desk's (001) whose payments do not cancel out: money that moved through the back office. It is part of the drawer's story. |
 | The cash you counted did not match ASSD's count | The staff member's own blind count in HIVE differs from ASSD's closing count. |
 | A chargeback, a prepaid stay or a deposit the bank does not show | Critical for a chargeback: the bank took card money back. It names the original card payment when one matches (same card ending and amount, in the 120 days before). A stay prepaid by bank transfer with no bank credit of that amount from two weeks before to three days after, and cash marked banked from the safe with no deposit or credit within four days, are differences too. A MoMo reversal on the statement, and a refund, reversal or void on the terminal, are money that went back. Each takes Refunded to the guest, Disputed with the bank, Chargeback accepted, or Not our payment. A card reversal on the bank that repeats one already on the terminal is shown once. |
 | Explained by the matcher | The same money split differently, paid on one shift and keyed on another within a day (a warning to confirm, see above), a line and its reversal, a cash movement keyed wrong and put back, or a bank credit with no terminal record. Shown so the explanation can be checked. |

@@ -365,7 +365,6 @@ export function summarise(shift, corrections = new Map()) {
     laundryLines: [],
     users: {},
     backOffice: [],
-    backOfficeMoney: [],
     opening: null,
     closing: null,
     moves: [],
@@ -401,18 +400,9 @@ export function summarise(shift, corrections = new Map()) {
     s.users[e.user] = (s.users[e.user] || 0) + 1;
     // Back-office entries (a prepayment moved between accounts on register
     // 015) are posted while a shift is open but never touched its drawer.
-    // Most move money from one account to another inside a guest's bill and
-    // net to nothing. One that does not net is money taken there, which the
-    // drawer never held: kept (backOfficeMoney) as a difference of its own,
-    // with its lines, rather than dropped. Prepayments by bank also go to the
-    // bank match, whatever the register.
+    // Prepayments by bank still go to the bank match, whatever the register.
     if (e.register !== DRAWER) {
       if (e.payments.length) s.backOffice.push({ seq: e.seq, kind: e.kind, user: e.user });
-      const net = e.payments.reduce((t, p) => t + p.amount, 0);
-      if (net !== 0) {
-        s.backOfficeMoney.push({ seq: e.seq, kind: e.kind, user: e.user, amount: net,
-          lines: e.payments.map((p) => ({ method: p.method, label: p.label, amount: p.amount })) });
-      }
       continue;
     }
     let paidCash = 0;
