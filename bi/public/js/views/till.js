@@ -880,6 +880,10 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     const days = t ? h('input', { type: 'number', min: '0', max: '90', value: String(t.unbilledDays), style: 'width:5rem', id: 'tl-unbilled' }) : null;
     const back = t ? h('input', { type: 'number', min: '7', max: '730', value: String(t.lookbackDays ?? 90), style: 'width:5rem', id: 'tl-lookback' }) : null;
     const laundry = t ? h('input', { type: 'number', min: '1', max: '60', value: String(t.laundryDays ?? 3), style: 'width:5rem', id: 'tl-laundry' }) : null;
+    // Who puts right the POs still using a stand-in vendor or item.
+    const fixer = t?.placeholderPeople ? h('select', { id: 'tl-placeholder' },
+      h('option', { value: '', selected: !t.placeholderTo }, 'Shared out among supervisors'),
+      t.placeholderPeople.map((p) => h('option', { value: String(p.id), selected: Number(t.placeholderTo) === p.id }, `${p.name}${p.role === 'admin' ? ' (admin)' : ''}`))) : null;
     const said = h('span.small');
     const row = (label, help, input, unit = '') => h('div.tl-limit', h('div', h('strong', label), h('div.tl-small', help)), h('label', input, unit));
     return h('div.card',
@@ -892,7 +896,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
             await api('/till/settings', { method: 'POST', body: { threshold: amount.value, checkoutTime: checkout.value } });
             let note = 'Saved.';
             if (t) {
-              const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value, laundryDays: laundry.value } });
+              const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value, laundryDays: laundry.value, ...(fixer ? { placeholderTo: fixer.value } : {}) } });
               if (out.checked) note = out.checked.ok ? 'Saved, and Odoo asked again for the new look-back.' : `Saved. Odoo could not be asked: ${out.checked.error}`;
             }
             forget();
@@ -904,6 +908,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
       row('Small differences', 'A difference this small or smaller is left off everybody’s list and off Unpaid stays, and a supervisor’s correction this small counts without waiting for an admin.', amount, ' GH₵'),
       days ? row('PO without a posted bill', 'Raise it on the Inbox after this many days, from the day the cash left or the day it was ordered.', days, ' days') : null,
       back ? row('Look for POs over the last', 'How far back the Inbox looks for cash POs and bills.', back, ' days') : null,
+      fixer ? row('POs with a stand-in vendor or item go to', 'A PO in Odoo still using “Vendor to confirm” or the stand-in item (Buying › Receipts › Settings) is a to-do for this person, until it has the real ones.', fixer) : null,
       laundry ? row('Refresh reads the laundry for the last', 'Refresh now reads the laundry system this far back, up to today.', laundry, ' days') : null,
       row('Guests leave by', 'Check-out time on their last day. Unpaid stays uses it to tell who leaves in the next 24 hours.', checkout),
       h('div.tl-actions', h('button.btn.primary', { type: 'submit' }, 'Save'), said)));

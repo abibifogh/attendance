@@ -295,6 +295,30 @@ test('a PO changed to another total in Odoo: they and an admin are asked, and th
   assert.equal((await floats.linkView(env, { t: out.token })).sent[0].amount, 33000);
 });
 
+test('an item to check on a PO whose total was changed in Odoo: looked at once an admin answers the new total', async () => {
+  const { env, pos } = await setUp();
+  // The item is not in Odoo: the PO uses the placeholder, and there is something to check.
+  READS.polish = { vendor: 'A Hardware Shop', amount: '152', description: '10 Polish', date: '2026-10-27', problem: '' };
+  await env.DB.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('receipts_product', '{"id":22,"name":"Padlock"}')`).run();
+  const out = await floats.give(env, { name: 'Kofi Test', amount: '1000', day: '2026-10-12' }, OWNER);
+  await floats.linkSend(env, { t: out.token, file: jpg('polish') });
+  let r = (await floats.detail(env, out.personId)).receipts[0];
+  assert.equal(r.read, 'check');
+  assert.equal(r.toLookAt, true, 'an item to check');
+  // Still a draft, changed in Odoo to 150: an admin accepts it, which is looking at it.
+  pos[0].amount_total = 150;
+  r = (await floats.detail(env, out.personId)).receipts[0];
+  assert.equal(r.change.now, 15000);
+  assert.equal(r.toLookAt, true);
+  await floats.decideAmount(env, { id: r.id, answer: 'accept' }, OWNER);
+  r = (await floats.detail(env, out.personId)).receipts[0];
+  assert.equal(r.toLookAt, false);
+  assert.equal((await floats.list(env)).tiles.toLookAt, 0);
+  // Answer taken off: to look at again.
+  await floats.decideAmount(env, { id: r.id, answer: '' }, OWNER);
+  assert.equal((await floats.detail(env, out.personId)).receipts[0].toLookAt, true);
+});
+
 // ------------------------------------------------- where receipts go: the POS --
 
 /** A made-up POS: the three signed paths Insight calls, and the orders it holds. */

@@ -332,3 +332,79 @@ test('a PO paid over several shifts (a top-up, change back) is what left the dra
   assert.equal(p.paidDay, '2026-08-01', 'the day it was first paid');
   assert.match(p.source, /top-up 2026-08-03 morning; change back 2026-08-04 night/);
 });
+
+test('POs in Odoo still using a stand-in vendor or item: a to-do each for the person chosen, gone once put right', async () => {
+  const { env } = await setUp();
+  const { state, fetchImpl: base } = odoo();
+  // The stand-ins chosen in Buying › Receipts › Settings.
+  await env.DB.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('receipts_vendor', '{"id":90,"name":"Vendor to confirm"}'), ('receipts_product', '{"id":99,"name":"Item to classify"}')`).run();
+  state.orders.push(
+    { id: 11, name: 'P02616', partner_id: [90, 'Vendor to confirm'], amount_total: 150, state: 'draft', date_order: '2026-10-27 09:00:00', partner_ref: 'FLT/KOBY/002', origin: 'FLT/KOBY/002 · Float · Kobby Test', invoice_ids: [] },
+    { id: 12, name: 'P02617', partner_id: [4, 'A Meat Supplier'], amount_total: 80, state: 'purchase', date_order: '2026-10-28 09:00:00', invoice_ids: [] },
+    { id: 13, name: 'P02618', partner_id: [90, 'Vendor to confirm'], amount_total: 40, state: 'cancel', date_order: '2026-10-28 09:00:00', invoice_ids: [] },
+  );
+  const items = [{ order_id: [11, 'P02616'], product_id: [99, 'Item to classify'], state: 'draft' }, { order_id: [12, 'P02617'], product_id: [99, 'Item to classify'], state: 'purchase' }];
+  // The stand-in reads: by vendor, and by the item on a line.
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const model = url.split('/json/2/')[1].split('/')[0];
+    const eq = (f) => (body.domain || []).find((d) => d[0] === f && d[1] === '=');
+    const live = (r) => r.state !== 'cancel';
+    if (model === 'purchase.order' && eq('partner_id')) return Response.json(state.orders.filter((o) => o.partner_id[0] === eq('partner_id')[2] && live(o)));
+    if (model === 'purchase.order.line' && eq('product_id')) return Response.json(items.filter((l) => l.product_id[0] === eq('product_id')[2] && live(l)));
+    if (model === 'purchase.order' && (body.domain || []).some((d) => d[0] === 'id')) {
+      const ids = body.domain.find((d) => d[0] === 'id')[2];
+      return Response.json(state.orders.filter((o) => ids.includes(o.id) && live(o)));
+    }
+    return base(url, init);
+  };
+  // Nobody chosen yet: shared out among supervisors, like any to-do.
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-11-01' });
+  let list = await todo.listTodos(env, OWNER);
+  let mine = list.items.filter((t) => t.kind === 'placeholder');
+  assert.deepEqual(mine.map((t) => [t.ref, t.detail.vendorToConfirm, t.detail.itemToConfirm]), [['P02616', true, true], ['P02617', false, true]]);
+  assert.equal(mine[0].kindLabel, 'PO with a stand-in vendor or item');
+  assert.equal(mine[0].detail.ref, 'FLT/KOBY/002');
+  assert.match(mine[0].detail.url, /purchase\.order&id=11/);
+  assert.ok(mine.every((t) => t.assignee));
+
+  // An admin chooses who puts them right: theirs now, and every new one.
+  assert.ok(list.placeholderPeople.some((p) => p.id === 22));
+  await assert.rejects(todo.saveTodoSettings(env, { placeholderTo: 999 }, OWNER), /Choose a supervisor or an admin/);
+  await todo.saveTodoSettings(env, { placeholderTo: 22 }, OWNER, { today: '2026-11-01' });
+  list = await todo.listTodos(env, OWNER);
+  assert.equal(list.placeholderTo, 22);
+  assert.ok(list.items.filter((t) => t.kind === 'placeholder').every((t) => t.assignee.id === 22));
+  // On their Today, one line each, opening the PO in Odoo.
+  const assistant = await import('../src/routes/assistant.js');
+  const yaw = { ...SUP_B, email: 'y@example.test' };
+  const got = await assistant.gather(env, yaw, { now: Date.parse('2026-11-01T09:00:00Z') });
+  const lines = got.items.filter((x) => String(x.key).startsWith('todo:'));
+  assert.deepEqual(lines.map((x) => x.title), ['P02616: put in the real vendor and the real item', 'P02617: put in the real item']);
+  assert.equal(lines[0].actions[0].label, 'Open in Odoo');
+  assert.equal(lines[0].actions[0].external, true);
+  // A note on it stays a note: Odoo closes it.
+  await todo.answerTodo(env, mine[0].id, { answer: 'Asked Kobby which shop it was' }, yaw);
+  assert.equal((await todo.listTodos(env, OWNER)).items.find((t) => t.ref === 'P02616').state, 'open');
+
+  // Put right in Odoo: the real vendor on one, the real item on the other's line. Gone at the next read.
+  state.orders.find((o) => o.id === 11).partner_id = [4, 'A Meat Supplier'];
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-11-02' });
+  list = await todo.listTodos(env, OWNER);
+  assert.deepEqual(list.items.filter((t) => t.kind === 'placeholder').map((t) => [t.ref, t.detail.vendorToConfirm]), [['P02616', false], ['P02617', false]]);
+  items.length = 0;
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-11-02' });
+  list = await todo.listTodos(env, OWNER);
+  assert.equal(list.items.filter((t) => t.kind === 'placeholder').length, 0);
+  const closed = (await todo.listTodos(env, OWNER, { closed: true })).items.filter((t) => t.kind === 'placeholder');
+  assert.equal(closed.length, 2);
+  assert.match(closed[0].closedWhy, /real vendor and item/);
+
+  // Odoo not answering: nothing closes by mistake.
+  items.push({ order_id: [12, 'P02617'], product_id: [99, 'Item to classify'], state: 'purchase' });
+  await cashpo.refreshCashPos(env, { fetchImpl, today: '2026-11-03' });
+  assert.equal((await todo.listTodos(env, OWNER)).items.filter((t) => t.kind === 'placeholder').length, 1);
+  const down = async (url, init) => (url.includes('purchase.order.line') ? Promise.reject(new Error('offline')) : fetchImpl(url, init));
+  await cashpo.refreshCashPos(env, { fetchImpl: down, today: '2026-11-03' }).catch(() => null);
+  assert.equal((await todo.listTodos(env, OWNER)).items.filter((t) => t.kind === 'placeholder').length, 1);
+});

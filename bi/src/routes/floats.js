@@ -226,8 +226,14 @@ const destOf = (r) => r.dest || 'odoo';
 /** Made somewhere: a PO in Odoo, or an order in the POS. */
 const placed = (r) => Boolean(destOf(r) === 'odoo' ? r.po_name : r.pos_id);
 
-/** Something to look at: not read, read with something to check, no PO, or waiting to be placed. */
-const toLookAt = (r) => Boolean((r.status === 'checking' && (destOf(r) === 'wait' || !placed(r) || ['check', 'unread', 'failed'].includes(r.read_status)))
+/**
+ * Something to look at: not read, read with something to check, no PO, or
+ * waiting to be placed. Something to check on its PO (an item not matched)
+ * is looked at once an admin has answered the PO's new total: somebody
+ * changed that PO in Odoo, and an admin has seen it.
+ */
+const toLookAt = (r) => Boolean((r.status === 'checking' && (destOf(r) === 'wait' || !placed(r) || ['unread', 'failed'].includes(r.read_status)
+  || (r.read_status === 'check' && !(changeOf(r) && r.admin_answer))))
   || (changeOf(r) && !r.admin_answer));
 
 /**

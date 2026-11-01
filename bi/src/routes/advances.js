@@ -453,7 +453,7 @@ export async function tellDifferences(env, { fetchImpl, on = today() } = {}) {
               recipients: to, kind: 'till.approval',
               title: `${x.po}: ${x.diff < 0 ? `refund of ${cedis(amount)}` : `deficit of ${cedis(amount)}`}`,
               body: `Final price ${cedis(x.total)}; ${cedis(x.paid)} was paid from the drawer on ${x.day} ${x.slot}${x.by ? ` (${x.by})` : ''}. `
-                + 'More than five days ago, so only admins are told. See Insight › Front desk › Shifts › To sort out › Advances.',
+                + 'More than five days ago, so only admins are told. See Insight › To sort out › Advances.',
             },
           }).catch(() => null);
           sentTo = 'admins';

@@ -5,7 +5,8 @@ import { api } from '../api.js';
  * The money to-do list: its items, as the Inbox shows them.
  *
  * Cash POs Odoo has no bill for, payments that are not what their PO says,
- * and POs Odoo has no posted bill for however they were paid. Each is given
+ * POs Odoo has no posted bill for however they were paid, and POs still using
+ * a stand-in vendor or item. Each is given
  * to a supervisor; a supervisor sees their own, an admin sees everybody's and
  * decides the answers.
  *
@@ -28,6 +29,15 @@ export const ageTone = (days) => (days >= 21 ? 'old' : days >= 14 ? 'aging' : ''
 export const supplierOf = (t) => (t.kind === 'nopo' ? t.detail?.supplier : t.detail?.vendor) || 'No supplier named';
 function what(t) {
   const d = t.detail || {};
+  if (t.kind === 'placeholder') {
+    const needs = [d.vendorToConfirm ? 'the vendor' : null, d.itemToConfirm ? 'the item' : null].filter(Boolean);
+    return [
+      h('p', `${d.po}${d.ref ? ` (${d.ref})` : ''}, ${money(d.poTotal)}, ordered ${dayText(d.orderedOn)}, still has a stand-in for ${needs.join(' and ') || 'its vendor or item'}: Insight could not match the receipt it came from.`),
+      d.origin ? h('p.small.muted', `Made from: ${d.origin}`) : null,
+      h('p.small.muted', 'Open it in Odoo and put in the real vendor and item. This item closes by itself once Odoo is read again.'),
+      d.url ? h('p', h('a.btn.primary', { href: d.url, target: '_blank', rel: 'noopener' }, `Open ${d.po} in Odoo`)) : null,
+    ];
+  }
   if (t.kind === 'unbilled' && !d.paidFrom) {
     return [
       h('p', `${d.po} from ${d.vendor || 'a supplier'}, ordered ${dayText(d.orderedOn)} for ${money(d.poTotal)}, is confirmed in Odoo `
@@ -62,7 +72,10 @@ function what(t) {
 /** What the Inbox's line for an item says under its title. */
 export function todoSub(t, { admin } = {}) {
   return [
-    t.state === 'answered' ? 'waiting for an admin' : { unbilled: t.detail?.drafts?.length ? 'draft bill' : 'no bill', differs: 'paid ≠ PO', nopo: 'no PO' }[t.kind],
+    t.state === 'answered' ? 'waiting for an admin' : {
+      unbilled: t.detail?.drafts?.length ? 'draft bill' : 'no bill', differs: 'paid ≠ PO', nopo: 'no PO',
+      placeholder: [t.detail?.vendorToConfirm ? 'vendor' : null, t.detail?.itemToConfirm ? 'item' : null].filter(Boolean).join(' + ') + ' to confirm',
+    }[t.kind],
     t.detail?.paidFrom ? (t.detail.paidFrom === 'safe' ? 'safe' : 'drawer') : (t.kind === 'unbilled' ? 'ordered' : null),
     admin ? (t.assignee?.name || 'nobody yet') : null,
   ].filter(Boolean).join(' · ');
@@ -93,6 +106,8 @@ export function todoDetail(t, { admin, supervisors = [], after }) {
     h('div.td-facts',
       t.kind === 'nopo'
         ? [fact('Bill dated', dayText(d2.day)), fact('Their number', d2.ref || '–')]
+        : t.kind === 'placeholder'
+          ? [fact('Ordered', dayText(d2.orderedOn)), fact('To put right', [d2.vendorToConfirm ? 'Vendor' : null, d2.itemToConfirm ? 'Item' : null].filter(Boolean).join(' and ') || '–')]
         : d2.paidFrom
           ? [fact('Paid from', FROM[d2.paidFrom] || d2.paidFrom), fact('On', dayText(d2.paidDay))]
           : [fact('Ordered', dayText(d2.orderedOn)), fact('Paid', 'not from the drawer or safe')],
@@ -100,7 +115,7 @@ export function todoDetail(t, { admin, supervisors = [], after }) {
       fact('With', t.assignee?.name || 'Nobody yet')),
     what(t),
     t.sentBack ? h('p.small.form-error', `Sent back by an admin: ${t.sentBack}`) : null,
-    t.answer && t.state !== 'answered' ? h('p.small', `${t.kind === 'unbilled' ? 'Latest note' : 'Answer'}: ${t.answer} (${t.answeredBy})`) : null,
+    t.answer && t.state !== 'answered' ? h('p.small', `${['unbilled', 'placeholder'].includes(t.kind) ? 'Latest note' : 'Answer'}: ${t.answer} (${t.answeredBy})`) : null,
     t.state === 'answered' ? h('div.sh-waiting',
       h('span', `⏳ Waiting for an admin: ${t.answer} (${t.answeredBy})`),
       admin ? [

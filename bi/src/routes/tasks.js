@@ -90,8 +90,8 @@ async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0
       binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to: to.email, subject, kind: 'insight_todo', senderName: 'Insight',
-        text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\n${link ? `Open it: ${link}\n\n` : ''}It is in Insight (not HIVE): Front desk › Shifts › To sort out › To-do, signed in as ${to.email}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.`,
-        html: `<p><b>${esc(t.what)}</b>${esc(from)}.</p><p>It ${esc(when)}. Made by ${esc(t.made_by)}.</p>${link ? `<p><a href="${esc(link)}"><b>Open the to-do in Insight</b></a></p>` : ''}<p>It is in Insight (not HIVE): Shifts › Inbox › <b>To-do</b>, signed in as ${esc(to.email)}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.</p>`,
+        text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\n${link ? `Open it: ${link}\n\n` : ''}It is in Insight (not HIVE): To sort out › To-do, signed in as ${to.email}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.`,
+        html: `<p><b>${esc(t.what)}</b>${esc(from)}.</p><p>It ${esc(when)}. Made by ${esc(t.made_by)}.</p>${link ? `<p><a href="${esc(link)}"><b>Open the to-do in Insight</b></a></p>` : ''}<p>It is in Insight (not HIVE): To sort out › <b>To-do</b>, signed in as ${esc(to.email)}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.</p>`,
       },
     });
     return true;

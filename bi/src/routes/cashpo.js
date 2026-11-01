@@ -1,8 +1,9 @@
 import { all, first, getSettings, run, writeAll } from '../lib/db.js';
 import { HttpError } from '../lib/http.js';
 import { addDays, dow, dowLabel, isoWeek, month } from '../lib/dates.js';
-import { cashPoDetails, confirmedPoBills } from '../connectors/odoo.js';
+import { cashPoDetails, confirmedPoBills, placeholderPos } from '../connectors/odoo.js';
 import { odooSource } from './safebook.js';
+import { receiptSettings } from './receipts.js';
 import { requireAdmin, roleOf } from './till.js';
 import { syncTodos, todoCounts, lookbackDays } from './todo.js';
 
@@ -141,8 +142,32 @@ export async function refreshCashPos(env, { fetchImpl, today } = {}) {
     o.name, o.vendor, o.total, o.state, o.orderedOn, o.billed ? 1 : 0, o.posted ? 1 : 0, JSON.stringify(o.drafts), at,
   )));
 
+  // POs still using a stand-in vendor or item: to-dos for whoever puts them right.
+  const placeholders = await readPlaceholders(env, source, { fetchImpl, at });
+
   const todos = await syncTodos(env, { today });
-  return { ok: true, pos: rows.length, billed: rows.filter((r) => r.billed).length, unbilled: cost.pos, unbilledAmount: cost.amount, unknown, todos };
+  return { ok: true, placeholders, pos: rows.length, billed: rows.filter((r) => r.billed).length, unbilled: cost.pos, unbilledAmount: cost.amount, unknown, todos };
+}
+
+/**
+ * POs in Odoo still using the placeholder vendor or item chosen in Buying ›
+ * Receipts › Settings, kept for the to-do list. Neither chosen: none. Odoo
+ * not answering: the list is left as it was, so nothing closes by mistake.
+ */
+async function readPlaceholders(env, source, { fetchImpl, at }) {
+  const { vendor, product } = await receiptSettings(env);
+  if (!vendor && !product) { await run(env.DB, 'DELETE FROM odoo_placeholder_po'); return 0; }
+  let found;
+  try {
+    found = await placeholderPos({ ...source, vendorId: vendor?.id, productId: product?.id, ...(fetchImpl ? { fetchImpl } : {}) });
+  } catch (err) { console.error('Stand-in POs:', err); return null; }
+  await run(env.DB, 'DELETE FROM odoo_placeholder_po');
+  await writeAll(env.DB, found.map((o) => env.DB.prepare(`INSERT INTO odoo_placeholder_po
+    (po, odoo_id, vendor, total, state, ordered_on, origin, ref, vendor_to_confirm, item_to_confirm, url, checked_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT (po) DO NOTHING`).bind(
+    o.name, o.id, o.vendor, o.total, o.state, o.orderedOn, o.origin, o.ref, o.vendorToConfirm ? 1 : 0, o.itemToConfirm ? 1 : 0, o.url, at,
+  )));
+  return found.length;
 }
 
 /**
