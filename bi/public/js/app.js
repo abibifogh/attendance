@@ -66,7 +66,8 @@ const SHIFT_PATHS = { shifts: 'shifts', inbox: 'inbox', people: 'people', report
 
 const ROUTES = [
   // What needs an admin in every system, with advice; every approval, decided here; and the morning numbers.
-  { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'admin', own: true },
+  // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
+  { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'member', own: true },
   { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
   { path: 'brief', label: 'Brief', section: 'assistant', page: 'Assistant', render: renderBrief, needs: 'insight' },
 
@@ -141,6 +142,8 @@ function allowed(route) {
   if (route.needs === 'session') return true;
   // Owners and admins load files under Settings › Connections & files; this page is for uploaders.
   if (route.needs === 'upload') return me.till?.role === 'uploader';
+  // Anybody given Insight in any role.
+  if (route.needs === 'member') return Boolean(me.isOwner || me.bootstrap || me.till?.role);
   if (route.part && !(me.isOwner || me.bootstrap) && !shiftsParts(me.till)[route.part]) return false;
   if (me.isOwner || me.bootstrap) return true;
   if (route.needs === 'shifts') return ['admin', 'supervisor'].includes(me.till?.role);

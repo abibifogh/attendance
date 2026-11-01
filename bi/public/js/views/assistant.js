@@ -3,8 +3,9 @@ import { api } from '../api.js';
 import { state } from '../app.js';
 
 /**
- * The Assistant: what needs the admin, from every system, with what Insight
- * would do about each.
+ * The Assistant: what needs you, from every system, with what Insight would
+ * do about each. An admin's covers everything; anybody else's only what their
+ * access lets them see, with amounts only for whoever may see money.
  *
  * The morning summary on top (written by Workers AI from the list, or plain
  * counts), four numbers, then the list in four tabs: Decide, Fix, Review and
@@ -22,7 +23,9 @@ export async function renderAssistant(root) {
   const opened = new Set();
   const done = new Map();
   let data = await api('/assistant');
-  if (!data.counts[tab] && tab !== 'done') tab = TABS.find(([k]) => data.counts[k])?.[0] || 'decide';
+  // Done for you is what Insight did by itself: an admin's to check.
+  const tabsShown = data.admin ? TABS : TABS.filter(([k]) => k !== 'done');
+  if (!data.counts[tab] && (tab !== 'done' || !data.admin)) tab = tabsShown.find(([k]) => data.counts[k])?.[0] || 'decide';
 
   const brief = h('p.as-brief-text', plainBrief(data));
   const briefBy = h('small.as-by');
@@ -41,12 +44,15 @@ export async function renderAssistant(root) {
           h('div.as-acts', h('button.btn.primary', { type: 'button', onclick: startUrgent }, 'Start with the urgent ones'))),
         h('div.as-kpis',
           kpi('Need you', String(data.tiles.needYou), data.tiles.urgent ? `${data.tiles.urgent} urgent` : 'nothing urgent'),
-          kpi('Money at stake', data.tiles.atStake ? money(data.tiles.atStake, { places: 0 }) : '—', data.billsOn ? 'differences, floats, bills' : 'differences and floats'),
+          // Amounts only for whoever may see money.
+          data.money ? kpi('Money at stake', data.tiles.atStake ? money(data.tiles.atStake, { places: 0 }) : '—', data.admin ? (data.billsOn ? 'differences, floats, bills' : 'differences and floats') : 'in your list') : null,
           kpi('Oldest waiting', data.tiles.oldest ? `${data.tiles.oldest} day${data.tiles.oldest === 1 ? '' : 's'}` : '—', ''),
-          kpi('Done for you', String(data.tiles.done), 'in the last day')),
+          data.admin ? kpi('Done for you', String(data.tiles.done), 'in the last day') : null),
         tabs,
         list,
-        h('p.small.muted', 'Decide: waiting on your yes or no. Fix: going wrong, with how to put it right. Review: worth a read. Done for you: what Insight did by itself.')),
+        h('p.small.muted', data.admin
+          ? 'Decide: waiting on your yes or no. Fix: going wrong, with how to put it right. Review: worth a read. Done for you: what Insight did by itself.'
+          : 'Only what your access lets you see: your to-dos, the shifts and answers you look after, and the reports shared with you. Decide: waiting on your yes or no. Fix: going wrong, with how to put it right.')),
       h('aside.as-side', askCard(), readCard())));
   paintTabs();
   paintList();
@@ -58,7 +64,7 @@ export async function renderAssistant(root) {
   }).catch(() => {});
 
   function paintTabs() {
-    mount(tabs, TABS.map(([k, label]) => h('button', {
+    mount(tabs, tabsShown.map(([k, label]) => h('button', {
       type: 'button', role: 'tab', 'aria-selected': String(tab === k), dataset: { k },
       onclick: () => { tab = k; try { sessionStorage.setItem('insight-assistant-tab', k); } catch { /* private mode */ } paintTabs(); paintList(); },
     }, label, h('span.n', String(data.counts[k] || 0)))));
@@ -139,7 +145,8 @@ export async function renderAssistant(root) {
       h('h2', '✨ Ask Insight'),
       box,
       h('div.as-askrow', input, h('button.btn.primary', { type: 'button', onclick: () => send() }, 'Ask')),
-      h('div.as-sugs', ['What needs me most today?', 'Which supplier are we owing most?', 'Why is anything urgent?'].map((s) => h('button', { type: 'button', onclick: () => send(s) }, s))));
+      h('div.as-sugs', (data.admin ? ['What needs me most today?', 'Which supplier are we owing most?', 'Why is anything urgent?'] : ['What needs me most today?', 'What is the oldest thing waiting?', 'Why is anything urgent?'])
+        .map((s) => h('button', { type: 'button', onclick: () => send(s) }, s))));
   }
 
   function readCard() {
@@ -149,7 +156,7 @@ export async function renderAssistant(root) {
         h('span', r.label),
         r.off ? h('small.muted', 'off') : r.ok ? h('small.ok', r.count ? `✓ ${r.count}` : '✓') : h('small.bad', { title: r.error }, '× not read')))),
       data.read.some((r) => !r.ok) ? h('p.small.muted', 'Hover a “not read” to see why. The rest of the list still came.') : null,
-      billsSwitch());
+      data.admin ? billsSwitch() : null);
   }
 
   /** Bills owed in Odoo are left out of what is flagged, unless turned on here. */

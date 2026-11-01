@@ -27,9 +27,57 @@ async function world() {
   return env;
 }
 
-test('only an admin is shown it', async () => {
+const UPLOADER = { id: 4, name: 'Uma Uploader', email: 'uma@example.test', access: [{ systemId: 'insight', role: 'uploader' }] };
+const READER = { id: 5, name: 'Rita Reports', email: 'rita@example.test', access: [{ systemId: 'insight', role: 'reports' }] };
+const NOBODY = { id: 6, name: 'Hive Only', email: 'h@example.test', access: [{ systemId: 'hive', role: 'staff' }] };
+
+test('only somebody given Insight has one', async () => {
   const env = await world();
-  await assert.rejects(assistant.gather(env, SUP, { now: NOW }), /admin/i);
+  await assert.rejects(assistant.gather(env, NOBODY, { now: NOW }), /not been shared/);
+  await assert.rejects(assistant.gather(env, null, { now: NOW }), /not been shared/);
+});
+
+test('a supervisor’s is their own work: to-dos, shifts to check, staff answers; no money unless given it', async () => {
+  const env = await world();
+  const { raw: hraw, db: hdb } = freshDb('../migrations');
+  hraw.exec(`INSERT INTO users (id, name, role, active) VALUES (8, 'Kofi Test', 'staff', 1);
+    INSERT INTO till_answer (key, user_id, how, text, at) VALUES ('drawer:2026-10-27:morning', 8, 'explain', 'A guest paid by MoMo.', '2026-10-28 09:00:00')`);
+  env.ATT_DB = hdb;
+  await run(env.DB, `INSERT INTO till_access (account_id, area, level) VALUES (3, 'check', 2), (3, 'answers', 2), (3, 'files', 0), (3, 'money', 0)`);
+  await run(env.DB, `INSERT INTO money_todo (key, kind, ref, day, amount, assignee_id, assignee_name, state, sent_back, opened_at) VALUES
+    ('nopo:1', 'nopo', 'B001', '2026-10-20', 50000, 3, 'Sam Supervisor', 'open', NULL, '2026-10-21 08:00:00'),
+    ('nopo:2', 'nopo', 'B002', '2026-10-22', 7000, 3, 'Sam Supervisor', 'open', 'Which shift?', '2026-10-23 08:00:00'),
+    ('nopo:3', 'nopo', 'B003', '2026-10-22', 9000, 99, 'Somebody Else', 'open', NULL, '2026-10-23 08:00:00')`);
+  await run(env.DB, "INSERT INTO shift_upload (kind, to_day, at) VALUES ('journal', '2026-10-29', '2026-10-29 07:00:00')");
+  await run(env.DB, "INSERT INTO shift_check (day, slot, by_name, at) VALUES ('2026-10-23', 'morning', 'Sam Supervisor', '2026-10-24 08:00:00')");
+  const d = await assistant.gather(env, SUP, { now: NOW });
+  assert.equal(d.admin, false);
+  assert.equal(d.money, false);
+  assert.deepEqual(d.read.map((r) => r.id), ['mytodos', 'checks', 'staffanswers'], 'nothing an admin alone sees');
+  const keys = d.items.map((x) => x.key);
+  assert.ok(!keys.some((k) => /^(finding|floats|bill|approval|receipts|suppliers|report)/.test(k)), 'no admin items');
+  assert.equal(d.items.find((x) => x.key === 'mytodos:back').title, '1 to-do sent back to you');
+  assert.equal(d.items.find((x) => x.key === 'mytodos:open').title, '1 to-do given to you', 'only their own');
+  assert.equal(d.items.find((x) => x.key === 'checks:open').title, '20 shifts of the last week not checked', '23 to 29 Oct, three a day, less the one checked');
+  assert.equal(d.items.find((x) => x.key === 'staffanswers').title, '1 staff answer from HIVE to decide');
+  assert.ok(d.items.every((x) => x.amount == null), 'no amounts without money');
+  assert.equal(d.tiles.atStake, 0);
+  assert.deepEqual(d.items.filter((x) => x.tab === 'done'), [], 'done for you is an admin’s');
+});
+
+test('an uploader’s is the files; somebody given the Brief sees its findings', async () => {
+  const env = await world();
+  const u = await assistant.gather(env, UPLOADER, { now: NOW });
+  assert.deepEqual(u.read.map((r) => r.id), ['files']);
+  assert.equal(u.items[0].key, 'files:journal');
+  assert.equal(u.items[0].actions[0].href, '#/upload', 'to their own page');
+  let r = await assistant.gather(env, READER, { now: NOW });
+  assert.deepEqual(r.items, [], 'nothing shared, nothing shown');
+  await run(env.DB, "INSERT INTO report_access (account_id, report) VALUES (5, 'brief')");
+  r = await assistant.gather(env, READER, { now: NOW });
+  assert.deepEqual(r.read.map((x) => x.id), ['findings']);
+  assert.equal(r.items[0].title, 'Kofi Test\'s drawer was short three afternoons');
+  assert.equal(r.items[0].amount, 41200, 'the Brief shows its own amounts');
 });
 
 test('every source in one list: what is going wrong, with what to do, the worst first', async () => {
