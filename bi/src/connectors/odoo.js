@@ -755,6 +755,38 @@ export async function createDraftPo({ config: settings, token, vendorId, product
 }
 
 /**
+ * POs still using a stand-in: the placeholder vendor ("Vendor to confirm")
+ * or the placeholder item ("Item to classify") chosen in Buying › Receipts ›
+ * Settings, which Insight puts on a PO made from a receipt it could not
+ * match. Not cancelled ones. Read-only: two `search_read`s for the orders
+ * and the lines that use the item, one for the orders found by their lines.
+ */
+export async function placeholderPos({ config: settings, token, vendorId = null, productId = null, fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const FIELDS = ['name', 'partner_id', 'amount_total', 'state', 'date_order', 'origin', 'partner_ref'];
+  const byVendor = vendorId ? await searchRead(config, 'purchase.order', [['partner_id', '=', Number(vendorId)], ['state', '!=', 'cancel']], FIELDS, opts) : [];
+  const lines = productId ? await searchRead(config, 'purchase.order.line', [['product_id', '=', Number(productId)], ['state', '!=', 'cancel']], ['order_id'], opts) : [];
+  const withItem = new Set(lines.map((l) => refId(l.order_id)).filter(Boolean));
+  const have = new Set(byVendor.map((o) => o.id));
+  const more = [...withItem].filter((id) => !have.has(id));
+  const byItem = more.length ? await searchRead(config, 'purchase.order', [['id', 'in', more], ['state', '!=', 'cancel']], FIELDS, opts) : [];
+  return [...byVendor, ...byItem].map((o) => ({
+    id: o.id,
+    name: String(o.name || ''),
+    vendor: refName(o.partner_id),
+    total: toMinor(o.amount_total),
+    state: String(o.state || ''),
+    orderedOn: o.date_order ? String(o.date_order).slice(0, 10) : null,
+    origin: o.origin ? String(o.origin) : null,
+    ref: o.partner_ref ? String(o.partner_ref) : null,
+    vendorToConfirm: Boolean(vendorId) && refId(o.partner_id) === Number(vendorId),
+    itemToConfirm: withItem.has(o.id),
+    url: config.base ? `${config.base}/web#model=purchase.order&id=${o.id}&view_type=form` : null,
+  })).filter((o) => o.name).sort((a, b) => String(a.orderedOn || '').localeCompare(String(b.orderedOn || '')) || a.id - b.id);
+}
+
+/**
  * A draft PO cancelled: a float's receipt that is going to the POS instead.
  * Only while it is still a draft (an RFQ, sent or not); one confirmed in
  * Odoo is left alone, and the error says so.

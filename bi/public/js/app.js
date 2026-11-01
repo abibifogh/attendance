@@ -46,15 +46,17 @@ export const state = {
 };
 
 /**
- * Five places, each a few pages, some pages a few tabs.
+ * Six places, each a few pages, some pages a few tabs.
  *
- * The menu down the left (five buttons along the bottom of a phone) is the
+ * The menu down the left (six buttons along the bottom of a phone) is the
  * sections; under the one open, its pages; across the top of a page, its tabs
  * when it has more than one. A route is one tab: its page groups it with the
  * others under the same heading. Old addresses still open (ALIASES).
  */
 const SECTIONS = [
   { id: 'assistant', label: 'Assistant', icon: 'spark' },
+  // Everything to act on, from the shifts and Odoo, in one place of its own.
+  { id: 'sortout', label: 'To sort out', short: 'To sort', icon: 'tray' },
   { id: 'desk', label: 'Front desk', short: 'Desk', icon: 'desk' },
   { id: 'buying', label: 'Buying', icon: 'cart' },
   { id: 'reports', label: 'Reports', icon: 'chart' },
@@ -74,7 +76,7 @@ const ROUTES = [
 
   // The front desk's control sheet, its people, the safe the shifts fill, and the washroom.
   { path: 'shifts', label: 'Shifts', section: 'desk', page: 'Shifts', render: shiftsPart('shifts'), needs: 'shifts', part: 'shifts' },
-  { path: 'inbox', label: 'To sort out', section: 'desk', page: 'Shifts', render: shiftsPart('inbox'), needs: 'shifts', part: 'inbox' },
+  { path: 'inbox', label: 'To sort out', section: 'sortout', page: 'To sort out', render: shiftsPart('inbox'), needs: 'shifts', part: 'inbox' },
   { path: 'closing', label: 'Closing reports', section: 'desk', page: 'Shifts', render: shiftsPart('reports'), needs: 'shifts', part: 'reports' },
   { path: 'people', label: 'People', section: 'desk', page: 'People', render: shiftsPart('people'), needs: 'shifts', part: 'people' },
   { path: 'safe', label: 'Safe', section: 'desk', page: 'Safe', render: renderSafe, needs: 'safe' },
@@ -131,6 +133,7 @@ const ICONS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  tray: '<path d="M3 13l2.5-8h13L21 13v6a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/>',
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   safe: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8V7M12 17v-1.8M15.2 12H17M7 12h1.8"/>',
   wallet: '<path d="M20 12V8H6a2 2 0 010-4h12v4"/><path d="M4 6v12a2 2 0 002 2h14v-4"/><path d="M18 12a2 2 0 000 4h4v-4z"/>',
@@ -167,7 +170,7 @@ start();
 async function start() {
   // An invitation's link opens its own page, signed in or not: the person
   // following it may be on a shared desk PC where somebody else is signed in.
-  // A to-do's email links straight to it: Front desk › Shifts › To sort out with the to-do open.
+  // A to-do's email links straight to it: To sort out with the to-do open.
   const todo = /^#\/shifts\?(?:.*&)?todo=(\d+)/.exec(location.hash);
   if (todo) {
     try { sessionStorage.setItem('insight-shifts-opentodo', todo[1]); } catch { /* private mode */ }

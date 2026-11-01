@@ -35,9 +35,9 @@ const whenOf = (at) => {
   return Number.isNaN(d.getTime()) ? String(at) : d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 };
 const sysTag = (id, label) => h(`span.ap-sys.${id}`, SHORT[id] || label || id);
-/** Where to see it in its own system: a new tab for the others, Shifts › Inbox for Insight's. */
+/** Where to see it in its own system: a new tab for the others, To sort out for Insight's. */
 const openLink = (x, spec = 'a') => (!x.open ? null : x.system === 'insight'
-  ? h(spec, { href: x.open, onclick: () => { try { sessionStorage.setItem('insight-shifts-section', 'inbox'); } catch { /* private mode */ } } }, 'Open in Shifts › Inbox')
+  ? h(spec, { href: x.open, onclick: () => { try { sessionStorage.setItem('insight-shifts-section', 'inbox'); } catch { /* private mode */ } } }, 'Open in To sort out')
   : h(spec, { href: x.open, target: '_blank', rel: 'noopener' }, `Open in ${x.systemLabel} ↗`));
 
 export async function renderApprovals(root) {
