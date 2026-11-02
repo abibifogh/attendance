@@ -3007,3 +3007,33 @@ main img, main svg, main canvas, main video { max-width: 100%; }
   .fa-acts { grid-column: 2; justify-content: flex-start; }
   .fa-unit { grid-template-columns: 70px minmax(0, 1fr); } .fa-unit select { grid-column: 1 / -1; }
 }
+
+/* ---- Notifications: the bell, and the inbox (views/notifications.js) ---- */
+.bell-b { position: relative; }
+.bell-b .bell-cnt:empty { display: none; }
+.bell-b .bell-cnt { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--sh-bad, #d03b3b); color: #fff; font-size: .68rem; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface); }
+.nt { display: grid; gap: .8rem; max-width: 880px; }
+.nt-head { display: flex; align-items: center; gap: .6rem 1rem; flex-wrap: wrap; }
+.nt-head h1 { margin: .2rem 0 0; }
+.nt-head .sp, .nt-devrow .sp { flex: 1; }
+.nt-seg { justify-self: start; }
+.nt-seg .nt-n { font-size: .75rem; opacity: .75; margin-left: 2px; }
+.nt-dev { display: grid; gap: .4rem; }
+.nt-devrow { display: flex; align-items: center; gap: .6rem .8rem; flex-wrap: wrap; }
+.nt-devrow small { display: block; }
+.nt-bell { font-size: 1.4rem; }
+.nt-list { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow, 0 1px 2px rgba(0,0,0,.06)); overflow: hidden; }
+.nt-row { display: grid; grid-template-columns: 12px 1fr auto; gap: .7rem; align-items: start; padding: .85rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; }
+.nt-row:last-child { border-bottom: 0; }
+.nt-row:hover { background: var(--surface-2); }
+.nt-row .nt-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: .45rem; background: transparent; }
+.nt-row.unread .nt-dot { background: var(--accent, #4f46e5); }
+.nt-row.urgent { box-shadow: inset 3px 0 0 var(--sh-bad, #d03b3b); }
+.nt-row.urgent.unread .nt-dot { background: var(--sh-bad, #d03b3b); }
+.nt-row:not(.unread) .nt-top b { font-weight: 600; color: var(--ink-2, inherit); }
+.nt-top { display: flex; gap: .4rem; align-items: baseline; flex-wrap: wrap; }
+.nt-body { margin: .2rem 0; font-size: .9rem; color: var(--ink-2, inherit); }
+.nt-mark { white-space: nowrap; font-size: .8rem; }
+.nt-empty { padding: 1rem; }
+.td-lines { margin: .2rem 0 .4rem 1.1rem; padding: 0; }
+@media (max-width: 760px) { .nt-row { grid-template-columns: 10px 1fr; } .nt-mark { grid-column: 2; justify-self: start; } }

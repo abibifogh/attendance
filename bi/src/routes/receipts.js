@@ -486,7 +486,7 @@ async function reply(env, { to, subject, results, skipped, settings }, { fetchIm
   const head = `${results.length} receipt${results.length === 1 ? '' : 's'} read:`;
   try {
     await callLink({
-      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+      env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to, kind: 'insight_receipts', senderName: 'Insight',
         subject: `Re: ${subject || 'receipts'}`.slice(0, 200),

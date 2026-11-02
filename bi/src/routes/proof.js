@@ -82,7 +82,7 @@ async function notify(env, r, { reminder = false, fetchImpl } = {}) {
   if (!account?.email) return false;
   try {
     await callLink({
-      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+      env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to: account.email, subject: title, kind: 'insight_proof', senderName: 'Insight',
         text: `${text}\n\nOpen Insight › To sort out › Proof asked, and send pictures or a PDF from there.`,

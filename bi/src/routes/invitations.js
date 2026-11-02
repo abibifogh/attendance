@@ -243,7 +243,7 @@ async function issue(env, accountId, { note, how, actor, origin, fetchImpl }) {
 async function mailVia(env, { to, subject, html, text, kind, replyTo, fetchImpl }) {
   try {
     return await callLink({
-      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+      env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: { to, subject, html, text, kind, replyTo, senderName: 'Insight' },
     });
   } catch (err) {

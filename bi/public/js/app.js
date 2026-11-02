@@ -29,6 +29,7 @@ import { renderApprovals, approvalsCount } from './views/approvals.js';
 import { renderAssistant } from './views/assistant.js';
 import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
+import { renderNotifications } from './views/notifications.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
 import { watchFigures } from './fit.js';
@@ -73,6 +74,8 @@ const ROUTES = [
   { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'member', own: true },
   { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
   { path: 'brief', label: 'Brief', section: 'assistant', page: 'Assistant', render: renderBrief, needs: 'insight' },
+  // Everything Insight told this person, as an inbox, and whether their phone gets it too.
+  { path: 'notifications', label: 'Notifications', section: 'assistant', page: 'Notifications', render: renderNotifications, needs: 'member', own: true },
 
   // The front desk's control sheet, its people, the safe the shifts fill, and the washroom.
   { path: 'shifts', label: 'Shifts', section: 'desk', page: 'Shifts', render: shiftsPart('shifts'), needs: 'shifts', part: 'shifts' },
@@ -133,6 +136,7 @@ const ICONS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  bell: '<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 004 0"/>',
   tray: '<path d="M3 13l2.5-8h13L21 13v6a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/>',
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   safe: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8V7M12 17v-1.8M15.2 12H17M7 12h1.8"/>',
@@ -278,6 +282,16 @@ async function renderApp() {
 
   const isAdmin = (account.till?.role || (account.isOwner ? 'admin' : null)) === 'admin';
   const apps = h('div.pop.apps-pop', { hidden: true });
+  // The bell: unread notifications, read now and every minute, and when the inbox says so.
+  const bellCount = h('span.cnt.bell-cnt');
+  const bellBtn = h('button.icon-b.bell-b', { type: 'button', 'aria-label': 'Notifications', title: 'Notifications', onclick: () => go('notifications') }, icon('bell'), bellCount);
+  const sayBell = (n) => { bellCount.textContent = n ? String(n > 99 ? '99+' : n) : ''; bellBtn.setAttribute('aria-label', n ? `Notifications, ${n} unread` : 'Notifications'); };
+  window.addEventListener('notices:count', (e) => sayBell(e.detail));
+  const askBell = () => api('/notices/count').then((c) => sayBell(c.unread)).catch(() => {});
+  if (account.id != null) {
+    setTimeout(askBell, 2500);
+    setInterval(() => { if (document.visibilityState === 'visible') askBell(); }, 60_000);
+  }
   const appsBtn = h('button.icon-b', { type: 'button', 'aria-label': 'Open another system', 'aria-expanded': 'false', onclick: (e) => { e.stopPropagation(); toggle(apps, appsBtn); if (!apps.hidden && !apps.childElementCount) appsPanel(apps); } }, icon('grid'));
   const me = h('div.pop.me-pop', { hidden: true },
     h('div.me-who', h('b', account.name || 'Account'), h('small', roleName(account))),
@@ -348,6 +362,7 @@ async function renderApp() {
           h('span.spacer'),
           h('button.search', { type: 'button', onclick: palette }, icon('search'), h('span', 'Search Insight'), h('kbd', 'Ctrl K')),
           picker,
+          account.id != null ? bellBtn : null,
           h('div.pop-at', appsBtn, apps),
           h('div.pop-at', meBtn('me-pill'), me)),
         h('main', head, view))),

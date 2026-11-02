@@ -139,7 +139,7 @@ export async function addNote(env, body, account, { fetchImpl, origin = '' } = {
     try {
       // eslint-disable-next-line no-await-in-loop
       await callLink({
-        binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+        env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
         body: {
           to: to.email, subject: `${who(account)} tagged you on ${about}`, kind: 'insight_note', senderName: 'Insight',
           text: `${who(account)} wrote, about ${about}:\n\n${text}\n\nOpen it in Insight › Shifts${origin ? `: ${origin}` : ''}.`,

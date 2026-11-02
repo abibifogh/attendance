@@ -19,6 +19,8 @@ import * as safebook from './routes/safebook.js';
 import * as envelopes from './routes/envelopes.js';
 import * as notes from './routes/notes.js';
 import * as tasks from './routes/tasks.js';
+import * as notices from './routes/notices.js';
+import * as storeReq from './routes/storereq.js';
 import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
@@ -410,6 +412,14 @@ const ROUTES = [
   // The Assistant: what needs an admin in every system, with advice; the morning summary; questions.
   // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
   ['GET', '/api/assistant', 'session', (env, ctx) => today.today(env, ctx.account)],
+  // Their notifications, as an inbox; and the phones and computers they turned them on for.
+  ['GET', '/api/notices', 'session', (env, ctx) => notices.list(env, ctx.account, ctx.query)],
+  ['GET', '/api/notices/count', 'session', (env, ctx) => notices.counts(env, ctx.account)],
+  ['POST', '/api/notices/read', 'session', (env, ctx) => notices.mark(env, ctx.body, ctx.account)],
+  ['GET', '/api/push/key', 'session', (env) => notices.pushKey(env)],
+  ['POST', '/api/push/subscribe', 'session', (env, ctx) => notices.subscribe(env, ctx.body, ctx.account)],
+  ['POST', '/api/push/unsubscribe', 'session', (env, ctx) => notices.unsubscribe(env, ctx.body, ctx.account)],
+  ['POST', '/api/push/test', 'session', (env, ctx) => notices.test(env, ctx.account)],
   ['GET', '/api/assistant/brief', 'session', (env, ctx) => assistant.briefing(env, ctx.account, { once: true }).then(({ text, by }) => ({ text, by }))],
   ['POST', '/api/assistant/ask', 'session', (env, ctx) => assistant.ask(env, ctx.body, ctx.account, { once: true })],
   ['POST', '/api/assistant/bills', 'session', adminOnly((env, ctx) => assistant.setBills(env, ctx.body, ctx.account))],
@@ -533,6 +543,8 @@ const SUMMARY_CRON = '45 6 * * *';
 const VIEW_READS = new Set(['/api/shifts/notes/counts', '/api/shifts/tasks/for-keys', '/api/assistant/ask']);
 /** Every hour on the hour: the supervisors' 07:00 digest, and the Saturday report's reminders and deduction. */
 const HOURLY_CRON = '0 * * * *';
+/** Every 15 minutes: the kitchen's store requests from the breakfast app, and their reminders. */
+const QUARTER_CRON = '*/15 * * * *';
 
 /** Everything an uploader may call, beyond signing in and the hub. */
 const UPLOADER_MAY = new Set([
@@ -680,6 +692,12 @@ export default {
   },
 
   async scheduled(event, env, execution) {
+    if (event?.cron === QUARTER_CRON) {
+      execution.waitUntil(storeReq.syncStore(env, { now: event.scheduledTime || Date.now() })
+        .then((out) => { if (out.skipped) console.log('Store requests', out.skipped); })
+        .catch((err) => console.error('Store requests', err)));
+      return;
+    }
     if (event?.cron === HOURLY_CRON) {
       execution.waitUntil(duty.dutyDue(env, { now: event.scheduledTime || Date.now() })
         .then((out) => { if (out.digest?.error || out.digest?.failed?.length || out.saturday?.error) console.error('Duty', JSON.stringify(out)); })

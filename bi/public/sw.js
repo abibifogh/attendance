@@ -19,3 +19,40 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode !== 'navigate') return;
   event.respondWith(fetch(event.request).catch(() => new Response(OFFLINE, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })));
 });
+
+/**
+ * A notification from Insight, pushed to this phone or computer: shown, with
+ * a buzz. One tag per thing, so a reminder about the same store request
+ * replaces the last one rather than piling up; renotify, so it still buzzes.
+ */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Insight', {
+    body: data.body || '',
+    tag: data.tag || 'insight',
+    renotify: true,
+    requireInteraction: Boolean(data.urgent),
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    vibrate: data.urgent ? [200, 100, 200, 100, 200] : [200, 100, 200],
+    data: { url: data.url || '/#/notifications', id: data.id || null },
+  }));
+});
+
+/** Pressed: Insight, at the page it is about, in a window already open if there is one. */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || '/#/notifications';
+  event.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of open) {
+      if ('focus' in client) {
+        await client.focus();
+        if ('navigate' in client) await client.navigate(target).catch(() => {});
+        return;
+      }
+    }
+    await self.clients.openWindow(target);
+  })());
+});

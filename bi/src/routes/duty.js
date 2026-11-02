@@ -161,7 +161,7 @@ export async function recordSent(env, { key, at = new Date().toISOString(), by =
 
 async function mail(env, { to, cc = [], subject, html, text, kind, fetchImpl }) {
   return callLink({
-    binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+    env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
     body: { to, cc: cc.filter((e) => e && e.toLowerCase() !== String(to).toLowerCase()), subject, html, text, kind, senderName: 'Insight' },
   });
 }
