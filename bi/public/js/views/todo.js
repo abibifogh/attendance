@@ -18,6 +18,12 @@ const dayText = (day) => (day ? new Date(`${day}T12:00:00Z`).toLocaleDateString(
 const FROM = { drawer: 'the drawer', safe: 'the safe' };
 const fail = (said) => (err) => { said.textContent = err.message; said.className = 'small form-error'; };
 
+/** How long a store request has waited: minutes, then hours. */
+const waitedSince = (at) => {
+  const m = at ? Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60000)) : null;
+  return m == null ? '–' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+};
+
 /** The day the item counts from: the cash leaving, or the bill's date. */
 const dayOf = (t) => t.detail?.paidDay || t.detail?.orderedOn || t.detail?.day || t.day || String(t.openedAt || '').slice(0, 10);
 export const todoAge = (t, today) => {
@@ -26,9 +32,18 @@ export const todoAge = (t, today) => {
   return Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${day}T12:00:00Z`)) / 86_400_000));
 };
 export const ageTone = (days) => (days >= 21 ? 'old' : days >= 14 ? 'aging' : '');
-export const supplierOf = (t) => (t.kind === 'nopo' ? t.detail?.supplier : t.detail?.vendor) || 'No supplier named';
+export const supplierOf = (t) => (t.kind === 'store' ? t.detail?.department || 'Kitchen' : t.kind === 'nopo' ? t.detail?.supplier : t.detail?.vendor) || 'No supplier named';
 function what(t) {
   const d = t.detail || {};
+  if (t.kind === 'store') {
+    return [
+      h('p', `${d.askedBy || 'Somebody'} in ${d.department || 'the kitchen'} asked the store room for, needed ${d.neededText || 'now'}${d.follows ? ` (the rest of ${d.follows})` : ''}:`),
+      h('ul.td-lines', (d.lines || []).map((l) => h('li', h('b', l.name), ` ${l.asked}${l.unit ? ` ${l.unit}` : ''}`))),
+      d.note ? h('p.small', `“${d.note}”`) : null,
+      h('p.small.muted', 'Issue it in the breakfast app. Whoever has this is reminded on their phone every 15 minutes until it is issued, declined or cancelled there; then this closes by itself.'),
+      d.url ? h('p', h('a.btn.primary', { href: d.url, target: '_blank', rel: 'noopener' }, 'Issue it in the breakfast app')) : null,
+    ];
+  }
   if (t.kind === 'placeholder') {
     const needs = [d.vendorToConfirm ? 'the vendor' : null, d.itemToConfirm ? 'the item' : null].filter(Boolean);
     return [
@@ -75,6 +90,7 @@ export function todoSub(t, { admin } = {}) {
     t.state === 'answered' ? 'waiting for an admin' : {
       unbilled: t.detail?.drafts?.length ? 'draft bill' : 'no bill', differs: 'paid ≠ PO', nopo: 'no PO',
       placeholder: [t.detail?.vendorToConfirm ? 'vendor' : null, t.detail?.itemToConfirm ? 'item' : null].filter(Boolean).join(' + ') + ' to confirm',
+      store: `${(t.detail?.lines || []).length} item${(t.detail?.lines || []).length === 1 ? '' : 's'} · needed ${t.detail?.neededText || 'now'}`,
     }[t.kind],
     t.detail?.paidFrom ? (t.detail.paidFrom === 'safe' ? 'safe' : 'drawer') : (t.kind === 'unbilled' ? 'ordered' : null),
     admin ? (t.assignee?.name || 'nobody yet') : null,
@@ -102,20 +118,22 @@ export function todoDetail(t, { admin, supervisors = [], after }) {
       h('div',
         h('small.td-kind', t.kindLabel),
         h('h2', t.kind === 'nopo' ? `Bill · ${d2.supplier || ''}` : `${t.ref} · ${supplierOf(t)}`)),
-      h('b.td-big.num', money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount))),
+      t.kind === 'store' ? null : h('b.td-big.num', money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount))),
     h('div.td-facts',
       t.kind === 'nopo'
         ? [fact('Bill dated', dayText(d2.day)), fact('Their number', d2.ref || '–')]
+        : t.kind === 'store'
+          ? [fact('Asked', d2.askedAt ? new Date(d2.askedAt).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '–'), fact('Needed', d2.neededText || 'now')]
         : t.kind === 'placeholder'
           ? [fact('Ordered', dayText(d2.orderedOn)), fact('To put right', [d2.vendorToConfirm ? 'Vendor' : null, d2.itemToConfirm ? 'Item' : null].filter(Boolean).join(' and ') || '–')]
         : d2.paidFrom
           ? [fact('Paid from', FROM[d2.paidFrom] || d2.paidFrom), fact('On', dayText(d2.paidDay))]
           : [fact('Ordered', dayText(d2.orderedOn)), fact('Paid', 'not from the drawer or safe')],
-      fact('Waiting', `${t.age} days`, `.td-age.${ageTone(t.age)}`),
+      t.kind === 'store' ? fact('Waiting', waitedSince(d2.askedAt)) : fact('Waiting', `${t.age} days`, `.td-age.${ageTone(t.age)}`),
       fact('With', t.assignee?.name || 'Nobody yet')),
     what(t),
     t.sentBack ? h('p.small.form-error', `Sent back by an admin: ${t.sentBack}`) : null,
-    t.answer && t.state !== 'answered' ? h('p.small', `${['unbilled', 'placeholder'].includes(t.kind) ? 'Latest note' : 'Answer'}: ${t.answer} (${t.answeredBy})`) : null,
+    t.answer && t.state !== 'answered' ? h('p.small', `${['unbilled', 'placeholder', 'store'].includes(t.kind) ? 'Latest note' : 'Answer'}: ${t.answer} (${t.answeredBy})`) : null,
     t.state === 'answered' ? h('div.sh-waiting',
       h('span', `⏳ Waiting for an admin: ${t.answer} (${t.answeredBy})`),
       admin ? [

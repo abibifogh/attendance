@@ -307,7 +307,7 @@ export async function sendSummary(env, { month, to = null, auto = false, anyway 
     try {
       // eslint-disable-next-line no-await-in-loop
       await callLink({
-        binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+        env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
         body: { to: one, subject: mail.subject, html: mail.html, text: mail.text, kind: 'insight_prepaid', senderName: 'Insight', attachments },
       });
       sent += 1;
@@ -350,7 +350,7 @@ async function askAdmins(env, { month, coverage, base, fetchImpl }) {
   for (const one of (await adminEmails(env)).slice(0, 10)) {
     // eslint-disable-next-line no-await-in-loop
     await callLink({
-      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+      env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: { to: one, subject: `${name}’s prepaid summary is waiting for you`, html, text, kind: 'insight_prepaid', senderName: 'Insight' },
     }).catch(() => {});
   }

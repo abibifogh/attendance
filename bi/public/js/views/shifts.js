@@ -117,7 +117,7 @@ const MOVED = {
 const PERIODS = ['day', 'week', 'month'];
 /** The Inbox's kinds, in the order the chips show them. */
 const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin'],
-  ['task', 'To-do'], ['np', 'Nice Place'], ['proof', 'Proof asked'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
+  ['task', 'To-do'], ['store', 'Store requests'], ['np', 'Nice Place'], ['proof', 'Proof asked'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
 /** What Odoo calls the records activities sit on, in words. */
 const ODOO_MODELS = { 'purchase.order': 'Purchase order', 'account.move': 'Bill or invoice', 'res.partner': 'Contact', 'stock.picking': 'Transfer', 'hr.employee': 'Employee', 'crm.lead': 'Lead' };
 const odooWhat = (a) => `${ODOO_MODELS[a.model] || a.model}${a.resName ? ` ${a.resName}` : ''}`;
@@ -3962,8 +3962,8 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         if (done && !inbox.showDone) continue;
         const waitingAdmin = t.state === 'answered';
         out.push({
-          id: `td:${t.id}`, kind: waitingAdmin ? 'admin' : 'po', title: todoTitle(t), sub: todoSub(t, { admin }),
-          amount: money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount), chip: done ? ['ok', 'Closed'] : waitingAdmin ? ['none', admin ? 'Approve' : 'Waiting for admin'] : null,
+          id: `td:${t.id}`, kind: t.kind === 'store' ? 'store' : waitingAdmin ? 'admin' : 'po', title: todoTitle(t), sub: todoSub(t, { admin }),
+          amount: t.kind === 'store' ? '' : money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount), chip: done ? ['ok', 'Closed'] : waitingAdmin ? ['none', admin ? 'Approve' : 'Waiting for admin'] : null,
           tone: 'over', done, age: t.age, counts: !done && (admin ? waitingAdmin : !waitingAdmin), todo: t,
           bulk: t.state === 'open' ? { type: 'todo', id: t.id } : null,
           render: () => todoDetail(t, { admin, supervisors: sources.todo.supervisors || [], after }),

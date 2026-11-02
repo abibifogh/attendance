@@ -489,7 +489,7 @@ export async function sendReport(env, { period = 'week', at: asked, skip = null,
     try {
       // eslint-disable-next-line no-await-in-loop
       await callLink({
-        binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+        env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
         body: { to: one, subject: mail.subject, html: mail.html, text: mail.text, kind: 'insight_management', senderName: 'Insight' },
       });
       sent += 1;

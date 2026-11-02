@@ -84,8 +84,9 @@ MAINTENANCE_APPROVALS_URL = "https://ibjmiyehfhsmupsokyqt.supabase.co/functions/
 # waiting before anybody opens it. At 06:45, the daily till summary, once the
 # night shift has handed over.
 [triggers]
-# Nightly load, morning summary, and every hour for the supervisors' digest and the Saturday report.
-crons = ["45 0 * * *", "45 6 * * *", "0 * * * *"]
+# Nightly load, morning summary, every hour for the supervisors' digest and the Saturday report,
+# and every 15 minutes for the kitchen's store requests from the breakfast app.
+crons = ["45 0 * * *", "45 6 * * *", "0 * * * *", "*/15 * * * *"]
 
 # Its own address on the property's domain, the same way the attendance app has
 # one. Cloudflare creates and manages the DNS record itself when this deploys,
