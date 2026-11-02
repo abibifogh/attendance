@@ -36,18 +36,23 @@ export async function renderFeedback(params = {}) {
   const round = data.round;
   const r = data.result;
 
-  const openNow = () => formDialog({
-    title: 'Send a round now',
-    submitLabel: 'Send it',
-    body: h('div',
-      h('p.muted', { style: { marginTop: 0 } }, `Everybody employed ${data.settings.minServiceDays} days or more is asked, by push and on My day. `
-        + `It stays open ${data.settings.openDays} days.`),
-      data.isAdmin
+  const openNow = async () => {
+    const { people } = await api.feedbackPeople();
+    const done = await choosePeople({
+      title: 'Send a round now',
+      submitLabel: 'Send it',
+      people,
+      ticked: (p) => p.eligible,
+      intro: `Ticked: everybody employed ${data.settings.minServiceDays} days or more. Untick anybody, or tick somebody newer. `
+        + `Only these are asked, reminded and shown the survey. It stays open ${data.settings.openDays} days.`,
+      extra: data.isAdmin
         ? h('label.fb-switch', h('input', { type: 'checkbox', name: 'anonymous', checked: data.settings.anonymous }),
           h('span', h('strong', 'Anonymous'), h('small.muted', 'No name is kept with any answer, and staff are told so on the survey.')))
-        : null),
-    onSubmit: async (form) => api.openFeedbackRound({ anonymous: data.isAdmin ? form.get('anonymous') === 'on' : undefined }),
-  }).then((done) => { if (done) { toast(`Sent to ${done.asked} people.`, 'good'); reload({ round: done.id }); } });
+        : null,
+      send: (staffIds, form) => api.openFeedbackRound({ staffIds, anonymous: data.isAdmin ? form.get('anonymous') === 'on' : undefined }),
+    });
+    if (done) { toast(`Sent to ${done.asked} ${done.asked === 1 ? 'person' : 'people'}.`, 'good'); reload({ round: done.id }); }
+  };
 
   const head = h('div.page-head',
     h('div',
@@ -229,8 +234,22 @@ function saidEditor(data, round, r, act) {
       h('button.btn-sm', { type: 'button', onclick: () => act(save, 'Saved.') }, 'Save'),
       h('button.btn.btn-primary', {
         type: 'button',
-        onclick: () => act(async () => { await save(); const out = await api.publishSaid(round.id); toast(`Sent to ${out.told} people.`, 'good'); }),
-      }, round.saidAt ? 'Send again' : 'Send to everybody')));
+        onclick: async () => {
+          try {
+            await save();
+            const { people } = await api.feedbackPeople();
+            const out = await choosePeople({
+              title: 'Send You said, we did',
+              submitLabel: 'Send it',
+              people,
+              ticked: (p) => p.hasLogin,
+              intro: 'Ticked: everybody with a login. Untick anybody it should not go to. Only those ticked are told and see it.',
+              send: (staffIds) => api.publishSaid(round.id, { staffIds }),
+            });
+            if (out) { toast(`Sent to ${out.told} ${out.told === 1 ? 'person' : 'people'}.`, 'good'); act(async () => {}); }
+          } catch (err) { toast(err.message, 'bad'); }
+        },
+      }, round.saidAt ? 'Send again' : 'Send it')));
 }
 
 /** People › Feedback › Questions and schedule. */
@@ -309,4 +328,59 @@ export async function renderFeedbackSetup() {
           },
         }, 'Save the questions')))));
   return host;
+}
+
+/**
+ * Pick who something goes to: everybody, ticked as the caller says, with a
+ * department to narrow the list and a search box. Returns what `send`
+ * returned, or nothing if cancelled.
+ */
+function choosePeople({ title, submitLabel, people, ticked, intro, extra = null, send }) {
+  const depts = [...new Set(people.map((p) => p.department || 'No department'))].sort();
+  let dept = null;
+  let search = '';
+  const boxes = new Map();
+  const count = h('strong.fb-pick-count');
+  const list = h('div.fb-pick-list');
+  const rows = people.map((p) => {
+    const box = h('input', { type: 'checkbox', name: 'staff', value: String(p.id), checked: Boolean(ticked(p)), onchange: () => recount() });
+    boxes.set(p.id, box);
+    const row = h('label.fb-pick-row', box,
+      h('span', h('strong', p.name), h('small.muted', [p.department, !p.eligible ? 'new, not usually asked' : null, !p.hasLogin ? 'no login: sees it only if they sign in' : null]
+        .filter(Boolean).join(' · '))));
+    return { p, row };
+  });
+  const recount = () => {
+    const n = [...boxes.values()].filter((b) => b.checked).length;
+    count.textContent = `${n} of ${people.length} chosen`;
+  };
+  const shown = () => rows.filter(({ p }) => (!dept || (p.department || 'No department') === dept)
+    && (!search || p.name.toLowerCase().includes(search)));
+  const drawList = () => mount(list, shown().map(({ row }) => row));
+  const chips = h('div.fb-pick-depts');
+  const drawChips = () => mount(chips, [[null, 'Everybody'], ...depts.map((d) => [d, d])].map(([v, l]) => h('button', {
+    type: 'button', class: dept === v ? 'fb-month on' : 'fb-month', onclick: () => { dept = v; drawChips(); drawList(); },
+  }, l)));
+  drawChips(); drawList(); recount();
+  const setShown = (on) => { for (const { p } of shown()) boxes.get(p.id).checked = on; recount(); };
+  return formDialog({
+    title,
+    submitLabel,
+    wide: true,
+    body: h('div.fb-pick',
+      h('p.muted', { style: { marginTop: 0 } }, intro),
+      extra,
+      chips,
+      h('div.fb-pick-tools',
+        h('input', { type: 'search', placeholder: 'Find somebody', 'aria-label': 'Find somebody', oninput: (e) => { search = e.target.value.trim().toLowerCase(); drawList(); } }),
+        h('button.btn-sm', { type: 'button', onclick: () => setShown(true) }, 'Tick all shown'),
+        h('button.btn-sm', { type: 'button', onclick: () => setShown(false) }, 'Untick all shown'),
+        count),
+      list),
+    onSubmit: async (form) => {
+      const staffIds = [...boxes.entries()].filter(([, b]) => b.checked).map(([id]) => Number(id));
+      if (!staffIds.length) throw new Error('Pick at least one person.');
+      return send(staffIds, form);
+    },
+  });
 }

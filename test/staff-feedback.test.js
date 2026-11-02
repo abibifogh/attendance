@@ -205,3 +205,37 @@ test('with the AI, themes, headlines, actions and sensitive comments come from i
   assert.equal(a.areas.find((x) => x.area === 'Safety and getting home').headline, 'Lowest score: getting home.');
   assert.equal(a.actions[0].title, 'A night drop-off');
 });
+
+test('a round sent to chosen people asks, reminds and shows the survey to them alone', async () => {
+  const { raw, db } = setup();
+  raw.prepare('INSERT INTO users (id, email, name, role, staff_id, active) VALUES (31, ?, ?, ?, 3, 1), (32, ?, ?, ?, 4, 1)')
+    .run('kojo@example.test', 'Kojo Antwi', 'staff', 'yaw@example.test', 'Yaw Boateng', 'staff');
+  // Kojo, and Nana who is new and would not usually be asked.
+  const out = await openRound(db, { today: '2027-01-04', staffIds: [3, 8] });
+  assert.equal(out.asked, 2);
+  assert.deepEqual(raw.prepare('SELECT staff_id FROM fb_asked ORDER BY staff_id').all().map((r) => r.staff_id), [3, 8]);
+
+  const asKojo = { role: 'staff', permissions: ['att_me'], staffId: 3, url: 'https://x/api/me/feedback' };
+  const asYaw = { ...asKojo, staffId: 4 };
+  assert.ok((await (await myFeedback(ctxFor(db, asKojo))).json()).round, 'Kojo sees it');
+  assert.equal((await (await myFeedback(ctxFor(db, asYaw))).json()).round, null, 'Yaw does not');
+  await assert.rejects(() => answerFeedback(ctxFor(db, { ...asYaw, body: { roundId: out.id, answers: {} } })), /not sent to you/);
+
+  const reminded = await watchFeedback(db, { today: '2027-01-06' });
+  assert.equal(reminded.reminded, 1, 'only Kojo, who has a login and was asked, is reminded');
+  assert.deepEqual(raw.prepare("SELECT staff_id FROM att_nudge WHERE kind LIKE 'feedback:%'").all().map((r) => r.staff_id), [3]);
+});
+
+test('an empty choice is refused, and You said, we did reaches only those picked', async () => {
+  const { raw, db } = setup();
+  assert.equal((await openRound(db, { today: '2027-01-04', staffIds: [] })).opened, false);
+  await openRound(db, { today: '2027-01-04' });
+  raw.exec("UPDATE fb_round SET status = 'closed'");
+  const id = raw.prepare('SELECT id FROM fb_round').get().id;
+  raw.prepare("INSERT INTO fb_action (round_id, status, title) VALUES (?, 'doing', 'A night drop-off')").run(id);
+  const { publishSaid } = await import('../src/routes/feedback.js');
+  await publishSaid(ctxFor(db, { url: `https://x/api/feedback/rounds/${id}/said`, body: { staffIds: [3] } }), String(id));
+  const me = (staffId) => ({ role: 'staff', permissions: ['att_me'], staffId, url: 'https://x/api/me/feedback' });
+  assert.equal((await (await myFeedback(ctxFor(db, me(3)))).json()).said.actions[0].title, 'A night drop-off');
+  assert.equal((await (await myFeedback(ctxFor(db, me(4)))).json()).said, null);
+});

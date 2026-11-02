@@ -392,6 +392,7 @@ export const ROUTES = [
   ['GET', '/api/late-charges', 'hr_pay', lateCharges.listLateCharges],
   ['GET', '/api/feedback', 'att_manage', feedback.feedbackOverview],
   ['POST', '/api/feedback/rounds', 'hr_manage', feedback.openFeedbackRound],
+  ['GET', '/api/feedback/people', 'hr_manage', feedback.feedbackPeople],
   ['POST', '/api/feedback/rounds/:id/close', 'hr_manage', feedback.closeFeedbackRound],
   ['POST', '/api/feedback/rounds/:id/analyse', 'hr_manage', feedback.analyseFeedbackRound],
   ['POST', '/api/feedback/rounds/:id/actions', 'hr_manage', feedback.saveFeedbackActions],

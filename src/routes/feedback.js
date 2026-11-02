@@ -2,8 +2,8 @@ import { badRequest, forbidden, int, json, notFound, readJson, str } from '../li
 import { createNotice } from '../lib/notices.js';
 import { isAdmin } from '../lib/payroll-access.js';
 import {
-  STATUSES, activeQuestions, analyseRound, closeRound, feedbackSettings, nextOpening, openRound,
-  readFeedbackSettings, submitAnswers,
+  STATUSES, activeQuestions, analyseRound, closeRound, eligibleStaff, feedbackSettings, nextOpening, openRound,
+  readFeedbackSettings, submitAnswers, wasAsked,
 } from '../lib/feedback.js';
 import { todayIn } from '../util/dates.js';
 
@@ -146,10 +146,31 @@ export async function openFeedbackRound(ctx) {
   const today = todayIn(await timezoneOf(ctx.db));
   const out = await openRound(ctx.db, {
     today, by: actorOf(ctx), ctx, anonymous: body.anonymous == null ? null : Boolean(body.anonymous),
+    staffIds: Array.isArray(body.staffIds) ? body.staffIds : null,
   });
   if (!out.opened) throw badRequest(out.reason || 'Not opened.');
   await audit(ctx, 'feedback.open', out.id, { asked: out.asked });
   return json(out);
+}
+
+/** GET /api/feedback/people — everybody who could be sent a round, and who would be by default. */
+export async function feedbackPeople(ctx) {
+  needManage(ctx);
+  const settings = await readFeedbackSettings(ctx.db);
+  const today = todayIn(await timezoneOf(ctx.db));
+  const eligible = new Set((await eligibleStaff(ctx.db, today, settings)).map((p) => Number(p.id)));
+  const rows = await ctx.db.prepare(
+    `SELECT s.id, s.name, s.department, s.hired_on,
+            EXISTS (SELECT 1 FROM users u WHERE u.staff_id = s.id AND u.active = 1) AS has_login
+       FROM att_staff s WHERE s.active = 1 ORDER BY s.name`,
+  ).all();
+  return json({
+    minServiceDays: settings.minServiceDays,
+    people: (rows.results ?? []).map((p) => ({
+      id: p.id, name: p.name, department: p.department || null, hiredOn: p.hired_on || null,
+      eligible: eligible.has(Number(p.id)), hasLogin: Boolean(Number(p.has_login)),
+    })),
+  });
 }
 
 /** POST /api/feedback/rounds/:id/close */
@@ -259,10 +280,16 @@ export async function publishSaid(ctx, idParam) {
   if (!round) throw notFound('No such round.');
   const n = await ctx.db.prepare('SELECT COUNT(*) AS n FROM fb_action WHERE round_id = ?1').bind(id).first();
   if (!Number(n?.n)) throw badRequest('Add at least one thing first.');
-  await ctx.db.prepare("UPDATE fb_round SET said_at = datetime('now') WHERE id = ?1").bind(id).run();
-  const people = await ctx.db.prepare(
-    `SELECT u.id FROM users u JOIN att_staff s ON s.id = u.staff_id WHERE u.active = 1 AND s.active = 1`,
+  const body = await readJson(ctx.request).catch(() => ({}));
+  // Whoever an admin picked, or everybody.
+  const chosen = Array.isArray(body.staffIds) ? [...new Set(body.staffIds.map(Number).filter((x) => x > 0))] : null;
+  if (chosen && !chosen.length) throw badRequest('Pick at least one person to send it to.');
+  await ctx.db.prepare("UPDATE fb_round SET said_at = datetime('now'), said_to = ?2 WHERE id = ?1")
+    .bind(id, chosen ? JSON.stringify(chosen) : null).run();
+  const everybody = await ctx.db.prepare(
+    `SELECT u.id, u.staff_id FROM users u JOIN att_staff s ON s.id = u.staff_id WHERE u.active = 1 AND s.active = 1`,
   ).all().catch(() => ({ results: [] }));
+  const people = { results: (everybody.results ?? []).filter((u) => !chosen || chosen.includes(Number(u.staff_id))) };
   for (const u of people.results ?? []) {
     // eslint-disable-next-line no-await-in-loop
     await createNotice(ctx.db, {
@@ -281,7 +308,7 @@ export async function myFeedback(ctx) {
   const staffId = Number(ctx.session.user.staff_id) || 0;
   const open = await ctx.db.prepare("SELECT * FROM fb_round WHERE status = 'open' ORDER BY id DESC LIMIT 1").first().catch(() => null);
   let round = null;
-  if (open && staffId) {
+  if (open && staffId && await wasAsked(ctx.db, open, staffId)) {
     const done = await ctx.db.prepare('SELECT 1 AS x FROM fb_done WHERE round_id = ?1 AND staff_id = ?2')
       .bind(open.id, staffId).first().catch(() => null);
     round = {
@@ -291,9 +318,14 @@ export async function myFeedback(ctx) {
       done: Boolean(done),
     };
   }
-  const saidRound = await ctx.db.prepare(
-    'SELECT * FROM fb_round WHERE said_at IS NOT NULL ORDER BY said_at DESC LIMIT 1',
-  ).first().catch(() => null);
+  // The latest You said, we did sent to everybody or to them.
+  const saidRows = await ctx.db.prepare(
+    'SELECT * FROM fb_round WHERE said_at IS NOT NULL ORDER BY said_at DESC LIMIT 8',
+  ).all().catch(() => ({ results: [] }));
+  const saidRound = (saidRows.results ?? []).find((r) => {
+    if (!r.said_to) return true;
+    try { return JSON.parse(r.said_to).map(Number).includes(staffId); } catch { return false; }
+  }) ?? null;
   let said = null;
   if (saidRound) {
     const acts = await ctx.db.prepare('SELECT * FROM fb_action WHERE round_id = ?1 ORDER BY sort_order, id').bind(saidRound.id).all();
@@ -317,6 +349,7 @@ export async function answerFeedback(ctx) {
   if (!round) throw notFound('No such round.');
   const staff = await ctx.db.prepare('SELECT id, department FROM att_staff WHERE id = ?1').bind(staffId).first();
   if (!staff) throw notFound('No such member of staff.');
+  if (!await wasAsked(ctx.db, round, staffId)) throw forbidden('This round was not sent to you.');
   try {
     await submitAnswers(ctx.db, { round, staff, answers: body.answers ?? {} });
   } catch (err) {

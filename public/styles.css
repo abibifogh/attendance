@@ -8593,3 +8593,14 @@ button.lp-row:disabled { cursor: default; }
 .my-fb-invite .my-fb-invite-label { color: #f0a94c; font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .my-fb-invite strong { font-size: 1.1rem; }
 .my-fb-invite .btn-primary { align-self: flex-start; }
+.fb-pick { display: flex; flex-direction: column; gap: .6rem; }
+.fb-pick-depts { display: flex; flex-wrap: wrap; gap: .3rem; }
+.fb-pick-tools { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.fb-pick-tools input[type=search] { flex: 1 1 12rem; min-width: 0; }
+.fb-pick-count { margin-left: auto; font-size: .85rem; }
+.fb-pick-list { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: .25rem .6rem; }
+.fb-pick-row { display: flex; gap: .6rem; align-items: center; padding: .45rem 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+.fb-pick-row:last-child { border-bottom: 0; }
+.fb-pick-row input { width: 1.05rem; height: 1.05rem; flex: none; margin: 0; }
+.fb-pick-row span { display: flex; flex-direction: column; }
+.fb-pick-row small { font-size: .74rem; }

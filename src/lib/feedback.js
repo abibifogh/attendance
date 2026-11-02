@@ -89,13 +89,51 @@ export async function activeQuestions(db) {
   return (rows.results ?? []).map((q) => ({ id: q.id, area: q.area, text: q.text, kind: q.kind }));
 }
 
-export async function openRound(db, { today, by = 'HIVE', settings = null, ctx = null, anonymous = null } = {}) {
+/** Active staff by id, whoever they are, for a round an admin addressed by hand. */
+export async function staffByIds(db, ids) {
+  const out = [];
+  for (const id of [...new Set(ids.map(Number).filter((n) => n > 0))]) {
+    // eslint-disable-next-line no-await-in-loop
+    const row = await db.prepare(
+      `SELECT s.id, s.name, s.department,
+              (SELECT u.id FROM users u WHERE u.staff_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS user_id
+         FROM att_staff s WHERE s.id = ?1 AND s.active = 1`,
+    ).bind(id).first().catch(() => null);
+    if (row) out.push(row);
+  }
+  return out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+/** Everybody a round was sent to. A round from before the list was kept went to everybody eligible. */
+export async function askedFor(db, round, settings) {
+  const rows = await db.prepare(
+    `SELECT s.id, s.name, s.department,
+            (SELECT u.id FROM users u WHERE u.staff_id = s.id AND u.active = 1 ORDER BY u.id LIMIT 1) AS user_id
+       FROM fb_asked a JOIN att_staff s ON s.id = a.staff_id
+      WHERE a.round_id = ?1 AND s.active = 1 ORDER BY s.name`,
+  ).bind(round.id).all().catch(() => ({ results: [] }));
+  if ((rows.results ?? []).length) return rows.results;
+  const any = await db.prepare('SELECT 1 AS x FROM fb_asked WHERE round_id = ?1 LIMIT 1').bind(round.id).first().catch(() => null);
+  return any ? [] : eligibleStaff(db, round.opens_on, settings ?? await readFeedbackSettings(db));
+}
+
+/** Whether somebody was sent a round. */
+export async function wasAsked(db, round, staffId) {
+  const any = await db.prepare('SELECT 1 AS x FROM fb_asked WHERE round_id = ?1 LIMIT 1').bind(round.id).first().catch(() => null);
+  if (!any) return true;
+  const me = await db.prepare('SELECT 1 AS x FROM fb_asked WHERE round_id = ?1 AND staff_id = ?2').bind(round.id, staffId).first().catch(() => null);
+  return Boolean(me);
+}
+
+export async function openRound(db, { today, by = 'HIVE', settings = null, ctx = null, anonymous = null, staffIds = null } = {}) {
   const s = settings ?? await readFeedbackSettings(db);
   const already = await db.prepare("SELECT id FROM fb_round WHERE status = 'open' LIMIT 1").first().catch(() => null);
   if (already) return { id: already.id, opened: false, reason: 'A round is already open.' };
   const questions = await activeQuestions(db);
   if (!questions.length) return { opened: false, reason: 'There are no questions to ask.' };
-  const people = await eligibleStaff(db, today, s);
+  // Whoever an admin picked, or everybody eligible.
+  const people = Array.isArray(staffIds) ? await staffByIds(db, staffIds) : await eligibleStaff(db, today, s);
+  if (!people.length) return { opened: false, reason: 'Pick at least one person to send it to.' };
   const anon = anonymous == null ? s.anonymous : Boolean(anonymous);
   const closes = addDays(today, s.openDays - 1);
   const done = await db.prepare(
@@ -103,6 +141,10 @@ export async function openRound(db, { today, by = 'HIVE', settings = null, ctx =
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   ).bind(roundLabel(today), today, closes, anon ? 1 : 0, JSON.stringify(questions), people.length, by).run();
   const id = Number(done?.meta?.last_row_id) || (await db.prepare('SELECT MAX(id) AS id FROM fb_round').first()).id;
+  for (const p of people) {
+    // eslint-disable-next-line no-await-in-loop
+    await db.prepare('INSERT OR IGNORE INTO fb_asked (round_id, staff_id) VALUES (?1, ?2)').bind(id, p.id).run();
+  }
   await tellStaff(db, people, {
     kind: 'feedback.open',
     title: 'Your say: how is work going?',
@@ -142,13 +184,14 @@ export async function watchFeedback(db, { timezone = 'UTC', env = null, ctx = nu
   } else if (open) {
     const day = daysBetween(open.opens_on, today) + 1;
     if (day === 3 || day === 8 || today === open.closes_on) {
-      const people = await eligibleStaff(db, open.opens_on, s);
+      const people = await askedFor(db, open, s);
       const doneRows = await db.prepare('SELECT staff_id FROM fb_done WHERE round_id = ?1').bind(open.id).all()
         .catch(() => ({ results: [] }));
       const done = new Set((doneRows.results ?? []).map((r) => Number(r.staff_id)));
       const waiting = [];
       for (const p of people) {
-        if (done.has(Number(p.id))) continue;
+        // Only somebody who can be told: a login of their own, not yet answered.
+        if (done.has(Number(p.id)) || !p.user_id) continue;
         // eslint-disable-next-line no-await-in-loop
         const claimed = await db.prepare('INSERT OR IGNORE INTO att_nudge (staff_id, day, kind) VALUES (?1, ?2, ?3)')
           .bind(p.id, today, `feedback:${open.id}`).run().catch(() => null);
