@@ -6,7 +6,7 @@ import { printButton } from '../print.js';
 import { birthdayStrip } from './birthday.js';
 import { byDepartment, sayHowItStands, toDealWith } from '../today-groups.js';
 import {
-  correctTimesDialog, field, formDialog, lateBy, needsAttention, reasonSelect, shiftColour, totalsLine,
+  correctTimesDialog, field, formDialog, lateBy, needsAttention, periodBar, reasonSelect, shiftColour, totalsLine,
 } from './att-shared.js';
 import { questionRows } from './absence.js';
 
@@ -79,21 +79,16 @@ export async function renderAttToday(params) {
 
   const nav = h('div.toolbar.tday-nav',
     // Arrows on a phone, words on a desk.
-    h('button.btn-sm', {
-      onclick: () => reload(shiftDay(day, -1)),
-      'aria-label': 'The day before',
-    }, '‹', h('span.only-desk', ' Previous day')),
-    h('input', {
-      type: 'date', value: day, max: data.today,
-      'aria-label': 'Day',
-      onchange: (e) => e.target.value && reload(e.target.value),
+    periodBar({
+      label: fmtDay(day, { withYear: true }),
+      onPrev: () => reload(shiftDay(day, -1)),
+      onNext: () => reload(shiftDay(day, 1)),
+      nextDisabled: day >= data.today,
+      prevLabel: 'The day before',
+      nextLabel: 'The day after',
+      picker: { type: 'date', value: day, max: data.today, label: 'Day', onPick: (v) => reload(v) },
+      now: isToday ? null : { label: 'Today', onClick: () => reload(data.today) },
     }),
-    h('button.btn-sm', {
-      onclick: () => reload(shiftDay(day, 1)),
-      disabled: day >= data.today,
-      'aria-label': 'The day after',
-    }, h('span.only-desk', 'Next day '), '›'),
-    !isToday ? h('button.btn-sm', { onclick: () => reload(data.today) }, 'Today') : null,
     h('div', { style: { flex: 1 } }),
 
     // Everything that makes a file. Along the toolbar on a desk, one More

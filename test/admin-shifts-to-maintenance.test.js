@@ -157,10 +157,15 @@ test('the front desk rota: reception shifts only, by name, from last night to tw
   assert.equal(out.sent, 2);
 });
 
-test('the front desk rota goes with the Admin shifts, once a day', () => {
+test('the front desk rota goes every hour, not only at night', () => {
+  // "The name of who is at the front desk ... isn't working": sent only at
+  // 00:30, a page put up during the day had nobody to name until then.
   const src = readFileSync('src/index.js', 'utf8');
   const at = src.indexOf('sendDeskShifts(env)');
-  assert.ok(at > 0 && src.indexOf('sendDeskShifts(env)', at + 1) === -1);
-  const guard = src.lastIndexOf('if (env.MAINTENANCE_LINK && nightly) {', at);
-  assert.ok(guard > 0 && !src.slice(guard, at).includes('\n      }\n'), 'inside the nightly block');
+  assert.ok(at > 0 && src.indexOf('sendDeskShifts(env)', at + 1) === -1, 'from one place only');
+  const guard = src.lastIndexOf('if (env.MAINTENANCE_LINK && (nightly || minute < 5)) {', at);
+  assert.ok(guard > 0 && !src.slice(guard, at).includes('\n      }\n'), 'inside the hourly block');
+  // The Admin shifts stay once a day.
+  const adm = src.indexOf('sendAdminShifts(env)');
+  assert.match(src.slice(src.lastIndexOf('if (', src.lastIndexOf('if (env.MAINTENANCE_LINK', adm)), adm), /^if \(env\.MAINTENANCE_LINK && nightly\) \{/);
 });

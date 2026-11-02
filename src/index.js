@@ -1282,6 +1282,11 @@ export default {
           console.log(`Maintenance: ${taken.added} late-report deduction(s) put on, ${taken.removed} taken back off`);
         }
         if (taken.unmatched.length) console.log(`Maintenance: not put on: ${taken.unmatched.join('; ')}`);
+
+        // And who is on the front desk, so Maintenance's front desk page
+        // names them without asking. Every hour, not nightly: a page put up
+        // during the day, or a swap made this morning, cannot wait for 00:30.
+        await sendDeskShifts(env).catch((err) => console.error('Front desk rota to Maintenance failed', err));
       }
 
       // And the other way, once a day with the nightly run: the Admin shifts
@@ -1293,9 +1298,6 @@ export default {
           return { sent: 0, unmatched: [] };
         });
         if (shifts.unmatched.length) console.log(`Admin shifts: not matched: ${shifts.unmatched.join('; ')}`);
-        // And who is on the front desk, so Maintenance's front desk page
-        // names them without asking.
-        await sendDeskShifts(env).catch((err) => console.error('Front desk rota to Maintenance failed', err));
       }
 
       if (!nightly) return;
