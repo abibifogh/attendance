@@ -917,6 +917,39 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
 
+  {
+    key: 'feedback.open',
+    group: 'people',
+    label: 'Staff feedback is open',
+    who: 'Everybody asked',
+    when: 'A feedback round opens, every quarter',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'feedback.reminder',
+    group: 'people',
+    label: 'A reminder to give feedback',
+    who: 'Whoever has not answered yet',
+    when: 'The third and eighth day of a round, and the last',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'feedback.results',
+    group: 'people',
+    label: 'Staff feedback results are in',
+    who: 'Admins and HR',
+    when: 'A feedback round closes and has been read',
+    ways: ['push', 'email'],
+  },
+  {
+    key: 'feedback.said',
+    group: 'people',
+    label: 'You said, we did',
+    who: 'Everybody',
+    when: 'Admins send what is being done about the feedback',
+    ways: ['push', 'email'],
+  },
+
   // The property
   {
     key: 'birthday.today',

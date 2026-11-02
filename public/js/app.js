@@ -36,6 +36,8 @@ import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttMyTill, renderAttMyTillIssues, renderMyTillReports } from './views/att-my-till.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderLateCharges } from './views/late-charges.js';
+import { renderFeedback, renderFeedbackSetup } from './views/feedback.js';
+import { renderMyFeedback } from './views/my-feedback.js';
 import { renderTillShortages } from './views/till-shortages.js';
 import { renderAttMyMedical } from './views/att-my-medical.js';
 import { renderAttLunch } from './views/att-lunch.js';
@@ -173,6 +175,7 @@ const ROUTES = [
   // Opened from a card on Requests rather than a tab of its own.
   { mine: true, group: 'requests', tab: 'Holidays', notab: true, lights: 'requests', mgroup: 'mine', under: 'requests', path: 'my-holiday', label: 'Holidays', permission: 'att_me', render: renderMyHoliday, live: ['leave'] },
   { mine: true, group: 'requests', tab: 'Leave plan', notab: true, lights: 'requests', mgroup: 'mine', under: 'requests', path: 'my-leave-plan', label: 'Leave plan', permission: 'att_me', render: renderMyLeavePlan, live: ['leave'] },
+  { mine: true, group: 'my-rota', tab: 'Your say', mgroup: 'mine', under: 'att-me', path: 'my-feedback', label: 'Your say', permission: 'att_me', render: renderMyFeedback, live: ['people'] },
   { mine: true, group: 'my-pay', tab: 'Payslips', mgroup: 'mine', mtab: 'Pay', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Advance', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Medical', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-medical', label: 'Medical', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
@@ -210,6 +213,8 @@ const ROUTES = [
   { group: 'people', tab: 'Documents', seg: 'To sign', path: 'signing', label: 'Documents', permission: ['hr_view', 'corr_view'], render: renderSigning, live: ['people', 'letters'] },
   { group: 'people', tab: 'Documents', seg: 'Letters', part: 'signing', path: 'letters', label: 'Documents', permission: 'corr_view', render: renderLetters, live: ['letters'] },
   { group: 'people', tab: 'Documents', seg: 'Templates', part: 'signing', path: 'people-templates', label: 'Documents', permission: 'hr_manage', render: renderPeopleTemplates, live: ['people'] },
+  { group: 'people', tab: 'Feedback', seg: 'What staff say', path: 'feedback', label: 'Feedback', permission: 'att_manage', render: renderFeedback, live: ['people'] },
+  { group: 'people', tab: 'Feedback', seg: 'Questions and schedule', part: 'feedback', path: 'feedback-setup', label: 'Feedback', permission: 'hr_manage', render: renderFeedbackSetup, live: ['people'] },
   // Reachable by everybody signed in. A tab under Me for staff. Not a tab for
   // everybody who runs something, since Staff answers the same question with
   // more on it; the address still opens it, under People.

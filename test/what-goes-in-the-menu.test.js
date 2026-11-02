@@ -135,7 +135,7 @@ test('a member of staff gets their five places, and Home first', () => {
   const menu = menuFor(['att_me']);
   assert.deepEqual(menu.map((g) => g.label), ['Home', 'Rota', 'Requests', 'Pay', 'Me']);
   assert.equal(menu[0].screens[0].path, 'my-day');
-  assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['My shifts', 'My swaps', 'Lunch', 'Report']);
+  assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['My shifts', 'My swaps', 'Lunch', 'Report', 'Your say']);
   // The leave plan opens from a card on Requests, not from a tab.
   assert.deepEqual(tabsOf(menu[2]), []);
   assert.deepEqual(tabsOf(menu[3]).map((t) => t.label), ['Payslips', 'Advance', 'Medical']);
@@ -198,11 +198,11 @@ test('a supervisor reads Home, Inbox, Rota and Attendance', () => {
   assert.deepEqual(segmentsOf(day, 'leave-plans').map((t) => t.label), ['Requests', 'Booked', 'Plans', 'Holidays']);
 });
 
-test('a manager reads People as Staff, Recruitment, Documents and Handbook', () => {
+test('a manager reads People as Staff, Recruitment, Documents, Feedback and Handbook', () => {
   const menu = menuFor(roleHolds('manager'), { staffId: null });
   const people = menu.find((g) => g.key === 'people');
   assert.deepEqual(tabsOf(people).map((t) => t.label),
-    ['Staff', 'Recruitment', 'Documents', 'Handbook']);
+    ['Staff', 'Recruitment', 'Documents', 'Feedback', 'Handbook']);
   assert.deepEqual(segmentsOf(people, 'people').map((t) => t.label), ['Everybody', 'New starters', 'Sent in']);
   assert.deepEqual(segmentsOf(people, 'letters').map((t) => t.label), ['To sign', 'Letters', 'Templates']);
   assert.equal(tabsOf(people).some((t) => t.path === 'directory'), false, 'the directory is a tab for staff only');

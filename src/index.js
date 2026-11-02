@@ -57,6 +57,8 @@ import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
 import * as lateCharges from './routes/late-charges.js';
+import * as feedback from './routes/feedback.js';
+import { watchFeedback } from './lib/feedback.js';
 import * as approvals from './routes/approvals.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
@@ -219,6 +221,8 @@ export const ROUTES = [
   ['GET', '/api/directory/photo/:id', null, directory.directoryPhoto],
   ['GET', '/api/me/week', 'att_me', mine.myWeek],
   ['GET', '/api/me/late-charges', 'att_me', lateCharges.myLateCharges],
+  ['GET', '/api/me/feedback', 'att_me', feedback.myFeedback],
+  ['POST', '/api/me/feedback', 'att_me', feedback.answerFeedback],
   ['POST', '/api/me/late-charges/reason', 'att_me', lateCharges.myLateReason],
   ['POST', '/api/me/late-rule/accept', 'att_me', lateCharges.acceptLateRule],
 
@@ -386,6 +390,15 @@ export const ROUTES = [
   ['GET', '/api/advances/till-decisions', 'hr_pay', advance.tillToDecide],
   ['POST', '/api/advances/till-decisions', 'hr_pay', advance.tillDecide],
   ['GET', '/api/late-charges', 'hr_pay', lateCharges.listLateCharges],
+  ['GET', '/api/feedback', 'att_manage', feedback.feedbackOverview],
+  ['POST', '/api/feedback/rounds', 'hr_manage', feedback.openFeedbackRound],
+  ['POST', '/api/feedback/rounds/:id/close', 'hr_manage', feedback.closeFeedbackRound],
+  ['POST', '/api/feedback/rounds/:id/analyse', 'hr_manage', feedback.analyseFeedbackRound],
+  ['POST', '/api/feedback/rounds/:id/actions', 'hr_manage', feedback.saveFeedbackActions],
+  ['POST', '/api/feedback/rounds/:id/said', 'hr_manage', feedback.publishSaid],
+  ['POST', '/api/feedback/settings', 'hr_manage', feedback.saveFeedbackSettings],
+  ['GET', '/api/feedback/questions', 'hr_manage', feedback.feedbackQuestions],
+  ['POST', '/api/feedback/questions', 'hr_manage', feedback.saveFeedbackQuestions],
   ['POST', '/api/late-charges/decide', 'hr_pay', lateCharges.decideLateCharges],
   ['GET', '/api/late-charges/rule', 'hr_pay', lateCharges.lateRuleGet],
   ['POST', '/api/late-charges/rule', 'hr_pay', lateCharges.lateRuleSave],
@@ -1301,6 +1314,13 @@ export default {
       }
 
       if (!nightly) return;
+
+      // Staff feedback: open a round on its day, remind, and close and read it.
+      const fb = await watchFeedback(env.DB, { timezone, env, ctx: { env, executionContext } })
+        .catch((err) => { console.error('Feedback watch failed', err); return {}; });
+      if (fb.opened || fb.reminded || fb.closed) {
+        console.log(`Feedback: ${fb.opened ? 'opened, ' : ''}${fb.reminded ?? 0} reminded${fb.closed ? ', closed and read' : ''}`);
+      }
 
       // A copy of everything to the bucket, when one is bound. First, so a
       // fault further down the morning cannot cost the night's copy.

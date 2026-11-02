@@ -5,6 +5,7 @@ import { card, emptyState } from './components.js';
 import { whatToRemember } from './dept-view.js';
 import { installNudge } from './install-help.js';
 import { myLateBlock } from './my-late.js';
+import { myFeedbackCard } from './my-feedback.js';
 import { MAX_UNAVAILABLE_DAYS, busiestWeek } from '../availability-rules.js';
 import {
   asHours, field, formDialog, lateBy, shiftColour, shiftHours, shiftMinutes, showSheet,
@@ -109,6 +110,8 @@ export async function renderAttMe(params = {}) {
 
     // A late charge: the rule to accept, and any recent charge with where it
     // stands and a place to say why.
+    // Feedback waiting for them, while a round is open.
+    myFeedbackCard(),
     myLateBlock(),
 
     // The week the whole page covers: their own shifts and, further down, who
