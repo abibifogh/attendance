@@ -61,11 +61,19 @@ export const KIND_LABEL = {
   differs: 'Paid is not what the PO says',
   nopo: 'A bill with no PO',
   placeholder: 'PO with a stand-in vendor or item',
+  store: 'Kitchen store request',
 };
 
 /** Who stand-in POs go to: an active supervisor or admin an admin chose, or null (shared out like the rest). */
 async function placeholderPerson(env, settings) {
   const id = Number(settings.todo_placeholder_to);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return (await people(env)).find((p) => Number(p.id) === id) || null;
+}
+
+/** Who the kitchen's store requests go to: an active supervisor or admin an admin chose, or null. */
+async function storePerson(env, settings) {
+  const id = Number(settings.store_requests_to);
   if (!Number.isInteger(id) || id <= 0) return null;
   return (await people(env)).find((p) => Number(p.id) === id) || null;
 }
@@ -190,7 +198,7 @@ export async function syncTodos(env, { today = new Date().toISOString().slice(0,
 }
 
 /** Give each open item nobody holds to the supervisor with the fewest. */
-async function shareOut(env) {
+export async function shareOut(env) {
   const loose = await all(env.DB, "SELECT id FROM money_todo WHERE state != 'closed' AND assignee_id IS NULL ORDER BY day, id");
   if (!loose.length) return 0;
   const people = await supervisors(env);
@@ -250,6 +258,7 @@ export async function listTodos(env, account, { closed = false } = {}) {
     // Who stand-in POs go to, and who could.
     ...(admin ? {
       placeholderTo: (await placeholderPerson(env, settings))?.id ?? null,
+      storeTo: (await storePerson(env, settings))?.id ?? null,
       placeholderPeople: (await people(env)).map((p) => ({ id: p.id, name: p.name || p.email, role: p.role })),
     } : {}),
   };
@@ -274,8 +283,9 @@ export async function answerTodo(env, id, body, account) {
     throw forbidden('That item is on somebody else’s list.');
   }
   const answer = str(body?.answer, 'What happened', { required: true, max: 600 });
-  // A PO waiting for its bill, or for its real vendor and item: a note of where it has got to. Odoo closes it.
-  if (t.kind === 'unbilled' || t.kind === 'placeholder') {
+  // A PO waiting for its bill, or for its real vendor and item, or a store request waiting to be issued:
+  // a note of where it has got to. Odoo, or the breakfast app, closes it.
+  if (t.kind === 'unbilled' || t.kind === 'placeholder' || t.kind === 'store') {
     await run(env.DB, 'UPDATE money_todo SET answer = ?2, answered_by = ?3, answered_at = ?4, sent_back = NULL WHERE id = ?1',
       t.id, answer, who(account), now());
     return { ok: true, state: t.state };
@@ -369,6 +379,16 @@ export async function saveTodoSettings(env, body, account, { today } = {}) {
     await setSetting(env.DB, 'todo_placeholder_to', person ? String(person.id) : '');
     if (person) {
       await run(env.DB, "UPDATE money_todo SET assignee_id = ?1, assignee_name = ?2 WHERE kind = 'placeholder' AND state != 'closed'", person.id, person.name || person.email);
+    }
+  }
+  // Who the kitchen's store requests go to. Their open ones move with the choice.
+  if (body?.storeTo !== undefined) {
+    const id = body.storeTo === '' || body.storeTo === null ? null : Number(body.storeTo);
+    const person = id == null ? null : (await people(env)).find((p) => Number(p.id) === id);
+    if (id != null && !person) throw badRequest('Choose a supervisor or an admin for the kitchen’s store requests.');
+    await setSetting(env.DB, 'store_requests_to', person ? String(person.id) : '');
+    if (person) {
+      await run(env.DB, "UPDATE money_todo SET assignee_id = ?1, assignee_name = ?2 WHERE kind = 'store' AND state != 'closed'", person.id, person.name || person.email);
     }
   }
   let lookbackChanged = false;

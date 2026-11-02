@@ -87,7 +87,7 @@ async function tell(env, t, { reminder = false, fetchImpl, today = now().slice(0
   const from = t.about ? ` (from ${t.about})` : '';
   try {
     await callLink({
-      binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
+      env, binding: env.HIVE, secret: env.SSO_SECRET_ATTENDANCE, fetchImpl, path: '/api/link/mail',
       body: {
         to: to.email, subject, kind: 'insight_todo', senderName: 'Insight',
         text: `${t.what}${from}.\n\nIt ${when}. Made by ${t.made_by}.\n\n${link ? `Open it: ${link}\n\n` : ''}It is in Insight (not HIVE): To sort out › To-do, signed in as ${to.email}. Press Done when it is done. It is on your Today list, and in the 07:00 email, until then.`,

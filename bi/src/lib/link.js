@@ -1,3 +1,5 @@
+import { fromMail } from './notices.js';
+
 /**
  * The till link: HIVE and this app asking each other things, server to server.
  *
@@ -53,7 +55,7 @@ export async function verifyLink(secret, { at, sig, path, bodyText, now = Date.n
  * `binding` is the service binding; `fetchImpl` stands in for it in tests.
  * Throws with a sentence a person can act on when the link is not set up.
  */
-export async function callLink({ binding, secret, path, body = {}, fetchImpl = null, what = 'HIVE' }) {
+export async function callLink({ binding, secret, path, body = {}, fetchImpl = null, what = 'HIVE', env = null }) {
   const send = fetchImpl || (binding ? (req) => binding.fetch(req) : null);
   if (!send || !secret) {
     const error = new Error(`HIVE and Insight are not linked yet. Run Actions → "Set Insight's secrets" with Insight's address in the box.`);
@@ -69,6 +71,8 @@ export async function callLink({ binding, secret, path, body = {}, fetchImpl = n
     error.status = response.status;
     throw error;
   }
+  // An email sent to somebody: in their notifications inbox too, and pushed to their phone.
+  if (env && path === '/api/link/mail') await fromMail(env, body).catch((err) => console.error('Notifications:', err));
   return data;
 }
 

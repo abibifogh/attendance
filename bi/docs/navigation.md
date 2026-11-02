@@ -5,7 +5,7 @@ they are the six buttons along the bottom.
 
 | Place | Pages |
 |---|---|
-| **Assistant** | Today (your one list, by when each thing is due; see assistant.md) · Approvals (everything waiting for an admin, in every system) · Brief |
+| **Assistant** | Today (your one list, by when each thing is due; see assistant.md) · Approvals (everything waiting for an admin, in every system) · Brief · Notifications (your inbox, and push to your phone; see notifications.md) |
 | **To sort out** | Everything to act on from the shifts and Odoo: drawer, card & bank, POs, to-dos, Nice Place, Odoo |
 | **Front desk** | Shifts (with Closing reports) · People · Safe · Nice Place (Counters & money, Pickups) |
 | **Buying** | Suppliers · Receipts · Floats · Spend · Fixed assets (admins; see fixed-assets.md) |
@@ -23,6 +23,7 @@ given nothing in Insight gets the other systems.
   Light or dark). Arrows move, Enter opens, Escape closes.
 - **The days**: one window for every report page, kept in the address.
 - **New PO** (admins).
+- **The bell**: your unread notifications; opens Assistant › Notifications.
 - **The apps button**: the other systems you were given, opened signed in.
   This used to be the Hub page.
 - Your name (bottom left, or top right on a phone): View as somebody else,
