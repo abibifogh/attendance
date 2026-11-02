@@ -281,7 +281,7 @@ main { padding: 14px 28px 120px; max-width: 1320px; }
   .icon-b, .me-pill .av { width: 40px; height: 40px; }
   .me-pill { padding: 0; height: 40px; }
   .me-who-s { display: none; }
-  main { padding: 12px 16px 130px; }
+  main { padding: 12px 16px calc(130px + env(safe-area-inset-bottom)); }
   .pg-head { margin-bottom: 14px; }
   /* Along the bottom: a floating pill, black for where you are. */
   .bottom-nav { display: flex; gap: 2px; position: fixed; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 30;
@@ -610,7 +610,9 @@ button.btn.wide { width: 100%; padding: .55rem; font-size: .95rem; margin-top: .
 }
 
 @media (max-width: 640px) {
-  main { padding: .8rem; }
+  /* Room at the bottom for the floating menu bar (and an iPhone's home bar), so the
+     last thing on a page, often its Save button, can be scrolled clear of it. */
+  main { padding: .8rem .8rem calc(130px + env(safe-area-inset-bottom)); }
   .hero { font-size: 2.2rem; }
   /* The header wraps to two rows on a narrow screen, so its height is no
      longer the constant the tab bar's sticky offset was measured against.
