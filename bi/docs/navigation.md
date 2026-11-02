@@ -9,7 +9,7 @@ they are the six buttons along the bottom.
 | **To sort out** | Everything to act on from the shifts and Odoo: drawer, card & bank, POs, to-dos, Nice Place, Odoo |
 | **Front desk** | Shifts (with Closing reports) · People · Safe · Nice Place (Counters & money, Pickups) |
 | **Buying** | Suppliers · Receipts · Floats · Spend · Fixed assets (admins; see fixed-assets.md) |
-| **Reports** | Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) · Staff costs |
+| **Reports** | Team (admins; see team.md) · Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) · Staff costs |
 | **Settings** | People & access (People, Supervisors, Reports they see) · Connections & files (Connections, Shift files) · Rules (Front desk, Nice Place, Receipts) · Notifications (HIVE alerts, Management report, Prepaid summary) · Shared reports |
 
 A page with more than one part has tabs across its top. Somebody given only
@@ -27,7 +27,8 @@ given nothing in Insight gets the other systems.
 - **The apps button**: the other systems you were given, opened signed in.
   This used to be the Hub page.
 - Your name (bottom left, or top right on a phone): View as somebody else,
-  Light or dark, Sign out.
+  Light or dark, My evaluation (when an admin lets people see their own),
+  Sign out.
 
 ## Where the old places went
 

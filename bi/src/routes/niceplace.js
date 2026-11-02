@@ -1,6 +1,7 @@
 import { all, first, run, setSetting, getSettings } from '../lib/db.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { addDays, isDay, todayIn, daysBetween } from '../lib/dates.js';
+import { tell } from '../lib/notices.js';
 
 /**
  * Nice Place, the public washroom.
@@ -208,10 +209,34 @@ export async function sendReading(env, body) {
     day, shift, sales.toiletAdult, sales.toiletChild, sales.toiletAdult + sales.toiletChild, sales.showerAdult, sales.showerChild, sales.showerAdult + sales.showerChild,
     name, `Desk: ${name}`, at);
   }
+  // Told at once: the admins, and the supervisors who read Nice Place's counters. Sent again, the same notification is updated.
+  await toldSent(env, { day, shift, name, sales, pending, again: Boolean(was) }).catch((err) => console.error('Nice Place: notification', err));
   return {
     ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was), values, pending,
     sales: sales ? { shower: sales.showerAdult + sales.showerChild, toilet: sales.toiletAdult + sales.toiletChild, total: Object.values(sales).reduce((t, v) => t + v, 0) } : null,
   };
+}
+
+/**
+ * The desk sent a shift's report: a notification (inbox and push) for every
+ * active admin, and every supervisor who reads Nice Place's counters. One per
+ * shift: sent again within the minutes allowed, the same one is updated.
+ */
+export async function toldSent(env, { day, shift, name, sales, pending = [], again = false }, { fetchImpl } = {}) {
+  const people = await all(env.DB, `SELECT DISTINCT a.id FROM accounts a
+      LEFT JOIN account_access x ON x.account_id = a.id AND x.system_id = 'insight'
+      LEFT JOIN till_access t ON t.account_id = a.id AND t.area = 'niceplace'
+     WHERE a.active = 1 AND (a.is_owner = 1 OR x.role = 'admin' OR (x.role = 'supervisor' AND COALESCE(t.level, 0) >= 2))`).catch(() => []);
+  if (!people.length) return { told: 0, pushed: 0 };
+  const ghs = (minor) => `GH₵${(Number(minor || 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const when = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const money = sales ? `Toilet ${ghs(sales.toiletAdult + sales.toiletChild)}, shower ${ghs(sales.showerAdult + sales.showerChild)}: ${ghs(sales.toiletAdult + sales.toiletChild + sales.showerAdult + sales.showerChild)} in all.` : 'No takings typed.';
+  const counters = pending.length ? ` ${pending.length} counter${pending.length === 1 ? '' : 's'} (${pending.map((c) => LABEL[c] || c).join(', ')}) to read off the picture.` : ' Counters read.';
+  return tell(env, {
+    to: people.map((p) => p.id), kind: 'insight_niceplace', key: `np:${day}:${shift}`, tag: `np:${day}:${shift}`,
+    title: `Nice Place: ${name} ${again ? 'sent again' : 'sent'} the ${shift} shift, ${when}`,
+    body: `${money}${counters}`, link: '#/niceplace', urgent: false,
+  }, fetchImpl ? { fetchImpl } : {});
 }
 
 /** A reading still missing a counter: what the reader could not see. */
