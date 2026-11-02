@@ -382,3 +382,29 @@ test('a reading sent for the wrong day or shift is moved, with its picture, or s
   const r = view.rows.find((x) => x.key === '2026-09-02|night');
   assert.deepEqual([r.reading.movedFrom, r.reading.movedBy], ['2026-09-03|night', 'Test Owner']);
 });
+
+test('the desk sends its shift: admins and the supervisors who read Nice Place are told at once; sent again, the same notification', async () => {
+  const { db, raw } = freshDb();
+  const env = { DB: db };
+  // Made-up people: an admin, a supervisor who reads the counters, one who does not.
+  raw.exec(`INSERT INTO accounts (id, email, name, active) VALUES (41, 'ad@example.test', 'Adwoa Test', 1), (42, 'su@example.test', 'Sam Test', 1), (43, 'no@example.test', 'Nana Test', 1);
+    INSERT INTO account_access (account_id, system_id, role) VALUES (41, 'insight', 'admin'), (42, 'insight', 'supervisor'), (43, 'insight', 'supervisor');
+    INSERT INTO till_access (account_id, area, level) VALUES (42, 'niceplace', 2);`);
+  await np.saveSettings(env, { newLink: true, addName: 'Abena' });
+  const { token } = await np.settingsOf(env);
+  const today = new Date().toISOString().slice(0, 10);
+  const pic = `data:image/jpeg;base64,${Buffer.from('jpeg').toString('base64')}`;
+  const body = { t: token, name: 'Abena', day: today, shift: 'night', photo: pic, sales: { toiletAdult: '120', toiletChild: '30', showerAdult: '80', showerChild: '0' } };
+  await np.sendReading(env, body);
+  const told = await env.DB.prepare('SELECT account_id, title, body, link, times FROM notice ORDER BY account_id').all();
+  assert.deepEqual(told.results.map((n) => n.account_id), [41, 42]);
+  assert.match(told.results[0].title, /^Nice Place: Abena sent the night shift, /);
+  assert.equal(told.results[0].body, 'Toilet GH₵150.00, shower GH₵80.00: GH₵230.00 in all. 4 counters (GB, GT, LB, LT) to read off the picture.');
+  assert.equal(told.results[0].link, '#/niceplace');
+  // Sent again within the hour: the same line, told twice.
+  await np.sendReading(env, body);
+  const again = await env.DB.prepare('SELECT title, times FROM notice WHERE account_id = 41').all();
+  assert.equal(again.results.length, 1);
+  assert.equal(again.results[0].times, 2);
+  assert.match(again.results[0].title, /sent again the night shift/);
+});

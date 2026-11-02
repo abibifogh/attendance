@@ -23,7 +23,13 @@ Every email Insight sends a person with an Insight account, to them or in
 copy: the 07:00 list, a to-do given, proof asked, a note they were tagged in,
 the management report, the prepaid summary, the reply to receipts they
 emailed. And the kitchen's store-room requests (below), which are pushed
-again every 15 minutes. Somebody without an Insight account (a new person
+again every 15 minutes.
+
+**Nice Place's shift report**: the moment the desk sends a shift (its
+counters' picture and the takings), every admin, and every supervisor who
+reads Nice Place's counters, is told: who sent which shift, the toilet and
+shower takings, and any counter still to read off the picture. Sent again
+within the hour allowed, the same notification is updated, not added. Somebody without an Insight account (a new person
 invited, a supplier) gets the email only.
 
 ## On the phone or computer
