@@ -1,6 +1,6 @@
 import { all, first, groupConfig } from '../lib/db.js';
 import { loadFacts, totals } from '../insight/facts.js';
-import { analyse, sourceHealth } from '../insight/engine.js';
+import { sourceHealth } from '../insight/engine.js';
 import { resolveRange, addDays, todayIn, daysBetween } from '../lib/dates.js';
 import { pct, ratio, change } from '../lib/money.js';
 import { bare, dayName } from '../insight/labels.js';
@@ -56,64 +56,6 @@ export async function bootstrap(env) {
       startedAt: lastRun.started_at, finishedAt: lastRun.finished_at, rows: lastRun.rows_written,
       detail: lastRun.detail,
     } : null,
-  };
-}
-
-/**
- * The brief: what somebody should know before they do anything else today.
- *
- * Deliberately short. The value of a morning screen is inversely proportional
- * to how much is on it — a page with forty tiles gets skimmed and then stops
- * being opened. So: five numbers, how each has moved, and the findings worth
- * the most money.
- */
-export async function brief(env, query) {
-  const { db, config, from, to } = await context(env, query, 30);
-  const facts = await loadFacts(db, from, to);
-  const now = totals(facts);
-
-  // The same length of window, immediately before this one. Comparing a month
-  // against the month before is the only comparison most people make, and
-  // making it here means nobody has to do it in their head.
-  const priorTo = addDays(from, -1);
-  const priorFrom = addDays(priorTo, -(facts.dayList.length - 1));
-  const before = totals(await loadFacts(db, priorFrom, priorTo));
-
-  const { findings, errors } = await analyse(db, { from, to, persist: true });
-  const open = await all(db, `
-    SELECT * FROM findings WHERE state IN ('open','acknowledged')
-     ORDER BY impact_monthly DESC, severity LIMIT 6`);
-
-  const metric = (label, value, previous, unit, note) => ({
-    label, value, previous, unit, changePct: change(previous, value), note,
-  });
-
-  return {
-    range: { from, to, days: facts.dayList.length },
-    comparison: { from: priorFrom, to: priorTo },
-    demoMode: config.demoMode,
-    headline: [
-      metric('Revenue recorded', now.net, before.net, 'money',
-        'Everything the four systems saw. No room revenue: nothing here records it.'),
-      metric('Contribution', now.contribution, before.contribution, 'money',
-        'Revenue less purchases and wages. Not profit — no rent, power or depreciation is in any of these systems.'),
-      metric('Wage bill', now.labourCost, before.labourCost, 'money',
-        `Hours actually worked, priced at ${config.defaultHourCost / 100} per hour where a person has no rate of their own.`),
-      metric('Guest nights', now.guestNights, before.guestNights, 'count',
-        'From the breakfast app, the only daily occupancy figure the group keeps.'),
-      metric('Revenue per hour worked', now.revenuePerHour, before.revenuePerHour, 'money',
-        'The one number that moves when either side of the business changes.'),
-      metric('Revenue per guest night', now.revenuePerGuest, before.revenuePerGuest, 'money',
-        'What the average guest spends beyond their room.'),
-    ],
-    money: {
-      collected: now.collected, outstanding: now.outstanding,
-      cash: now.cash, card: now.card, other: now.other,
-    },
-    findings: open.map(shapeFinding),
-    findingsTotal: findings.reduce((n, f) => n + f.impactMonthly, 0),
-    ruleErrors: errors,
-    sources: await sourceHealth(db),
   };
 }
 
@@ -552,48 +494,6 @@ export async function financials(env, query) {
     ],
   };
 }
-
-export async function findings(env, query) {
-  const db = env.DB;
-  const state = String(query?.state || 'live');
-  // Live is what the Brief lists; down is what somebody put down, shown under it.
-  const where = state === 'all' ? '1 = 1'
-    : state === 'live' ? "state IN ('open','acknowledged')"
-      : state === 'down' ? "state IN ('actioned','dismissed','resolved')"
-        : 'state = ?1';
-  const rows = ['all', 'live', 'down'].includes(state)
-    ? await all(db, `SELECT * FROM findings WHERE ${where} ORDER BY impact_monthly DESC, severity`)
-    : await all(db, `SELECT * FROM findings WHERE ${where} ORDER BY impact_monthly DESC, severity`, state);
-  return { findings: rows.map(shapeFinding), state };
-}
-
-function shapeFinding(row) {
-  let evidence = {};
-  let sources = [];
-  try { evidence = JSON.parse(row.evidence || '{}'); } catch { evidence = {}; }
-  try { sources = JSON.parse(row.sources || '[]'); } catch { sources = []; }
-  return {
-    id: row.id,
-    fingerprint: row.fingerprint,
-    ruleId: row.rule_id,
-    severity: row.severity,
-    headline: row.headline,
-    detail: row.detail,
-    action: row.action,
-    line: row.line_id,
-    impactMonthly: row.impact_monthly,
-    confidence: row.confidence,
-    sources, evidence,
-    from: row.from_day, to: row.to_day,
-    firstSeenAt: row.first_seen_at,
-    lastSeenAt: row.last_seen_at,
-    state: row.state,
-    stateBy: row.state_by,
-    stateNote: row.state_note,
-  };
-}
-
-export { shapeFinding };
 
 /**
  * How the wage figure on this page was arrived at.

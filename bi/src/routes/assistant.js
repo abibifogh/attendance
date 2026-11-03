@@ -1,7 +1,6 @@
 import { all, first, getSettings, setSetting } from '../lib/db.js';
 import { badRequest, forbidden } from '../lib/http.js';
 import * as approvals from './approvals.js';
-import * as panels from './panels.js';
 import * as floats from './floats.js';
 import * as receipts from './receipts.js';
 import * as np from './niceplace.js';
@@ -53,7 +52,6 @@ const cedi = (minor) => `GH₵ ${(Math.round(Number(minor) || 0) / 100).toLocale
 /** Each source: its label, the kind of items it gives, and how they are read. */
 const SOURCES = [
   { id: 'approvals', label: 'Approvals in every system', read: readApprovals, area: 'approvals', tag: 'Approval' },
-  { id: 'findings', label: 'Insight’s checks', read: readFindings, area: 'checks', tag: 'Check' },
   { id: 'receipts', label: 'Receipts', read: readReceipts, area: 'buying', tag: 'Receipts' },
   { id: 'floats', label: 'Floats', read: readFloats, area: 'buying', tag: 'Floats' },
   { id: 'bills', label: 'Odoo bills', read: readBills, area: 'buying', tag: 'Odoo' },
@@ -141,7 +139,6 @@ export async function sourcesFor(env, account) {
   const access = await accessOf(env, account);
   const reports = await reportsOf(env, account).catch(() => []);
   const out = [];
-  if (reports.includes('brief')) out.push(SOURCES.find((x) => x.id === 'findings'));
   if (role === 'supervisor') {
     out.push(GIVEN, PROOF, ...apps);
     out.push({ id: 'mytodos', label: 'POs to chase', read: readMyTodos, area: 'buying', tag: 'POs' });
@@ -215,7 +212,7 @@ export async function gather(env, account, { now = Date.now(), sources = null } 
       const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Took too long to answer; it is read again next time.')), SOURCE_MS); });
       const got = await Promise.race([s.read(env, account, now), late]).finally(() => clearTimeout(timer));
       // Amounts only for whoever may see money; the Brief's own findings show theirs on the Brief.
-      for (const item of got) items.push({ source: s.label, area: s.area || 'other', tag: s.tag || s.label, ...item, ...(money || s.id === 'findings' ? {} : { amount: null, amountNote: null }) });
+      for (const item of got) items.push({ source: s.label, area: s.area || 'other', tag: s.tag || s.label, ...item, ...(money ? {} : { amount: null, amountNote: null }) });
       read.push({ id: s.id, label: s.label, ok: true, count: got.length });
     } catch (err) {
       read.push({ id: s.id, label: s.label, ok: false, error: err.message });
@@ -270,18 +267,6 @@ async function readApprovals(env, account, now) {
     out.push({ tab: 'review', key: `approvals-down:${s.id}`, sev: 'warn', title: `${s.label} could not be read for approvals`, why: s.error, advice: 'Its approvals are missing from this list until it answers. Try again later, or check the link under Settings › Connections & files.', actions: [{ label: 'Approvals', href: '#/approvals' }] });
   }
   return out;
-}
-
-/** Insight's own checks, worth the most money first. */
-async function readFindings(env, account, now) {
-  const { findings } = await panels.findings(env, { state: 'live' });
-  return findings.slice(0, 12).map((f) => ({
-    tab: 'fix', key: `finding:${f.id}`, sev: f.severity === 'critical' ? 'crit' : f.severity === 'warning' ? 'warn' : 'info',
-    title: f.headline, why: f.detail, advice: f.action || null, system: (f.sources || []).join(' · ') || 'Insight',
-    amount: f.impactMonthly ? Math.round(f.impactMonthly) : null, amountNote: f.impactMonthly ? 'a month' : null,
-    age: daysSince(f.firstSeenAt, now),
-    actions: [{ label: 'Open the Brief', href: '#/brief' }],
-  }));
 }
 
 /** Receipts with no PO yet, or a draft to check. */

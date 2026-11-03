@@ -100,7 +100,6 @@ const ROUTES = [
   // The numbers. A separate permission from being able to sign in, because
   // somebody who needs the till does not necessarily get the wage bill.
   ['GET', '/api/bootstrap', 'shifts', (env) => panels.bootstrap(env)],
-  ['GET', '/api/brief', 'insight', (env, ctx) => panels.brief(env, ctx.query)],
   ['GET', '/api/pnl', 'insight', (env, ctx) => panels.pnl(env, ctx.query)],
   // Money, from the shifts: the rooms' revenue out of the ASSD journal, and spending paid in cash.
   ['GET', '/api/money/cash', 'insight', (env, ctx) => cashpo.cashView(env, rangeOf(ctx.query))],
@@ -210,8 +209,6 @@ const ROUTES = [
   ['POST', '/api/suppliers/refresh', 'insight', (env, ctx) => supplierBook.refresh(env, ctx.account)],
   ['POST', '/api/suppliers/save', 'insight', (env, ctx) => supplierBook.save(env, ctx.body, ctx.account)],
   ['POST', '/api/suppliers/link', 'insight', (env, ctx) => supplierBook.link(env, ctx.body, ctx.account)],
-  ['GET', '/api/findings', 'insight', (env, ctx) => panels.findings(env, ctx.query)],
-  ['POST', '/api/findings/:id', 'insight', (env, ctx) => admin.decideFinding(env, ctx.params.id, ctx.body)],
   ['GET', '/api/export', 'insight', exportCsv],
 
   // Shift reconciliation. An admin does all of it; a supervisor gets the

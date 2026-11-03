@@ -1,6 +1,5 @@
 import { api, setUnauthorizedHandler } from './api.js';
 import { h, mount, setCurrency, dayRange } from './util.js';
-import { renderBrief } from './views/brief.js';
 import { renderPnl } from './views/pnl.js';
 import { renderFinancials } from './views/financials.js';
 import { renderLabour } from './views/labour.js';
@@ -75,7 +74,6 @@ const ROUTES = [
   // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
   { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'member', own: true },
   { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
-  { path: 'brief', label: 'Brief', section: 'assistant', page: 'Assistant', render: renderBrief, needs: 'insight' },
   // Their own evaluation, once an admin lets people see it (the page says so until then).
   { path: 'my-evaluation', label: 'My evaluation', section: 'assistant', page: 'My evaluation', render: renderMyEvaluation, needs: 'member', own: true, hidden: true },
   // Everything Insight told this person, as an inbox, and whether their phone gets it too.
@@ -132,7 +130,7 @@ const ROUTES = [
 ];
 
 /** Where an old address now goes: `#/buying` was Spend | Suppliers, `#/shifts?tab=inbox` the Inbox. */
-const ALIASES = { buying: 'spend', findings: 'brief', books: 'brief' };
+const ALIASES = { buying: 'spend', findings: 'assistant', books: 'assistant', brief: 'assistant' };
 
 const ICONS = {
   spark: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
