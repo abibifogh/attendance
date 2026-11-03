@@ -55,6 +55,11 @@ const DEFICIT = /^(Begin|End) cash deficit\/surplus$/;
 
 /** The article number ASSD uses for the laundry. */
 export const LAUNDRY_ARTICLE = '540';
+/** ASSD's article numbers for rooms and beds (100 to 289): a night of the stay. */
+export const isNight = (code) => {
+  const n = Number(code);
+  return n >= 100 && n < 290;
+};
 /** The front-desk drawer, as ASSD numbers its registers. */
 export const DRAWER = '001';
 

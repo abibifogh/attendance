@@ -55,7 +55,7 @@ test('and nothing else', async () => {
   const { call } = await setUp();
   for (const [method, path] of [
     ['GET', '/api/shifts?from=2026-08-01&to=2026-08-01'], ['GET', '/api/labour'], ['GET', '/api/pnl'], ['GET', '/api/bootstrap'],
-    ['GET', '/api/till'], ['GET', '/api/stays'], ['GET', '/api/safe'], ['POST', '/api/shifts/answer'],
+    ['GET', '/api/till'], ['GET', '/api/safe'], ['POST', '/api/shifts/answer'],
     ['POST', '/api/shifts/movement'], ['GET', '/api/accounts'], ['GET', '/api/sources'],
   ]) {
     const out = await call(method, path, method === 'POST' ? { key: 'x', answer: 'y', seq: 1 } : undefined);

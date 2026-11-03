@@ -37,7 +37,6 @@ const AREA_TEXT = {
   niceplace: ['Nice Place counters', 'In the Inbox: a picture sent with a counter the reader could not read. Act means read it off the picture and fill it in.'],
   check: ['Check shifts', 'Act means mark a shift checked once its report, drawer and payments are looked at. Until then its person sees its differences as “not checked yet”: the amounts may change.'],
   envelopes: ['Envelopes received (Front desk › Safe)', 'Every envelope moved to the safe, with its amount, and which have reached it. Act means mark them received, with the count, or undo that.'],
-  unpaid: ['Unpaid stays', 'Guests leaving in the next 24 hours who still owe, and guests who left owing. Act means answer them (an admin approves).'],
 };
 export const KIND_TONE = { drawer: 'bad', unexplained: 'bad', overclaimed: 'warn', rental: 'warn', noreport: 'info' };
 export const OUTCOME = { accept: 'Accepted', recover: 'Recovered from pay', pay: 'Paid with salary', cash: 'Paid back in cash', writeoff: 'Written off', back: 'Sent back' };
@@ -876,7 +875,6 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
     let t = null;
     try { t = await api('/todo'); } catch { t = null; }
     const amount = h('input', { type: 'number', min: '0', step: '0.01', value: (s.threshold / 100).toFixed(2), style: 'width:7rem', id: 'tl-small' });
-    const checkout = h('input', { type: 'time', value: s.checkoutTime || '12:00', id: 'tl-checkout-time' });
     const days = t ? h('input', { type: 'number', min: '0', max: '90', value: String(t.unbilledDays), style: 'width:5rem', id: 'tl-unbilled' }) : null;
     const back = t ? h('input', { type: 'number', min: '7', max: '730', value: String(t.lookbackDays ?? 90), style: 'width:5rem', id: 'tl-lookback' }) : null;
     const laundry = t ? h('input', { type: 'number', min: '1', max: '60', value: String(t.laundryDays ?? 3), style: 'width:5rem', id: 'tl-laundry' }) : null;
@@ -897,7 +895,7 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
           e.preventDefault();
           said.textContent = 'Saving…'; said.className = 'small';
           try {
-            await api('/till/settings', { method: 'POST', body: { threshold: amount.value, checkoutTime: checkout.value } });
+            await api('/till/settings', { method: 'POST', body: { threshold: amount.value } });
             let note = 'Saved.';
             if (t) {
               const out = await api('/todo/settings', { method: 'POST', body: { unbilledDays: days.value, lookbackDays: back.value, laundryDays: laundry.value, ...(fixer ? { placeholderTo: fixer.value } : {}), ...(storeTo ? { storeTo: storeTo.value } : {}) } });
@@ -909,13 +907,12 @@ export function tillViews({ who, period, onChange = () => {}, describeKey = (k) 
           } catch (err) { said.textContent = err.message; said.className = 'small form-error'; }
         },
       },
-      row('Small differences', 'A difference this small or smaller is left off everybody’s list and off Unpaid stays, and a supervisor’s correction this small counts without waiting for an admin.', amount, ' GH₵'),
+      row('Small differences', 'A difference this small or smaller is left off everybody’s list, and a supervisor’s correction this small counts without waiting for an admin.', amount, ' GH₵'),
       days ? row('PO without a posted bill', 'Raise it on the Inbox after this many days, from the day the cash left or the day it was ordered.', days, ' days') : null,
       back ? row('Look for POs over the last', 'How far back the Inbox looks for cash POs and bills.', back, ' days') : null,
       storeTo ? row('The kitchen’s store requests go to', 'Each request from the breakfast app, while it waits to be issued: a to-do in To sort out, an email, and a push to their phone every 15 minutes until it is issued.', storeTo) : null,
       fixer ? row('POs with a stand-in vendor or item go to', 'A PO in Odoo still using “Vendor to confirm” or the stand-in item (Buying › Receipts › Settings) is a to-do for this person, until it has the real ones.', fixer) : null,
       laundry ? row('Refresh reads the laundry for the last', 'Refresh now reads the laundry system this far back, up to today.', laundry, ' days') : null,
-      row('Guests leave by', 'Check-out time on their last day. Unpaid stays uses it to tell who leaves in the next 24 hours.', checkout),
       h('div.tl-actions', h('button.btn.primary', { type: 'submit' }, 'Save'), said)));
   }
 

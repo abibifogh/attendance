@@ -23,7 +23,6 @@ import * as notices from './routes/notices.js';
 import * as team from './routes/team.js';
 import * as stockFeed from './routes/stockfeed.js';
 import * as storeReq from './routes/storereq.js';
-import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
 import * as cashpo from './routes/cashpo.js';
 import * as prepaid from './routes/prepaid.js';
@@ -235,10 +234,7 @@ const ROUTES = [
     return shiftRoutes.saveReceiptsRead(env, ctx.body, ctx.account);
   }],
   ['POST', '/api/shifts/answer', 'shifts', async (env, ctx) => {
-    // An unpaid stay is answered by whoever may act on Unpaid stays; anything else by whoever may act on the exceptions.
-    const stay = String(ctx.body?.key || '').startsWith('stay:');
-    if (stay) await till.requireArea(env, ctx.account, 'unpaid', 2);
-    else await mayActOn(env, ctx.account, [String(ctx.body?.key || '')]);
+    await mayActOn(env, ctx.account, [String(ctx.body?.key || '')]);
     return waitsForAdmin(env, ctx, shiftRoutes.saveAnswer(env, ctx.body, ctx.account, { pending: isSupervisor(ctx) }),
       // Which one, so two emails do not read alike: "The drawer count, Sat 3 Oct night".
       `${ctx.account?.name || 'A supervisor'} answered “${ctx.body?.answer || ''}” for ${approvals.keyWords(String(ctx.body?.key || '')).replace(/^A /, 'a ').replace(/^An /, 'an ').replace(/^The /, 'the ')}.`);
@@ -280,10 +276,6 @@ const ROUTES = [
   ['POST', '/api/shifts/journal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadJournal(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/bank', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadBank(env, ctx.body, ctx.account))],
   ['POST', '/api/shifts/terminal', 'shifts', area('files', 2, (env, ctx) => shiftRoutes.uploadTerminal(env, ctx.body, ctx.account))],
-
-  // Stays not fully paid: leaving in the next 24 hours, or already left.
-  // Answers to them go through /api/shifts/answer, like any exception.
-  ['GET', '/api/stays', 'shifts', area('unpaid', 1, (env, ctx) => stays.unpaidStays(env, ctx.account))],
 
   // Envelopes moved to the safe, and which have been received. Admins only.
   // Before the routes below, which would read "envelopes" as an id.
@@ -945,17 +937,15 @@ const isSupervisor = (ctx) => till.roleOf(ctx.account) !== 'admin';
 
 /** A supervisor's answer waits for an admin; tell the admins, without holding up the reply. */
 /**
- * One answer for many exceptions and unpaid stays, ticked together in the
- * Inbox. Each is saved as if answered on its own; one already settled by an
- * admin is skipped and counted. A supervisor's wait for an admin, who is told
- * once for the lot.
+ * One answer for many exceptions, ticked together in the Inbox. Each is saved
+ * as if answered on its own; one already settled by an admin is skipped and
+ * counted. A supervisor's wait for an admin, who is told once for the lot.
  */
 async function answerMany(env, ctx) {
   const keys = [...new Set((Array.isArray(ctx.body?.keys) ? ctx.body.keys : []).map((k) => String(k || '').trim()).filter(Boolean))].slice(0, 300);
   if (!keys.length) throw badRequest('Tick what to answer.');
   if (!String(ctx.body?.answer || '').trim()) throw badRequest('Choose the answer.');
-  if (keys.some((k) => k.startsWith('stay:'))) await till.requireArea(env, ctx.account, 'unpaid', 2);
-  if (keys.some((k) => !k.startsWith('stay:'))) await mayActOn(env, ctx.account, keys.filter((k) => !k.startsWith('stay:')));
+  await mayActOn(env, ctx.account, keys);
   const pending = isSupervisor(ctx);
   let saved = 0;
   const skipped = [];

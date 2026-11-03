@@ -2,7 +2,7 @@ import { all, run, writeAll } from '../lib/db.js';
 import { badRequest } from '../lib/http.js';
 import { addDays, dow, dowLabel, isoWeek, month, daysBetween } from '../lib/dates.js';
 import { requireAdmin } from './till.js';
-import { isNight } from './stays.js';
+import { isNight } from '../shifts/assd.js';
 
 /**
  * Revenue from the ASSD journal.

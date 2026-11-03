@@ -37,7 +37,7 @@ const KEY_WORDS = {
   pogap: 'A PO total and its expenses', receipts: 'Receipts in the drawer', 'receipts-read': 'Receipts in the drawer',
   'receipts-carried': 'Receipts still in the count', movement: 'A cash movement', 'movement-twice': 'A cash movement made twice',
   'movement-reversal': 'A cash movement put back', moved: 'A cash movement', unlabelled: 'Cash moved with no label',
-  labelled: 'A cash movement labelled', matched: 'A cash movement', stay: 'An unpaid stay', t: 'A card or MoMo payment', b: 'A bank payment',
+  labelled: 'A cash movement labelled', matched: 'A cash movement', t: 'A card or MoMo payment', b: 'A bank payment',
   'not-recorded': 'A payment not in ASSD', 'not-found': 'A card or MoMo payment that never arrived', failed: 'A declined card payment',
   'double-charge': 'A card charged twice', 'paid-more': 'A guest who paid more than ASSD shows', 'paid-less': 'A guest who paid less than ASSD shows',
   'laundry-card': 'A laundry card payment not in ASSD', 'never-settled': 'A payment that never reached the bank', reversal: 'A payment the bank took back', refund: 'A card refund keyed in ASSD', nocash: 'Cash keyed while the drawer did not move',
@@ -48,7 +48,6 @@ const dayWords = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB
 /** An exception's key, in words: what, which day, which shift. */
 export function keyWords(key) {
   const [what, day, slot] = String(key).split(':');
-  if (what === 'stay') return `An unpaid stay, reservation ${String(key).slice(5)}`;
   const words = KEY_WORDS[what] || 'A difference';
   const dated = /^\d{4}-\d{2}-\d{2}$/.test(day || '');
   return dated ? `${words}, ${dayWords(day)}${SLOT_WORDS[slot] ? ` ${SLOT_WORDS[slot]}` : ''}` : words;

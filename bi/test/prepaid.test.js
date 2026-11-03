@@ -5,6 +5,7 @@ import {
   reservationOf, viaOf, totalsOf, prepaidView, csvOf, saveMailSettings, sendSummary, lastOf, shiftMonth, coverageOf,
 } from '../src/routes/prepaid.js';
 import { verifyLink } from '../src/lib/link.js';
+import { isNight } from '../src/shifts/assd.js';
 
 const LINK = 'link-secret';
 const night = (date, amount = 45000, code = '121', name = 'Double Room') => ({ date, code, name, amount });
@@ -32,6 +33,9 @@ test('a reservation: its nights, what was prepaid and how, and what was paid at 
   }) });
   assert.deepEqual([r.arrival, r.checkout, r.nights, r.charged], ['2026-09-05', '2026-09-07', 2, 181000]);
   assert.deepEqual([r.prepaid.online, r.prepaid.bank, r.desk.cash, r.balance, r.status], [90000, 0, 1000, 90000, 'part']);
+  assert.equal(isNight('718'), false, 'a water bottle is not a night');
+  assert.equal(isNight('293'), false, 'nor is a no-show fee');
+  assert.equal(isNight('250'), true);
   assert.equal(lastOf('2026-02'), '2026-02-28');
   assert.equal(shiftMonth('2026-01', -1), '2025-12');
 });

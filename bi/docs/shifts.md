@@ -62,14 +62,14 @@ shift, a small note at the end of the line says which; open it for what to do.
     amounts, a supervisor sees the closing report and what does not agree.
 - **Inbox**: everything somebody has to act on, as one list: what does not
   agree (drawer, card and bank), staff answers from HIVE, POs with no posted
-  bill or paid differently, advances, unpaid stays, and what waits for an
-  admin. Chips across the top show one kind at a time with its count. The one
+  bill or paid differently, advances, and what waits for an admin. Chips
+  across the top show one kind at a time with its count. The one
   picked opens on the right with what can be done; **Previous** and **Next**
   move, and on a keyboard J and K move and 1 to 8 give an exception's answers.
   **Probably the same money** sits above the list (see below). **Show done**
   brings back what was answered or closed. **Refresh now** asks Odoo about the
-  cash POs and reads the laundry system there and then. Exceptions, unpaid
-  stays and open money to-dos can be ticked, one by one or with **Select
+  cash POs and reads the laundry system there and then. Exceptions and open
+  money to-dos can be ticked, one by one or with **Select
   all** (everything of the chip shown): **Answer N ticked** gives them all
   one answer and note (a supervisor's wait for an admin, who is told once;
   a to-do takes the note as what happened, and an admin's closes it), and an
@@ -774,31 +774,6 @@ the safe, on a shift with no closing report or expense sheet to settle it, is
 listed in the Inbox. "It went to the safe" or "It was expenses" on the exception labels
 it. A supervisor's label counts straight away too, since it fills in what no
 count said; the daily summary lists it.
-
-## Unpaid stays
-
-To sort out → **Unpaid stays** lists guests leaving in the next 24 hours who still
-owe, and guests who have checked out owing (the last 60 days).
-
-Each ASSD reservation is one transaction in the journal, with every night and
-extra charged to it and every payment taken on it, each dated. Charged less
-paid is what the guest owes. The nights are the room and bed articles
-(numbers 100 to 289); check-out is the day after the last night, at the time
-set under Settings → Limits (12:00 to start
-with). Balances no bigger than the small-differences amount are left off.
-
-Two limits come from the journal printing only the days it was exported for:
-
-- A stay is judged only once its last night is before the last day loaded,
-  so export the journal through tomorrow to see tomorrow's check-outs.
-- A stay booked before the first day loaded may have been paid then. Those
-  are listed apart, under "Check these in ASSD", and are not counted in the
-  tab's badge. Loading the earlier journals settles them.
-
-Journals loaded before this check existed carry no charges: load them again.
-Answers go through the same approval as exceptions: a supervisor's answer
-waits for an admin. Supervisors see the list and may answer by default
-(Settings → Who sees what → Unpaid stays).
 
 On a shift's page, differences still waiting for somebody are under **What
 does not agree on this shift**. Those already answered, matched or explained
