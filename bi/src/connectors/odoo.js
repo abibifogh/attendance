@@ -915,3 +915,39 @@ export async function fixedAssetData({ config: settings, token, since, minEach, 
   return { accounts, assets, accountLines, billLines };
 }
 
+
+/**
+ * Confirmed purchase orders and their lines, for the stores' stock: every PO
+ * confirmed (or cancelled after it was) on or after a day, and each product
+ * line with its unit, quantity ordered, quantity received and price.
+ * Read-only: `search_read` on purchase.order and purchase.order.line.
+ */
+export async function stockPoLines({ config: settings, token, since, ids = [], fetchImpl = fetch }) {
+  const config = odooConfig(settings, token);
+  const opts = { fetchImpl };
+  const want = ['name', 'partner_id', 'state', 'date_approve', 'date_order'];
+  const recent = await searchRead(config, 'purchase.order', [['date_approve', '>=', `${since} 00:00:00`], ['state', 'in', ['purchase', 'done', 'cancel']]], want, opts);
+  // POs already offered whose state may have moved (cancelled), even if Odoo no longer dates them in the window.
+  const seen = new Set(recent.map((r) => r.id));
+  const more = ids.filter((id) => !seen.has(id));
+  const known = more.length ? await searchRead(config, 'purchase.order', [['id', 'in', more]], want, opts) : [];
+  const orders = [...recent, ...known];
+  if (!orders.length) return [];
+  // The unit field is product_uom in most Odoo versions; ask which this one has.
+  // If Odoo will not say, the usual set.
+  let lineFields = await fieldsIn(config, 'purchase.order.line',
+    ['order_id', 'product_id', 'product_uom', 'product_uom_id', 'product_qty', 'qty_received', 'price_unit', 'name', 'display_type'], opts);
+  if (!lineFields.includes('product_id')) lineFields = ['order_id', 'product_id', 'product_uom', 'product_qty', 'qty_received', 'price_unit', 'name', 'display_type'];
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  const lines = await searchRead(config, 'purchase.order.line', [['order_id', 'in', [...byId.keys()]]], lineFields, opts);
+  return lines.filter((l) => !l.display_type && refId(l.product_id)).map((l) => {
+    const o = byId.get(refId(l.order_id)) || {};
+    const uom = l.product_uom ?? l.product_uom_id;
+    return {
+      lineId: l.id, po: String(o.name || ''), poId: o.id, poState: String(o.state || ''),
+      supplier: refName(o.partner_id), confirmedOn: String(o.date_approve || o.date_order || '').slice(0, 10) || null,
+      productId: refId(l.product_id), uomId: refId(uom) ?? 0, product: refName(l.product_id) || String(l.name || ''), uom: refName(uom),
+      qty: Number(l.product_qty) || 0, received: Number(l.qty_received) || 0, priceUnit: Number(l.price_unit) || 0,
+    };
+  });
+}

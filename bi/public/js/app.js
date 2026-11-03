@@ -10,6 +10,7 @@ import { renderSafe } from './views/safe.js';
 import { renderSpend } from './views/suppliers.js';
 import { renderSupplierBook } from './views/supplierbook.js';
 import { renderFixedAssets } from './views/fixedassets.js';
+import { renderStockFeed } from './views/stockfeed.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub, appsPanel } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
@@ -30,6 +31,7 @@ import { renderAssistant } from './views/assistant.js';
 import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { renderNotifications } from './views/notifications.js';
+import { renderTeam, renderMyEvaluation } from './views/team.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
 import { watchFigures } from './fit.js';
@@ -74,6 +76,8 @@ const ROUTES = [
   { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'member', own: true },
   { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
   { path: 'brief', label: 'Brief', section: 'assistant', page: 'Assistant', render: renderBrief, needs: 'insight' },
+  // Their own evaluation, once an admin lets people see it (the page says so until then).
+  { path: 'my-evaluation', label: 'My evaluation', section: 'assistant', page: 'My evaluation', render: renderMyEvaluation, needs: 'member', own: true, hidden: true },
   // Everything Insight told this person, as an inbox, and whether their phone gets it too.
   { path: 'notifications', label: 'Notifications', section: 'assistant', page: 'Notifications', render: renderNotifications, needs: 'member', own: true },
 
@@ -95,8 +99,11 @@ const ROUTES = [
   { path: 'floats', label: 'Floats', section: 'buying', page: 'Floats', render: renderFloats, needs: 'admin', own: true },
   { path: 'spend', label: 'Spend', section: 'buying', page: 'Spend', render: renderSpend, needs: 'insight', report: 'buying' },
   { path: 'assets', label: 'Fixed assets', section: 'buying', page: 'Fixed assets', render: renderFixedAssets, needs: 'admin', own: true },
+  { path: 'stock', label: 'Stock from Odoo', section: 'buying', page: 'Stock from Odoo', render: renderStockFeed, needs: 'admin', own: true },
 
   // What the business made, the week's report from the other apps, the guests and the staff.
+  // Each person's work across the apps, what holds them back, and their evaluation.
+  { path: 'team', label: 'Team', section: 'reports', page: 'Team', render: renderTeam, needs: 'admin', own: true },
   { path: 'money', label: 'Profit & loss', section: 'reports', page: 'Money', render: renderPnl, needs: 'insight' },
   { path: 'yardstick', label: 'Health', section: 'reports', page: 'Money', render: renderFinancials, needs: 'insight' },
   { path: 'cash', label: 'Cash & collections', section: 'reports', page: 'Money', render: renderCash, needs: 'insight' },
@@ -230,7 +237,9 @@ async function renderApp() {
 
   // The hub is a page only for somebody given nothing else; everybody else
   // reaches the other systems from the apps button.
-  const shown = visible.some((r) => r.path !== 'hub') ? visible.filter((r) => r.path !== 'hub') : visible;
+  // On the menu: everything they may open, but the hub, and pages reached only by a link (My evaluation).
+  const listed = visible.filter((r) => !r.hidden);
+  const shown = listed.some((r) => r.path !== 'hub') ? listed.filter((r) => r.path !== 'hub') : listed;
   const sections = SECTIONS.map((s) => ({ ...s, routes: shown.filter((r) => r.section === s.id) })).filter((s) => s.routes.length);
   const pagesOf = (s) => [...new Set(s.routes.map((r) => r.page))].map((page) => ({ page, routes: s.routes.filter((r) => r.page === page) }));
 
@@ -293,9 +302,13 @@ async function renderApp() {
     setInterval(() => { if (document.visibilityState === 'visible') askBell(); }, 60_000);
   }
   const appsBtn = h('button.icon-b', { type: 'button', 'aria-label': 'Open another system', 'aria-expanded': 'false', onclick: (e) => { e.stopPropagation(); toggle(apps, appsBtn); if (!apps.hidden && !apps.childElementCount) appsPanel(apps); } }, icon('grid'));
+  // Their own evaluation: only once an admin lets people see it.
+  const myEval = h('button', { type: 'button', hidden: true, onclick: () => { closePops(); go('my-evaluation'); } }, '★ My evaluation');
+  if (account.id != null) api('/team/settings').then((t) => { myEval.hidden = !t.showOwn; }).catch(() => {});
   const me = h('div.pop.me-pop', { hidden: true },
     h('div.me-who', h('b', account.name || 'Account'), h('small', roleName(account))),
     account.mayViewAs ? h('button', { type: 'button', onclick: () => { closePops(); openViewAs(); } }, '👁 View as somebody else…') : null,
+    myEval,
     h('button', { type: 'button', onclick: () => { toggleTheme(); closePops(); } }, '◐ Light or dark'),
     installButton(),
     h('button', { type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); } }, 'Sign out'));

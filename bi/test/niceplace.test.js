@@ -382,3 +382,95 @@ test('a reading sent for the wrong day or shift is moved, with its picture, or s
   const r = view.rows.find((x) => x.key === '2026-09-02|night');
   assert.deepEqual([r.reading.movedFrom, r.reading.movedBy], ['2026-09-03|night', 'Test Owner']);
 });
+
+test('the desk sends its shift: admins and the supervisors who read Nice Place are told at once; sent again, the same notification', async () => {
+  const { db, raw } = freshDb();
+  const env = { DB: db };
+  // Made-up people: an admin, a supervisor who reads the counters, one who does not.
+  raw.exec(`INSERT INTO accounts (id, email, name, active) VALUES (41, 'ad@example.test', 'Adwoa Test', 1), (42, 'su@example.test', 'Sam Test', 1), (43, 'no@example.test', 'Nana Test', 1);
+    INSERT INTO account_access (account_id, system_id, role) VALUES (41, 'insight', 'admin'), (42, 'insight', 'supervisor'), (43, 'insight', 'supervisor');
+    INSERT INTO till_access (account_id, area, level) VALUES (42, 'niceplace', 2);`);
+  await np.saveSettings(env, { newLink: true, addName: 'Abena' });
+  const { token } = await np.settingsOf(env);
+  const today = new Date().toISOString().slice(0, 10);
+  const pic = `data:image/jpeg;base64,${Buffer.from('jpeg').toString('base64')}`;
+  const body = { t: token, name: 'Abena', day: today, shift: 'night', photo: pic, sales: { toiletAdult: '120', toiletChild: '30', showerAdult: '80', showerChild: '0' } };
+  await np.sendReading(env, body);
+  const told = await env.DB.prepare('SELECT account_id, title, body, link, times FROM notice ORDER BY account_id').all();
+  assert.deepEqual(told.results.map((n) => n.account_id), [41, 42]);
+  assert.match(told.results[0].title, /^Nice Place: Abena sent the night shift, /);
+  assert.equal(told.results[0].body, 'Toilet GH₵150.00, shower GH₵80.00: GH₵230.00 in all. 4 counters (GB, GT, LB, LT) to read off the picture.');
+  assert.equal(told.results[0].link, '#/niceplace');
+  // Sent again within the hour: the same line, told twice.
+  await np.sendReading(env, body);
+  const again = await env.DB.prepare('SELECT title, times FROM notice WHERE account_id = 41').all();
+  assert.equal(again.results.length, 1);
+  assert.equal(again.results[0].times, 2);
+  assert.match(again.results[0].title, /sent again the night shift/);
+});
+
+test('at a glance: today’s two shifts, what needs somebody, the figures, the chart, the staff and the envelopes', async () => {
+  const { db, raw } = freshDb();
+  const env = { DB: db };
+  const s = await np.settingsOf(env);
+  // Made-up shifts: 1 Nov both, 2 Nov day (sent late), 2 Nov night nothing, 3 Nov day. LT stops moving; GB jumps once.
+  const r = (day, shift, by, sent, gb, gt, lb, lt) => raw.prepare(`INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+    .run(day, shift, by, gb, gt, lb, lt, `${day} ${sent}`, `${day} ${sent}`);
+  r('2026-10-31', 'night', 'Ama Test', '23:05:00', 100, 100, 100, 100);
+  r('2026-11-01', 'day', 'Ama Test', '13:40:00', 300, 300, 300, 100);
+  r('2026-11-01', 'night', 'Esi Test', '23:10:00', 500, 500, 500, 100);
+  r('2026-11-02', 'day', 'Ama Test', '14:10:00', 5000, 700, 700, 100);
+  r('2026-11-03', 'day', 'Ama Test', '13:35:00', 5200, 900, 900, 100);
+  const m = (day, shift, toilet, shower) => raw.prepare(`INSERT INTO np_revenue (day, shift, toilet_adult, toilet_child, toilet_total, shower_adult, shower_child, shower_total, staff, uploaded_by, uploaded_at)
+    VALUES (?, ?, ?, 0, ?, ?, 0, ?, 'x', 'Desk', 'now')`).run(day, shift, toilet, toilet, shower, shower);
+  m('2026-11-01', 'day', 15000, 9000); m('2026-11-01', 'night', 15000, 9000); m('2026-11-02', 'day', 15000, 9000); m('2026-11-03', 'day', 12000, 9000);
+  raw.exec("INSERT INTO np_pickup_shift (day, shift, pickup_id, amount) VALUES ('2026-11-01', 'day', 1, 24000)");
+  const readings = raw.prepare('SELECT * FROM np_reading').all();
+  const revenue = raw.prepare('SELECT * FROM np_revenue').all();
+  const out = np.analyse({ readings, revenue, settings: s, from: '2026-11-01', to: '2026-11-03' });
+  const g = await np.glanceOf(env, { rows: out.rows, from: '2026-11-01', to: '2026-11-03', s, usualShare: out.usualShare, now: Date.parse('2026-11-03T15:00:00Z') });
+
+  assert.equal(g.today[0].state, 'sent');
+  assert.equal(g.today[0].by, 'Ama Test');
+  assert.equal(g.today[0].late, false);
+  assert.equal(g.today[0].revenue, 21000);
+  assert.deepEqual([g.today[1].state, g.today[1].due, g.today[1].chase], ['on', '23:00', '23:15']);
+
+  assert.deepEqual(g.needs.missing, [{ day: '2026-11-02', shift: 'night' }]);
+  assert.deepEqual(g.needs.sensors.map((x) => [x.counter, x.kind]).sort(), [['gb', 'jump'], ['lt', 'stuck']]);
+  assert.equal(g.needs.envelopes.shifts, 3, 'one of four picked up');
+  assert.equal(g.needs.envelopes.amount, 24000 + 24000 + 21000);
+
+  assert.equal(g.tiles.takings, 24000 * 3 + 21000);
+  assert.deepEqual([g.tiles.expected, g.tiles.sent, g.tiles.onTime, g.tiles.missing], [5, 4, 3, 1]);
+  assert.ok(g.tiles.counted > 0 && g.tiles.paid > 0);
+  assert.deepEqual(g.staff.map((p) => [p.name, p.shifts, p.onTime]), [['Ama Test', 3, 2], ['Esi Test', 1, 1]]);
+
+  const states = g.chart.flatMap((d) => d.shifts.map((x) => `${d.day} ${x.shift} ${x.state}`));
+  assert.deepEqual(states, ['2026-11-01 day ok', '2026-11-01 night ok', '2026-11-02 day ok', '2026-11-02 night missing', '2026-11-03 day ok', '2026-11-03 night on']);
+  assert.equal(g.sent['2026-11-01|day'].envelope, 'picked');
+  assert.equal(g.sent['2026-11-02|day'].envelope, 'safe');
+  assert.equal(g.sent['2026-11-02|day'].late, true);
+});
+
+test('a shift not sent 15 minutes after it ends: the admins and Nice Place supervisors are told, once; the desk page says so', async () => {
+  const { db, raw } = freshDb();
+  const env = { DB: db };
+  raw.exec(`INSERT INTO accounts (id, email, name, active) VALUES (41, 'ad@example.test', 'Adwoa Test', 1), (42, 'su@example.test', 'Sam Test', 1), (43, 'no@example.test', 'Nana Test', 1);
+    INSERT INTO account_access (account_id, system_id, role) VALUES (41, 'insight', 'admin'), (42, 'insight', 'supervisor'), (43, 'insight', 'supervisor');
+    INSERT INTO till_access (account_id, area, level) VALUES (42, 'niceplace', 2);`);
+  await np.saveSettings(env, { newLink: true, addName: 'Ama Test' });
+  raw.exec("INSERT INTO np_reading (day, shift, name, gb, gt, lb, lt, photo_id, sent_at, at) VALUES ('2026-11-02', 'day', 'Ama Test', 1, 1, 1, 1, 1, '2026-11-02 13:40:00', '2026-11-02 13:40:00')");
+  // 23:10: the night shift ended at 23:00, not yet 15 minutes.
+  assert.deepEqual(await np.remindMissing(env, { now: Date.parse('2026-11-02T23:10:00Z') }), { told: 0 });
+  const out = await np.remindMissing(env, { now: Date.parse('2026-11-02T23:16:00Z') });
+  assert.equal(out.told, 1);
+  const told = raw.prepare("SELECT account_id, title, urgent FROM notice WHERE kind = 'insight_niceplace' ORDER BY account_id").all();
+  assert.deepEqual(told.map((t) => t.account_id), [41, 42]);
+  assert.equal(told[0].title, 'Nice Place: the night shift’s report is not in');
+  assert.equal(told[0].urgent, 1);
+  // Once only.
+  assert.deepEqual(await np.remindMissing(env, { now: Date.parse('2026-11-02T23:31:00Z') }), { told: 0 });
+  // Days later it is not told again.
+  assert.deepEqual(await np.remindMissing(env, { now: Date.parse('2026-11-04T09:00:00Z') }), { told: 0 });
+});

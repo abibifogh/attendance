@@ -166,16 +166,49 @@ it was moved from and by whom. Admins can move any reading. A supervisor given
 Nice Place can move one waiting to be read, from the Inbox. An answer given on
 a shift stays with that shift.
 
-## The income workbook
+## The page: Front desk › Nice Place › Counters & money
 
-Upload it as it is kept: a sheet per month named like `SEP 26`, with Toilet and
-Shower, Day and Night, and Adult, Child and Revenue under each, a row per date,
-and Day and Night names under Shifts. Everything from the **Total** row down is
-left out. Uploading a month again replaces it. **Template** downloads an empty
-one for the month on screen.
+**Today**, **7 days** or **30 days** across the top, and **🔗 Desk link** (admins)
+for the link the desk sends from.
 
-Adult and Child are money: the people are the adults' money ÷ the adult price
-plus the children's ÷ the child price (Settings: GH₵3 and GH₵1).
+1. **Today's two shifts.** A shift that is sent shows what was taken, who sent
+   it and when (late if more than 15 minutes after the shift ended), and a bar of
+   the people paid for against the people counted. A shift on now shows when its
+   report is due, the same shift last week, and the usual takings for it.
+2. **Needs you.** Each with a count and where to go:
+   - pictures with a counter Insight could not read;
+   - shifts with nothing sent;
+   - a counter that has not moved for four shifts while the others have (a
+     sensor may be off), or that jumped far past its usual;
+   - shifts with more people than paid for;
+   - envelopes not picked up yet (from Pickups), and how much is in the safe.
+3. **The figures** for the days shown: takings (toilet and shower, against the
+   same number of days before), people counted, the share paid for, people not
+   paid for (and roughly what they would have paid, at the usual mix of adults
+   and children), and reports sent and on time.
+4. **People counted, and how many paid.** For each day, the day shift and then
+   the night: the height is the people the counters saw after staff
+   walk-throughs; the red top is those not paid for. A dashed outline is a shift
+   with nothing sent (amber: a counter to read). Press a bar to open the shift.
+5. **On the desk**: each person's shifts, how many on time, and the share paid
+   for. **Envelopes**: shifts not picked up yet.
+6. **Shift by shift**: who sent it and when, the toilet and shower takings with
+   paid for against counted, the envelope, and how it stands. **Needs a look**
+   shows only those that do. Other days can be chosen with the dates. Opening a
+   shift shows its picture, the four counters, the sums, and where to correct or
+   move it.
+
+## A shift not sent
+
+Fifteen minutes after a shift ends with nothing sent, the admins and the
+supervisors who read Nice Place's counters are told (Notifications, pushed,
+marked urgent), once. The desk has no account to be told on: when the desk link
+is opened, it says which shift is not sent yet.
+
+## The income workbook (older months)
+
+It is no longer needed: the desk sends the takings every shift. Months uploaded
+before still count.
 
 ## The sums
 

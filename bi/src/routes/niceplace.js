@@ -1,6 +1,7 @@
 import { all, first, run, setSetting, getSettings } from '../lib/db.js';
 import { badRequest, HttpError, str } from '../lib/http.js';
 import { addDays, isDay, todayIn, daysBetween } from '../lib/dates.js';
+import { tell } from '../lib/notices.js';
 
 /**
  * Nice Place, the public washroom.
@@ -117,7 +118,7 @@ export async function linkForm(env, query) {
   return {
     staff: await staffNames(env), suggest: suggest(last, new Date(), s), today,
     hours: { day: `${s.dayStarts}–${s.nightStarts}`, night: `${s.nightStarts}–${s.nightEnds}` },
-    choices: choices.map((c) => ({ ...c, sent: isSent.has(`${c.day}|${c.shift}`) })),
+    choices: choices.map((c) => ({ ...c, sent: isSent.has(`${c.day}|${c.shift}`), overdue: !isSent.has(`${c.day}|${c.shift}`) && Date.now() > shiftEnds(c.day, c.shift, s) + LATE_MINUTES * 60_000 })),
   };
 }
 
@@ -208,10 +209,34 @@ export async function sendReading(env, body) {
     day, shift, sales.toiletAdult, sales.toiletChild, sales.toiletAdult + sales.toiletChild, sales.showerAdult, sales.showerChild, sales.showerAdult + sales.showerChild,
     name, `Desk: ${name}`, at);
   }
+  // Told at once: the admins, and the supervisors who read Nice Place's counters. Sent again, the same notification is updated.
+  await toldSent(env, { day, shift, name, sales, pending, again: Boolean(was) }).catch((err) => console.error('Nice Place: notification', err));
   return {
     ok: true, sentAt: was?.sent_at || at, resendUntil: RESEND_MINUTES, replaced: Boolean(was), values, pending,
     sales: sales ? { shower: sales.showerAdult + sales.showerChild, toilet: sales.toiletAdult + sales.toiletChild, total: Object.values(sales).reduce((t, v) => t + v, 0) } : null,
   };
+}
+
+/**
+ * The desk sent a shift's report: a notification (inbox and push) for every
+ * active admin, and every supervisor who reads Nice Place's counters. One per
+ * shift: sent again within the minutes allowed, the same one is updated.
+ */
+export async function toldSent(env, { day, shift, name, sales, pending = [], again = false }, { fetchImpl } = {}) {
+  const people = await all(env.DB, `SELECT DISTINCT a.id FROM accounts a
+      LEFT JOIN account_access x ON x.account_id = a.id AND x.system_id = 'insight'
+      LEFT JOIN till_access t ON t.account_id = a.id AND t.area = 'niceplace'
+     WHERE a.active = 1 AND (a.is_owner = 1 OR x.role = 'admin' OR (x.role = 'supervisor' AND COALESCE(t.level, 0) >= 2))`).catch(() => []);
+  if (!people.length) return { told: 0, pushed: 0 };
+  const ghs = (minor) => `GH₵${(Number(minor || 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const when = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const money = sales ? `Toilet ${ghs(sales.toiletAdult + sales.toiletChild)}, shower ${ghs(sales.showerAdult + sales.showerChild)}: ${ghs(sales.toiletAdult + sales.toiletChild + sales.showerAdult + sales.showerChild)} in all.` : 'No takings typed.';
+  const counters = pending.length ? ` ${pending.length} counter${pending.length === 1 ? '' : 's'} (${pending.map((c) => LABEL[c] || c).join(', ')}) to read off the picture.` : ' Counters read.';
+  return tell(env, {
+    to: people.map((p) => p.id), kind: 'insight_niceplace', key: `np:${day}:${shift}`, tag: `np:${day}:${shift}`,
+    title: `Nice Place: ${name} ${again ? 'sent again' : 'sent'} the ${shift} shift, ${when}`,
+    body: `${money}${counters}`, link: '#/niceplace', urgent: false,
+  }, fetchImpl ? { fetchImpl } : {});
 }
 
 /** A reading still missing a counter: what the reader could not see. */
@@ -692,8 +717,9 @@ export function analyse({ readings, revenue, settings, from, to }) {
 /** The page: the shifts of the days asked for, and the settings. */
 export async function npView(env, query, account, { admin = false } = {}) {
   const today = todayIn('UTC');
-  const to = isDay(query?.to) ? query.to : today;
-  const from = isDay(query?.from) ? query.from : addDays(to, -13);
+  const days = [1, 7, 30].includes(Number(query?.days)) ? Number(query.days) : null;
+  const to = days ? today : isDay(query?.to) ? query.to : today;
+  const from = days ? addDays(today, 1 - days) : isDay(query?.from) ? query.from : addDays(to, -6);
   const s = await settingsOf(env);
   // The reading before the first shift, and the money of every shift a gap may cover.
   const before = await first(env.DB, `SELECT * FROM np_reading WHERE day < ?1 AND ${COMPLETE} ORDER BY day DESC, CASE shift WHEN 'night' THEN 1 ELSE 0 END DESC LIMIT 1`, from);
@@ -726,12 +752,13 @@ export async function npView(env, query, account, { admin = false } = {}) {
   // Shifts with nothing yet are shown only once readings have started, up to now.
   const started = out.rows.filter((r) => r.reading || r.pending || Object.values(r.facilities).some((x) => x.revenue != null)).map((r) => order(r.day, r.shift)).sort()[0];
   out.rows = out.rows.filter((r) => r.reading || r.pending || r.status !== 'waiting' || (started && order(r.day, r.shift) > started));
+  const glance = await glanceOf(env, { rows: out.rows, from, to, s, usualShare: out.usualShare });
   const staff = await all(env.DB, 'SELECT id, name, active FROM np_staff ORDER BY active DESC, name');
   const lastUpload = await first(env.DB, 'SELECT MAX(uploaded_at) AS at, MAX(day) AS day FROM np_revenue');
   let readLast = null;
   try { readLast = JSON.parse((await getSettings(env.DB)).np_read_last || 'null'); } catch { readLast = null; }
   return {
-    from, to, ...out, rows: out.rows.reverse(),
+    from, to, ...out, rows: out.rows.reverse(), glance,
     staff, admin,
     // How the last picture went with the reader, for the manager.
     readLast: admin ? readLast : null,
@@ -890,4 +917,203 @@ export async function answer(env, body, account) {
     ON CONFLICT (day, shift) DO UPDATE SET answer = ?3, note = ?4, by_name = ?5, at = ?6`,
   day, shift, text, str(body?.note, 'Note', { max: 600 }), who(account), now());
   return { ok: true };
+}
+
+
+// ------------------------------------------------------------ at a glance --
+
+/** When a shift ends, as a moment (Accra is UTC). */
+export function shiftEnds(day, shift, s = DEFAULTS) {
+  const m = minutesOf(shift === 'day' ? s.nightStarts : s.nightEnds);
+  return Date.parse(`${day}T00:00:00Z`) + m * 60_000;
+}
+export function shiftStarts(day, shift, s = DEFAULTS) {
+  return Date.parse(`${day}T00:00:00Z`) + minutesOf(shift === 'day' ? s.dayStarts : s.nightStarts) * 60_000;
+}
+/** How long after a shift ends its report counts as late, and is chased. */
+export const LATE_MINUTES = 15;
+const ms = (at) => Date.parse(`${String(at).replace(' ', 'T')}Z`);
+const sum = (xs, f) => xs.reduce((t, x) => t + (Number(f(x)) || 0), 0);
+
+/** One shift, as the top of the page and the chart show it. */
+function shiftSummary(r, own = null) {
+  const f = Object.values(r.facilities || {});
+  const counted = r.reading ? sum(f, (x) => x.paying) : null;
+  const both = r.reading && f.every((x) => x.reportedPeople != null);
+  const paid = both ? sum(f, (x) => x.reportedPeople) : null;
+  // The shift's own takings, as the desk sent them (the counters may cover a shift before it too).
+  const toilet = own ? own.toilet_total ?? null : null;
+  const shower = own ? own.shower_total ?? null : null;
+  return {
+    counted, paid, notPaid: both ? sum(f, (x) => Math.max(0, (x.paying || 0) - (x.reportedPeople || 0))) : null,
+    revenue: own ? (toilet || 0) + (shower || 0) : null, toilet, shower,
+  };
+}
+
+/**
+ * What the page shows first: today's two shifts, what needs somebody, the
+ * figures for the days shown against the days before, each day's people
+ * counted against people paid for, the staff on the desk, and the envelopes
+ * still in the safe.
+ */
+export async function glanceOf(env, { rows, from, to, s, usualShare, now = Date.now() }) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const sentAt = (r) => r?.reading?.sentAt || r?.pending?.sentAt || null;
+  const sentBy = (r) => r?.reading?.name || r?.pending?.name || r?.staff || null;
+  const isSent = (r) => Boolean(r && (r.reading || r.pending || ownOf.has(r.key)));
+  const late = (r) => { const at = sentAt(r); return at ? ms(at) > shiftEnds(r.day, r.shift, s) + LATE_MINUTES * 60_000 : false; };
+
+  // Today's two shifts.
+  const lo = from < addDays(today, -28) ? from : addDays(today, -28);
+  const rev = await all(env.DB, 'SELECT day, shift, toilet_total, shower_total FROM np_revenue WHERE day BETWEEN ?1 AND ?2', lo, to > today ? to : today).catch(() => []);
+  const ownOf = new Map(rev.map((x) => [`${x.day}|${x.shift}`, x]));
+  const takings = new Map(rev.map((x) => [`${x.day}|${x.shift}`, (x.toilet_total || 0) + (x.shower_total || 0)]));
+  const summary = (r) => shiftSummary(r, ownOf.get(r.key) || null);
+  const todayShifts = SHIFTS.map((shift) => {
+    const r = byKey.get(`${today}|${shift}`);
+    const ends = shiftEnds(today, shift, s);
+    const past = [...Array(28).keys()].map((i) => takings.get(`${addDays(today, -(i + 1))}|${shift}`)).filter((v) => v != null && v > 0);
+    const base = {
+      day: today, shift, hours: shift === 'day' ? `${s.dayStarts}–${s.nightStarts}` : `${s.nightStarts}–${s.nightEnds}`,
+      due: new Date(ends).toISOString().slice(11, 16), chase: new Date(ends + LATE_MINUTES * 60_000).toISOString().slice(11, 16),
+      lastWeek: takings.get(`${addDays(today, -7)}|${shift}`) ?? null,
+      usual: past.length >= 3 ? [Math.min(...past), Math.max(...past)] : null,
+    };
+    if (isSent(r)) return { ...base, state: 'sent', at: sentAt(r)?.slice(11, 16) || null, by: sentBy(r), late: late(r), status: r.answer ? 'good' : r.status, ...summary(r) };
+    if (now < shiftStarts(today, shift, s)) return { ...base, state: 'later' };
+    if (now < ends + LATE_MINUTES * 60_000) return { ...base, state: 'on' };
+    return { ...base, state: 'missing' };
+  });
+
+  // The shifts that have ended in the days shown, and how each was sent.
+  const ended = rows.filter((r) => shiftEnds(r.day, r.shift, s) + LATE_MINUTES * 60_000 <= now);
+  const sent = ended.filter(isSent);
+  const missing = ended.filter((r) => !isSent(r)).map((r) => ({ day: r.day, shift: r.shift }));
+
+  // Counters that stopped moving, or jumped far past their usual.
+  const complete = rows.filter((r) => r.reading && r.moved && !r.first).sort((a, b) => order(a.day, a.shift).localeCompare(order(b.day, b.shift)));
+  const sensors = [];
+  for (const c of COUNTERS) {
+    const last = complete.slice(-4);
+    const others = last.every((r) => COUNTERS.some((o) => o !== c && r.moved[o] > 0));
+    if (last.length === 4 && last.every((r) => r.moved[c] === 0) && others) sensors.push({ counter: c, kind: 'stuck', shifts: 4 });
+    const moves = complete.filter((r) => !r.resets.includes(c)).map((r) => r.moved[c] / (r.span?.length || 1));
+    const mid = median(moves.filter((v) => v > 0));
+    const jump = complete.filter((r) => !r.resets.includes(c) && mid && r.moved[c] / (r.span?.length || 1) > Math.max(200, mid * 5));
+    if (jump.length) sensors.push({ counter: c, kind: 'jump', day: jump.at(-1).day, shift: jump.at(-1).shift, moved: jump.at(-1).moved[c], usual: Math.round(mid) });
+  }
+
+  // The figures, and the days before for comparison.
+  const len = daysBetween(from, to).length;
+  const before = await first(env.DB, 'SELECT SUM(COALESCE(toilet_total, 0) + COALESCE(shower_total, 0)) AS t FROM np_revenue WHERE day BETWEEN ?1 AND ?2', addDays(from, -len), addDays(from, -1)).catch(() => null);
+  const summaries = rows.map((r) => ({ r, x: summary(r) }));
+  const toilet = sum(summaries, (y) => y.x.toilet);
+  const shower = sum(summaries, (y) => y.x.shower);
+  const matched = summaries.filter((y) => y.x.counted != null && y.x.paid != null);
+  const counted = sum(matched, (y) => y.x.counted);
+  const paid = sum(matched, (y) => Math.min(y.x.paid, y.x.counted));
+  const worth = (f) => (usualShare?.[f] != null ? usualShare[f] * s.adult + (1 - usualShare[f]) * s.child : (s.adult + s.child) / 2);
+  const notPaidMoney = sum(rows, (r) => sum(Object.entries(r.facilities || {}), ([f, x]) => (x.reportedPeople != null && x.paying != null ? Math.max(0, x.paying - x.reportedPeople) * worth(f) : 0)));
+
+  // The staff on the desk.
+  const people = new Map();
+  for (const { r, x } of summaries) {
+    if (!isSent(r)) continue;
+    const name = sentBy(r) || 'Not named';
+    const p = people.get(name) || { name, shifts: 0, onTime: 0, counted: 0, paid: 0 };
+    p.shifts += 1;
+    if (!late(r)) p.onTime += 1;
+    if (x.counted != null && x.paid != null) { p.counted += x.counted; p.paid += Math.min(x.paid, x.counted); }
+    people.set(name, p);
+  }
+
+  // Envelopes still in the safe: shifts with money not picked up.
+  const env_ = await all(env.DB, `SELECT r.day, r.shift, COALESCE(r.toilet_total, 0) + COALESCE(r.shower_total, 0) AS amount FROM np_revenue r
+    LEFT JOIN np_pickup_shift p ON p.day = r.day AND p.shift = r.shift
+    WHERE p.pickup_id IS NULL AND COALESCE(r.toilet_total, 0) + COALESCE(r.shower_total, 0) > 0 ORDER BY r.day, r.shift`).catch(() => []);
+
+  const inSafe = new Set(env_.map((x) => `${x.day}|${x.shift}`));
+  const total = toilet + shower;
+  return {
+    today: todayShifts,
+    needs: {
+      toRead: rows.filter((r) => r.pending).map((r) => ({ day: r.day, shift: r.shift })),
+      missing,
+      sensors,
+      notPaid: rows.filter((r) => ['bad', 'warn'].includes(r.status) && !r.answer).map((r) => ({ day: r.day, shift: r.shift, ...summary(r) })),
+      envelopes: { shifts: env_.length, amount: sum(env_, (x) => x.amount), since: env_[0]?.day || null },
+    },
+    tiles: {
+      takings: total, toilet, shower, before: before?.t ?? null,
+      change: before?.t ? Math.round(((total - before.t) / before.t) * 100) : null,
+      counted, paid, paidPct: counted ? Math.round((paid / counted) * 100) : null,
+      notPaid: Math.max(0, counted - paid), notPaidMoney: Math.round(notPaidMoney),
+      expected: ended.length, sent: sent.length, onTime: sent.filter((r) => !late(r)).length, missing: missing.length,
+    },
+    chart: daysBetween(from, to).map((day) => ({
+      day,
+      shifts: SHIFTS.map((shift) => {
+        const r = byKey.get(`${day}|${shift}`);
+        if (shiftStarts(day, shift, s) > now) return { shift, state: 'later' };
+        if (r?.pending) return { shift, state: 'toread' };
+        if (!isSent(r)) return { shift, state: shiftEnds(day, shift, s) + LATE_MINUTES * 60_000 <= now ? 'missing' : 'on' };
+        const x = summary(r);
+        return { shift, state: x.counted == null ? 'nocount' : 'ok', counted: x.counted, paid: x.paid, revenue: x.revenue };
+      }),
+    })),
+    staff: [...people.values()].map((p) => ({ ...p, paidPct: p.counted ? Math.round((p.paid / p.counted) * 100) : null })).sort((a, b) => b.shifts - a.shifts || a.name.localeCompare(b.name)),
+    sent: Object.fromEntries(rows.map((r) => {
+      const x = summary(r);
+      const envelope = inSafe.has(r.key) ? 'safe' : (x.revenue || 0) > 0 ? 'picked' : null;
+      return [r.key, { at: sentAt(r), by: sentBy(r), late: late(r), envelope, ...x }];
+    })),
+  };
+}
+
+/**
+ * A shift whose report has not come 15 minutes after it ended: the admins and
+ * the supervisors who read Nice Place's counters are told, once. (The desk
+ * has no account to be told on; the desk page says it when it is opened.)
+ */
+export async function remindMissing(env, { now = Date.now(), fetchImpl } = {}) {
+  const s = await settingsOf(env);
+  if (!s.token) return { skipped: 'No desk link yet.' };
+  const today = new Date(now).toISOString().slice(0, 10);
+  let told = 0;
+  for (const day of [addDays(today, -1), today]) {
+    for (const shift of SHIFTS) {
+      const due = shiftEnds(day, shift, s) + LATE_MINUTES * 60_000;
+      // Only recent shifts: from the time it is due, for six hours.
+      if (now < due || now > due + 6 * 3600_000) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const sent = await first(env.DB, `SELECT 1 AS x FROM np_reading WHERE day = ?1 AND shift = ?2
+        UNION SELECT 1 FROM np_revenue WHERE day = ?1 AND shift = ?2`, day, shift);
+      if (sent) continue;
+      const key = `np-missing:${day}:${shift}`;
+      // eslint-disable-next-line no-await-in-loop
+      if (await first(env.DB, 'SELECT id FROM notice WHERE key = ?1 LIMIT 1', key).catch(() => null)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const people = await npPeople(env);
+      if (!people.length) continue;
+      const when = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+      // eslint-disable-next-line no-await-in-loop
+      await tell(env, {
+        to: people, kind: 'insight_niceplace', key, tag: key, urgent: true,
+        title: `Nice Place: the ${shift} shift’s report is not in`,
+        body: `${when}: the ${shift} shift ended at ${new Date(shiftEnds(day, shift, s)).toISOString().slice(11, 16)} and nothing was sent from the desk.`,
+        link: '#/niceplace',
+      }, fetchImpl ? { fetchImpl } : {});
+      told += 1;
+    }
+  }
+  return { told };
+}
+
+/** Who is told about Nice Place: active admins, and supervisors who read its counters. */
+async function npPeople(env) {
+  return (await all(env.DB, `SELECT DISTINCT a.id FROM accounts a
+      LEFT JOIN account_access x ON x.account_id = a.id AND x.system_id = 'insight'
+      LEFT JOIN till_access t ON t.account_id = a.id AND t.area = 'niceplace'
+     WHERE a.active = 1 AND (a.is_owner = 1 OR x.role = 'admin' OR (x.role = 'supervisor' AND COALESCE(t.level, 0) >= 2))`).catch(() => [])).map((p) => p.id);
 }

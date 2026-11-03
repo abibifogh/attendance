@@ -1,4 +1,4 @@
-import { h, money } from '../util.js';
+import { h, money, mount } from '../util.js';
 import { api } from '../api.js';
 
 /**
@@ -16,6 +16,9 @@ import { api } from '../api.js';
 
 const dayText = (day) => (day ? new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '');
 const FROM = { drawer: 'the drawer', safe: 'the safe' };
+const STOCK = ['stockmatch', 'stockshort', 'stocklate', 'stockkept'];
+const STORE = { breakfast: 'the breakfast store', maintenance: 'the Maintenance store' };
+const qty = (n) => String(Math.round(Number(n) * 1000) / 1000);
 const fail = (said) => (err) => { said.textContent = err.message; said.className = 'small form-error'; };
 
 /** How long a store request has waited: minutes, then hours. */
@@ -32,9 +35,29 @@ export const todoAge = (t, today) => {
   return Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${day}T12:00:00Z`)) / 86_400_000));
 };
 export const ageTone = (days) => (days >= 21 ? 'old' : days >= 14 ? 'aging' : '');
-export const supplierOf = (t) => (t.kind === 'store' ? t.detail?.department || 'Kitchen' : t.kind === 'nopo' ? t.detail?.supplier : t.detail?.vendor) || 'No supplier named';
-function what(t) {
+export const supplierOf = (t) => (t.kind === 'store' ? t.detail?.department || 'Kitchen' : ['nopo', ...STOCK].includes(t.kind) ? t.detail?.supplier : t.detail?.vendor) || 'No supplier named';
+function what(t, after) {
   const d = t.detail || {};
+  if (t.kind === 'stockmatch') return whichStore(t, after);
+  if (t.kind === 'stockshort') {
+    return [
+      h('p', `${d.item}: ${qty(d.received)} of ${qty(d.expected)} ${d.unit || ''} received in ${STORE[d.app] || 'the store'}${d.by ? ` by ${d.by}` : ''}. The rest of ${d.po} did not come.`),
+      h('p.small.muted', 'Ask the supplier for the rest, or have the PO corrected in Odoo. Close this when it is sorted.'),
+    ];
+  }
+  if (t.kind === 'stocklate') {
+    return [
+      h('p', `${d.po} from ${d.supplier || 'a supplier'} is still on its way in ${STORE[d.app] || 'the store'}, since ${dayText(d.since)}:`),
+      h('ul.td-lines', (d.lines || []).map((l) => h('li', h('b', l.item), ` ${qty(l.qty)}${l.unit ? ` ${l.unit}` : ''}`))),
+      h('p.small.muted', 'Find out whether it came. Once the storekeeper says Received, or the PO is cancelled in Odoo, this closes by itself.'),
+    ];
+  }
+  if (t.kind === 'stockkept') {
+    return [
+      h('p', `${d.po} was cancelled in Odoo after ${d.item} (${qty(d.qty)} ${d.unit || ''}) went into ${STORE[d.app] || 'the store'}, and the store could not take it back${d.reason ? `: ${d.reason}` : '.'}`),
+      h('p.small.muted', 'Correct the count in the store, then close this.'),
+    ];
+  }
   if (t.kind === 'store') {
     return [
       h('p', `${d.askedBy || 'Somebody'} in ${d.department || 'the kitchen'} asked the store room for, needed ${d.neededText || 'now'}${d.follows ? ` (the rest of ${d.follows})` : ''}:`),
@@ -84,6 +107,57 @@ function what(t) {
   ];
 }
 
+/**
+ * "Which store?": a product Odoo has that neither store knows. Choose the
+ * store and its item (or a new one) and how many of the store's unit one Odoo
+ * unit is; or Not stock. Asked once per product.
+ */
+function whichStore(t, after) {
+  const d = t.detail || {};
+  const said = h('span.small');
+  const form = h('div.ws-form');
+  const options = [['breakfast', 'Breakfast store', 'an ingredient or supply'], ['maintenance', 'Maintenance store', 'a part or material'], ['none', 'Not stock', 'leave it alone']];
+  const buttons = options.map(([k, label, sub]) => h('button.ws-opt', { type: 'button', 'aria-pressed': 'false', onclick: () => choose(k) }, h('b', label), h('small', sub)));
+  const send = async (body, message) => {
+    said.textContent = 'Sending…'; said.className = 'small';
+    try { await api('/stock/match', { method: 'POST', body: { productId: d.productId, uomId: d.uomId, ...body } }); await after(message); } catch (err) { fail(said)(err); }
+  };
+  async function choose(app) {
+    options.forEach(([k], i) => buttons[i].setAttribute('aria-pressed', String(k === app)));
+    if (app === 'none') {
+      mount(form, h('button.btn.primary', { type: 'button', onclick: () => send({ app: 'none' }, 'Not stock: it will be left alone.') }, 'Leave it alone'));
+      return;
+    }
+    mount(form, h('p.small.muted', 'Reading the store’s list…'));
+    let items = [];
+    try { items = (await api(`/stock/items?app=${app}`)).items || []; } catch (err) { mount(form, h('p.small.form-error', err.message)); return; }
+    const pick = h('select', { 'aria-label': 'Which item' }, h('option', { value: '' }, 'Choose the item…'),
+      items.map((i) => h('option', { value: String(i.id) }, `${i.name}${i.unit ? ` (${i.unit})` : ''}`)), h('option', { value: '+' }, '+ A new one'));
+    const name = h('input', { type: 'text', maxlength: '120', value: d.product || '', 'aria-label': 'New item’s name' });
+    const unit = h('input', { type: 'text', maxlength: '30', placeholder: 'kg, L, each', 'aria-label': 'New item’s unit' });
+    const fresh = h('div.ws-new', { hidden: true }, h('label', 'Name ', name), h('label', 'Unit ', unit));
+    const factor = h('input', { type: 'number', min: '0', step: 'any', value: '1', 'aria-label': 'How many of the store’s unit' });
+    const unitWord = h('span', 'of the store’s unit');
+    pick.onchange = () => {
+      fresh.hidden = pick.value !== '+';
+      const it = items.find((i) => String(i.id) === pick.value);
+      unitWord.textContent = it?.unit ? it.unit : 'of the store’s unit';
+    };
+    mount(form,
+      h('label.ws-row', 'Which item ', pick), fresh,
+      h('label.ws-row', `One “${d.uom || 'unit'}” in Odoo is `, factor, ' ', unitWord),
+      h('button.btn.primary', { type: 'button', onclick: () => send({
+        app, factor: factor.value,
+        ...(pick.value === '+' ? { newItem: { name: name.value, unit: unit.value } } : { itemId: pick.value }),
+      }, `Sent to ${STORE[app]}.`) }, 'Send it there'));
+  }
+  return [
+    h('p', `${d.product}${d.uom ? ` (${d.uom})` : ''} is on ${(d.lines || []).map((l) => `${l.po} (${qty(l.qty)})`).join(', ')} from ${d.supplier || 'a supplier'}. Neither store knows it yet.`),
+    h('p.small.muted', 'Say once where it goes; every later PO with it goes there too.'),
+    h('div.ws-pick', buttons), form, said,
+  ];
+}
+
 /** What the Inbox's line for an item says under its title. */
 export function todoSub(t, { admin } = {}) {
   return [
@@ -91,6 +165,7 @@ export function todoSub(t, { admin } = {}) {
       unbilled: t.detail?.drafts?.length ? 'draft bill' : 'no bill', differs: 'paid ≠ PO', nopo: 'no PO',
       placeholder: [t.detail?.vendorToConfirm ? 'vendor' : null, t.detail?.itemToConfirm ? 'item' : null].filter(Boolean).join(' + ') + ' to confirm',
       store: `${(t.detail?.lines || []).length} item${(t.detail?.lines || []).length === 1 ? '' : 's'} · needed ${t.detail?.neededText || 'now'}`,
+      stockmatch: 'which store?', stockshort: 'delivered short', stocklate: 'not received', stockkept: 'cancelled, stock stayed',
     }[t.kind],
     t.detail?.paidFrom ? (t.detail.paidFrom === 'safe' ? 'safe' : 'drawer') : (t.kind === 'unbilled' ? 'ordered' : null),
     admin ? (t.assignee?.name || 'nobody yet') : null,
@@ -98,7 +173,7 @@ export function todoSub(t, { admin } = {}) {
 }
 
 /** The title of an item's line. */
-export const todoTitle = (t) => (t.kind === 'nopo' ? `Bill · ${supplierOf(t)}` : `${t.ref} · ${supplierOf(t)}`);
+export const todoTitle = (t) => (t.kind === 'nopo' ? `Bill · ${supplierOf(t)}` : t.kind === 'stockmatch' ? `Which store: ${t.ref}` : `${t.ref} · ${supplierOf(t)}`);
 
 /**
  * One money to-do item in full, with what can be done about it. `ctx` is
@@ -117,7 +192,7 @@ export function todoDetail(t, { admin, supervisors = [], after }) {
     h('div.td-dhead',
       h('div',
         h('small.td-kind', t.kindLabel),
-        h('h2', t.kind === 'nopo' ? `Bill · ${d2.supplier || ''}` : `${t.ref} · ${supplierOf(t)}`)),
+        h('h2', todoTitle(t))),
       t.kind === 'store' ? null : h('b.td-big.num', money(t.kind === 'differs' ? Math.abs(t.amount) : t.amount))),
     h('div.td-facts',
       t.kind === 'nopo'
@@ -126,14 +201,16 @@ export function todoDetail(t, { admin, supervisors = [], after }) {
           ? [fact('Asked', d2.askedAt ? new Date(d2.askedAt).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '–'), fact('Needed', d2.neededText || 'now')]
         : t.kind === 'placeholder'
           ? [fact('Ordered', dayText(d2.orderedOn)), fact('To put right', [d2.vendorToConfirm ? 'Vendor' : null, d2.itemToConfirm ? 'Item' : null].filter(Boolean).join(' and ') || '–')]
+        : STOCK.includes(t.kind)
+          ? [fact('Confirmed', dayText(t.day)), fact('Store', t.kind === 'stockmatch' ? 'not known yet' : (STORE[d2.app] || '–').replace(/^the /, ''))]
         : d2.paidFrom
           ? [fact('Paid from', FROM[d2.paidFrom] || d2.paidFrom), fact('On', dayText(d2.paidDay))]
           : [fact('Ordered', dayText(d2.orderedOn)), fact('Paid', 'not from the drawer or safe')],
       t.kind === 'store' ? fact('Waiting', waitedSince(d2.askedAt)) : fact('Waiting', `${t.age} days`, `.td-age.${ageTone(t.age)}`),
       fact('With', t.assignee?.name || 'Nobody yet')),
-    what(t),
+    what(t, after),
     t.sentBack ? h('p.small.form-error', `Sent back by an admin: ${t.sentBack}`) : null,
-    t.answer && t.state !== 'answered' ? h('p.small', `${['unbilled', 'placeholder', 'store'].includes(t.kind) ? 'Latest note' : 'Answer'}: ${t.answer} (${t.answeredBy})`) : null,
+    t.answer && t.state !== 'answered' ? h('p.small', `${['unbilled', 'placeholder', 'store', ...STOCK].includes(t.kind) ? 'Latest note' : 'Answer'}: ${t.answer} (${t.answeredBy})`) : null,
     t.state === 'answered' ? h('div.sh-waiting',
       h('span', `⏳ Waiting for an admin: ${t.answer} (${t.answeredBy})`),
       admin ? [
