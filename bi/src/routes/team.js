@@ -107,15 +107,32 @@ export async function saveSettings(env, body, account) {
 /** Everybody in HIVE still working here: name, role, email, and their Insight account if they have one. */
 export async function members(env) {
   if (!env.ATT_DB) return [];
-  const rows = await all(env.ATT_DB, `SELECT s.id, s.name, s.department, s.job_title, s.employee_no, u.id AS user_id, LOWER(u.email) AS email
-    FROM att_staff s LEFT JOIN users u ON u.id = s.user_id
+  const rows = await all(env.ATT_DB, `SELECT s.id, s.name, s.department, s.job_title, s.employee_no, s.user_id
+    FROM att_staff s
     WHERE s.active = 1 AND (s.left_on IS NULL OR s.left_on = '' OR s.left_on > date('now')) ORDER BY s.name`).catch(() => []);
+  // A member of staff's login is users.staff_id; a manager who also clocks in
+  // is att_staff.user_id. A login that only opens somebody else's record
+  // (user_staff, for people without a phone) is not theirs, so is not used.
+  const logins = await all(env.ATT_DB, "SELECT id, LOWER(TRIM(email)) AS email, staff_id FROM users WHERE active = 1 AND email LIKE '%@%'").catch(() => []);
+  const personal = await all(env.ATT_DB, "SELECT staff_id, LOWER(TRIM(personal_email)) AS email FROM hr_profile WHERE personal_email LIKE '%@%'").catch(() => []);
+  const byStaff = new Map(); // staff id -> [{ user, email }]
+  const add = (staffId, user, email) => { if (!byStaff.has(staffId)) byStaff.set(staffId, []); byStaff.get(staffId).push({ user, email }); };
+  for (const u of logins) if (u.staff_id) add(Number(u.staff_id), Number(u.id), u.email);
+  const loginById = new Map(logins.map((u) => [Number(u.id), u]));
+  for (const r of rows) if (r.user_id && loginById.has(Number(r.user_id))) add(Number(r.id), Number(r.user_id), loginById.get(Number(r.user_id)).email);
+  for (const h of personal) add(Number(h.staff_id), null, h.email);
   const accounts = await all(env.DB, 'SELECT id, LOWER(email) AS email FROM accounts WHERE active = 1 AND email IS NOT NULL').catch(() => []);
   const byEmail = new Map(accounts.map((a) => [a.email, a.id]));
-  return rows.map((r) => ({
-    id: Number(r.id), name: r.name, role: r.job_title || r.department || 'Staff', department: r.department || null,
-    email: r.email || null, hiveUser: r.user_id ? Number(r.user_id) : null, accountId: r.email ? byEmail.get(r.email) ?? null : null,
-  }));
+  return rows.map((r) => {
+    const found = byStaff.get(Number(r.id)) || [];
+    const emails = [...new Set(found.map((x) => x.email).filter(Boolean))];
+    const user = found.find((x) => x.user)?.user ?? null;
+    return {
+      id: Number(r.id), name: r.name, role: r.job_title || r.department || 'Staff', department: r.department || null,
+      email: emails[0] || null, emails, hiveUser: user,
+      accountId: emails.map((e) => byEmail.get(e)).find((x) => x != null) ?? null,
+    };
+  });
 }
 
 // ------------------------------------------------------------ reading --
@@ -258,7 +275,7 @@ async function fromInsight(env, people, from, to) {
 async function fromBreakfast(env, people, from, to) {
   const out = new Map(people.map((p) => [p.id, []]));
   if (!env.BREAKFAST_DB) return { out, ok: false };
-  const byEmail = new Map(people.filter((p) => p.email).map((p) => [p.email, p.id]));
+  const byEmail = emailMap(people);
   const users = await all(env.BREAKFAST_DB, 'SELECT id, LOWER(email) AS email FROM users WHERE email IS NOT NULL').catch(() => []);
   const userTo = new Map(users.filter((u) => byEmail.has(u.email)).map((u) => [Number(u.id), byEmail.get(u.email)]));
   if (!userTo.size) return { out, ok: true };
@@ -281,9 +298,13 @@ export const io = { fetch: (...a) => fetch(...a) };
 const tasksUrl = (env) => env.MAINTENANCE_TASKS_URL
   || (env.MAINTENANCE_APPROVALS_URL ? String(env.MAINTENANCE_APPROVALS_URL).replace(/\/approvals\/?$/, '/tasks') : null);
 
+/** Every email somebody has, to who they are. */
+const emailMap = (people) => new Map(people.flatMap((p) => (p.emails || (p.email ? [p.email] : [])).map((e) => [e, p.id])));
+const NO_EMAILS = 'nobody in HIVE has an email to match them by';
+
 async function fromApps(env, people, from, to) {
-  const emails = [...new Set(people.map((p) => p.email).filter(Boolean))].slice(0, 200);
-  const byEmail = new Map(people.filter((p) => p.email).map((p) => [p.email, p.id]));
+  const byEmail = emailMap(people);
+  const emails = [...byEmail.keys()].slice(0, 200);
   const out = new Map(people.map((p) => [p.id, []]));
   const said = {};
   const take = (answer, app) => {
@@ -297,8 +318,9 @@ async function fromApps(env, people, from, to) {
   if (emails.length && env.SSO_SECRET_MAINTENANCE && tasksUrl(env)) {
     jobs.push(mgmt.ask({ url: tasksUrl(env), secret: env.SSO_SECRET_MAINTENANCE, path: '/tasks', body: { action: 'activity', emails, from, to }, fetchImpl: io.fetch, what: 'Maintenance' })
       .then((a) => { take(a, 'maintenance'); said.maintenance = 'ok'; }).catch((err) => { said.maintenance = String(err?.message || err).slice(0, 200); }));
-  } else said.maintenance = 'not linked';
-  if (emails.length) {
+  } else said.maintenance = emails.length ? 'not linked' : NO_EMAILS;
+  if (!emails.length) said.pos = NO_EMAILS;
+  else {
     jobs.push(pos(env, '/team/activity', { emails, from, to }, { fetchImpl: io.fetch })
       .then((a) => { take(a, 'pos'); said.pos = 'ok'; }).catch((err) => { said.pos = String(err?.message || err).slice(0, 200); }));
   }
@@ -724,7 +746,7 @@ export async function own(env, account) {
   const s = await settingsOf(env);
   if (!s.showOwn) throw forbidden('Evaluations are not shown to people yet.');
   const email = String(account?.email || '').toLowerCase();
-  const m = email ? (await members(env)).find((x) => x.email === email) : null;
+  const m = email ? (await members(env)).find((x) => x.emails.includes(email)) : null;
   if (!m) throw notFound('Your email in Insight is not the one HIVE has for you.');
   return evaluation(env, m.id, account, { own: true });
 }
