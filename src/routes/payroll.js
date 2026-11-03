@@ -149,7 +149,7 @@ async function gather(ctx, month, { open = true } = {}) {
   const run = await runFor(ctx.db, month, actorOf(ctx), { open, company });
 
   const [everybody, profiles, allowances, schemes, members, scores, penalties, severances,
-    advances, entries, slips, credits, lates]
+    advances, entries, slips, credits, lates, conducts]
     = await Promise.all([
       ctx.db.prepare('SELECT id, name, department, job_title, employee_no, active, hired_on, left_on, company_id FROM att_staff ORDER BY name').all()
         // A database from before there were companies has no column to read.
@@ -183,6 +183,9 @@ async function gather(ctx, month, { open = true } = {}) {
         .catch(() => ({ results: [] })),
       // Late charges coming off this month's pay: kept, or not looked at yet.
       ctx.db.prepare("SELECT * FROM late_charge WHERE month = ? AND status IN ('open', 'kept') ORDER BY day, id").bind(month).all()
+        .catch(() => ({ results: [] })),
+      // Bonus deductions for breaking a house rule, levied against this month.
+      ctx.db.prepare("SELECT * FROM conduct_levy WHERE month = ? AND status = 'active' ORDER BY day, id").bind(month).all()
         .catch(() => ({ results: [] })),
     ]);
 
@@ -244,6 +247,7 @@ async function gather(ctx, month, { open = true } = {}) {
     entriesBy,
     creditsBy: group((credits.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
     latesBy: group((lates.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
+    conductBy: group((conducts.results ?? []).filter((c) => ours.has(c.staff_id)), 'staff_id'),
     slipBy: new Map((slips.results ?? []).map((s) => [s.staff_id, s])),
     paidBy: new Map((staff.results ?? []).map((person) => {
       const closed = (earlier.results ?? []).find((r) => r.staff_id === person.id);
@@ -369,6 +373,9 @@ function linesFrom(data, month) {
       lateCharges: (data.latesBy?.get(person.id) ?? []).map((c) => ({
         chargeId: c.id, amount: Number(c.amount), day: c.day, clockIn: c.clock_in ?? null,
         minutes: Number(c.minutes_late) || 0, shift: c.shift_name ?? null, status: c.status,
+      })),
+      conduct: (data.conductBy?.get(person.id) ?? []).map((c) => ({
+        levyId: c.id, id: c.id, amount: Number(c.amount), day: c.day, name: c.rule_name, note: c.note ?? null,
       })),
       annualBasic: round2(profile.basic * 12),
       bonusPaidThisYear: data.paidBy.get(person.id) ?? 0,
@@ -1296,7 +1303,7 @@ export async function exportBook(ctx) {
   // of its own here as well, so a month can be reconciled against an outside
   // sheet without anybody having to work out where the difference went.
   const payHead = ['Name', 'Department', 'Basic', 'Allowances', 'Bonus', 'Tax carried on bonus', 'Gross',
-    'SSNIT', 'PAYE', 'Advance', 'Late charges', 'Net pay', 'Employer SSNIT', 'Cost'];
+    'SSNIT', 'PAYE', 'Advance', 'Late charges', 'Conduct off salary', 'Net pay', 'Employer SSNIT', 'Cost'];
   const payRows = lines.map((line) => [
     line.staff?.name ?? '',
     line.staff?.department ?? '',
@@ -1309,6 +1316,7 @@ export async function exportBook(ctx) {
     money(line.paye?.total),
     money(round2((line.loanTotal ?? 0) - (line.tillCredit ?? 0))),
     money(line.lateCharge ?? 0),
+    money(line.conductSalary ?? 0),
     money(line.net),
     money(line.ssnit?.employer),
     money(line.employerCost),
@@ -1317,12 +1325,12 @@ export async function exportBook(ctx) {
     totalMoney(totals.basic), totalMoney(totals.allowancesOnSlip ?? totals.allowances),
     totalMoney(totals.bonusNet), totalMoney(totals.carriedOnBonus ?? 0), totalMoney(totals.gross),
     totalMoney(totals.ssnitEmployee), totalMoney(totals.paye), totalMoney(round2((totals.loans ?? 0) - (totals.tillCredit ?? 0))),
-    totalMoney(totals.lateCharge ?? 0), totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
+    totalMoney(totals.lateCharge ?? 0), totalMoney(totals.conductSalary ?? 0), totalMoney(totals.net), totalMoney(totals.ssnitEmployer), totalMoney(totals.cost)];
 
   const payroll = {
     name: 'Payroll',
     freeze: 4,
-    widths: [26, 16, 11, 12, 11, 13, 12, 10, 11, 11, 11, 12, 13, 12],
+    widths: [26, 16, 11, 12, 11, 13, 12, 10, 11, 11, 11, 12, 12, 13, 12],
     rows: [
       [{ v: `${employer} — payroll for ${month}`, s: S.title }],
       [`${lines.length} on the payroll`, '', '', '', '', `In ${data.currency}`],
@@ -2703,6 +2711,13 @@ export async function closeRun(ctx) {
     // Late charges that did not fit this month's take-home wait for the next.
     if (line.lateWaiting?.length) {
       await deferLateCharges(ctx.db, line.lateWaiting.map((c) => c.chargeId), month);
+    }
+    // And bonus deductions with neither bonus nor salary left to carry them.
+    if (line.conduct?.waiting?.length) {
+      const next = addMonths(month, 1);
+      for (const c of line.conduct.waiting) {
+        await ctx.db.prepare("UPDATE conduct_levy SET month = ?2 WHERE id = ?1 AND status = 'active'").bind(c.levyId, next).run();
+      }
     }
 
     // And the repayments, against the advances they came off. Skipped where

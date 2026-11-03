@@ -52,6 +52,28 @@ export function fitLate(charges = [], room = 0) {
 }
 
 /**
+ * Conduct deductions between the bonus and salary: whole ones, oldest first,
+ * onto the bonus while it has room; the rest go to salary.
+ */
+export function splitConduct(items = [], room = 0) {
+  const sorted = [...items].sort((a, b) => String(a.day ?? '').localeCompare(String(b.day ?? ''))
+    || (Number(a.levyId ?? 0) - Number(b.levyId ?? 0)));
+  const onBonus = [];
+  const toSalary = [];
+  let used = 0;
+  for (const c of sorted) {
+    const amount = round2(c.amount);
+    if (round2(used + amount) <= round2(room)) {
+      onBonus.push({ ...c, amount });
+      used = round2(used + amount);
+    } else {
+      toSalary.push({ ...c, amount });
+    }
+  }
+  return { onBonus, toSalary, bonusTotal: used };
+}
+
+/**
  * One line, given every figure. `topUp` is a taxable allowance worked out
  * rather than agreed, which is what a take-home target is delivered through.
  */
@@ -65,6 +87,7 @@ function oneLine({
   loans = [],
   tillCredits = [],
   lateCharges = [],
+  conduct = [],
   annualBasic = null,
   bonusPaidThisYear = 0,
   bonusIsNet = true,
@@ -105,7 +128,7 @@ function oneLine({
   }));
   const scored = round2(earned.reduce((n, s) => n + s.amount, 0));
 
-  const docked = round2(penalties.reduce((n, p) => n + round2(p.amount), 0));
+  const dockedOther = round2(penalties.reduce((n, p) => n + round2(p.amount), 0));
 
   // ---- SSNIT, which is on basic alone and comes off before tax ----------
   const contributions = ssnitOn(pay, { qualifies: ssnit, rates });
@@ -126,6 +149,12 @@ function oneLine({
   // see it.
   const salaryPaye = payeOn(salaryChargeable, rates.bands);
   const bonusEarned = scored;
+
+  // Conduct deductions (bonus deductions an admin levied for a house rule):
+  // whole ones, oldest first, off whatever bonus is left after the other
+  // deductions; any that do not fit there come off salary after tax, below.
+  const conductSplit = splitConduct(conduct, Math.max(0, round2(bonusEarned - dockedOther)));
+  const docked = round2(dockedOther + conductSplit.bonusTotal);
 
   // Never below nothing. A deduction bigger than the bonus is a matter for a
   // person to settle, not something to take out of somebody's salary by
@@ -180,7 +209,11 @@ function oneLine({
   const beforeLate = round2(gross - contributions.employee - tax - loanDue + tillCredit);
   const late = fitLate(lateCharges, beforeLate);
   const lateCharge = late.total;
-  const net = round2(beforeLate - lateCharge);
+  // The conduct deductions the bonus could not carry, off salary, the same
+  // way: whole ones, never below nothing, the rest waiting for next month.
+  const conductPay = fitLate(conductSplit.toSalary, round2(beforeLate - lateCharge));
+  const conductSalary = conductPay.total;
+  const net = round2(beforeLate - lateCharge - conductSalary);
   const cost = round2(gross + contributions.employer);
 
   // ---- how it reads on a payslip ---------------------------------------
@@ -312,6 +345,14 @@ function oneLine({
     lateCharges: late.taken,
     lateCharge,
     lateWaiting: late.waiting,
+    conduct: {
+      onBonus: conductSplit.onBonus,
+      onSalary: conductPay.taken,
+      waiting: conductPay.waiting,
+      bonusTotal: conductSplit.bonusTotal,
+      salaryTotal: conductSalary,
+    },
+    conductSalary,
     net,
     employerCost: cost,
     rates: { label: standing.label, ssnitEmployee: rates.ssnitEmployee, ssnitEmployer: rates.ssnitEmployer },
@@ -401,7 +442,7 @@ export function computeLine(given) {
   const wanted = terms.takeHome;
   if (wanted == null || wanted === '') return finish(oneLine({ ...terms, topUp: 0 }));
 
-  const clean = { ...terms, penalties: [], loans: [], tillCredits: [], lateCharges: [] };
+  const clean = { ...terms, penalties: [], loans: [], tillCredits: [], lateCharges: [], conduct: [] };
   const reach = (pence) => oneLine({ ...clean, topUp: pence / 100 }).net;
 
   // WHAT THE TARGET IS DEPENDS ON WHAT THE TAKE-HOME MEANS.
@@ -477,6 +518,7 @@ export function totalsOf(lines) {
     loans: add('loanTotal'),
     tillCredit: add(null, (l) => l.tillCredit ?? 0),
     lateCharge: add(null, (l) => l.lateCharge ?? 0),
+    conductSalary: add(null, (l) => l.conductSalary ?? 0),
     net: add('net'),
     cost: add('employerCost'),
   };

@@ -146,6 +146,11 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
         (line.lateCharges ?? []).length
           ? row(`Late arrivals (${line.lateCharges.length})`, cash(line.lateCharge ?? 0), lateDays(line.lateCharges))
           : null,
+        // Bonus deductions there was no bonus to take from, named.
+        (line.conduct?.onSalary ?? []).length
+          ? row(`Conduct deductions (${line.conduct.onSalary.length})`, cash(line.conductSalary ?? 0),
+            line.conduct.onSalary.map((c) => `${c.name} (${lateDays([c])})`).join(', '))
+          : null,
       ];
     })(),
   ].filter(Boolean);
@@ -236,7 +241,10 @@ export function payslipPage({ line, data, month, company = companyOf() }) {
             h('table.slip-table', h('tbody',
               ...(b.schemes ?? []).map((sc) => row(sc.name, cash(sc.amount),
                 `${cash(sc.award)} at ${fmtNum(sc.score, 0)}%`)),
-              b.docked ? row('Less deductions for misconduct', `− ${cash(b.docked)}`) : null,
+              ...(line.conduct?.onBonus ?? []).map((c) => row(`Less: ${String(c.name).toLowerCase()}`, `− ${cash(c.amount)}`, lateDays([c]))),
+              b.docked - (line.conduct?.bonusTotal ?? 0) > 0
+                ? row('Less deductions for misconduct', `− ${cash(Math.round((b.docked - (line.conduct?.bonusTotal ?? 0)) * 100) / 100)}`)
+                : null,
               b.notTaken
                 ? row('More was docked than the bonus could carry', cash(b.notTaken))
                 : null,

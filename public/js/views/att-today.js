@@ -9,6 +9,7 @@ import {
   correctTimesDialog, field, formDialog, lateBy, needsAttention, periodBar, reasonSelect, shiftColour, totalsLine,
 } from './att-shared.js';
 import { questionRows } from './absence.js';
+import { canLevy, levyButton, levyDialog } from './conduct.js';
 
 /**
  * The morning screen.
@@ -459,6 +460,7 @@ export async function renderAttToday(params) {
       }
     }
     if (fixesTimes) items.push({ label: 'Correct the clock times', onClick: () => correctTimes(r) });
+    if (canLevy()) items.push({ label: 'Bonus deduction…', onClick: () => levyDialog(r.staff) });
     return dropdownMenu({ label: r.open ? 'Confirm' : 'Change', title: 'Settle this day or correct its times', items });
   };
 
@@ -479,7 +481,7 @@ export async function renderAttToday(params) {
       h('small.tday-sub', shiftLine(r)),
       pill(r)),
     track(r),
-    h('div.tday-act', rowActions(r)));
+    h('div.tday-act', rowActions(r) ?? levyButton(r.staff, { cls: 'tday-mini.is-link', label: '− Bonus' })));
   };
 
   const ticks = [];

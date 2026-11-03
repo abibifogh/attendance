@@ -36,6 +36,7 @@ import { renderAttMyAdvance } from './views/att-my-advance.js';
 import { renderAttMyTill, renderAttMyTillIssues, renderMyTillReports } from './views/att-my-till.js';
 import { renderAttAdvances } from './views/att-advances.js';
 import { renderLateCharges } from './views/late-charges.js';
+import { renderConduct, renderMyConduct } from './views/conduct.js';
 import { renderFeedback, renderFeedbackSetup } from './views/feedback.js';
 import { renderMyFeedback } from './views/my-feedback.js';
 import { renderTillShortages } from './views/till-shortages.js';
@@ -179,6 +180,7 @@ const ROUTES = [
   { mine: true, group: 'my-pay', tab: 'Payslips', mgroup: 'mine', mtab: 'Pay', path: 'att-my-payslips', label: 'My payslips', permission: 'att_me', render: renderAttMyPayslips, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Advance', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-advance', label: 'My advance', permission: 'att_me', render: renderAttMyAdvance, live: ['pay'] },
   { mine: true, group: 'my-pay', tab: 'Medical', mgroup: 'mine', under: 'att-my-payslips', path: 'att-my-medical', label: 'Medical', permission: 'att_me', render: renderAttMyMedical, live: ['pay'] },
+  { mine: true, group: 'my-pay', tab: 'Deductions', mgroup: 'mine', under: 'att-my-payslips', path: 'my-conduct', label: 'Deductions', permission: 'att_me', render: renderMyConduct, live: ['pay'] },
   { mine: true, group: 'me', tab: 'Documents', mgroup: 'mine', mtab: 'Documents', path: 'att-my-contracts', label: 'My documents', permission: 'att_me', render: renderMyContracts, live: ['people'] },
 
   // ---- everybody who runs something --------------------------------------
@@ -227,6 +229,7 @@ const ROUTES = [
   { group: 'money', tab: 'Advances', seg: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
   { group: 'money', tab: 'Advances', seg: 'Till shortages', part: 'att-advances', path: 'till-shortages', label: 'Advances', permission: 'hr_pay', render: renderTillShortages, live: ['pay'] },
   { group: 'money', tab: 'Advances', seg: 'Late charges', part: 'att-advances', path: 'late-charges', label: 'Advances', permission: 'hr_pay', render: renderLateCharges, live: ['pay', 'attendance'] },
+  { group: 'money', tab: 'Advances', seg: 'Bonus deductions', part: 'att-advances', path: 'conduct', label: 'Advances', permission: 'hr_pay', render: renderConduct, live: ['pay'] },
   { group: 'money', tab: 'Medical', path: 'att-medical', label: 'Medical', permission: 'hr_pay', render: renderAttMedical, live: ['pay'] },
   { group: 'money', tab: 'Till', path: 'till-reports', label: 'Till', permission: 'till_reports', render: renderTillReports },
 

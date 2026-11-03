@@ -76,7 +76,13 @@ export function deductionRows(line, cash, rates = {}) {
   if (over > 0 && over === short) rows.push(['Till', cash(0), both]);
   const late = line.lateCharges ?? [];
   if (late.length) rows.push([`Late arrivals (${late.length})`, cash(line.lateCharge ?? 0), lateDays(late)]);
-  const took = (line.ssnit?.employee ?? 0) + (line.paye?.total ?? 0) + (line.loanTotal ?? 0) - over + (Number(line.lateCharge) || 0);
+  const conduct = line.conduct?.onSalary ?? [];
+  if (conduct.length) {
+    rows.push([`Conduct deductions (${conduct.length})`, cash(line.conductSalary ?? 0),
+      conduct.map((c) => `${c.name} (${lateDays([c])})`).join(', ')]);
+  }
+  const took = (line.ssnit?.employee ?? 0) + (line.paye?.total ?? 0) + (line.loanTotal ?? 0) - over
+    + (Number(line.lateCharge) || 0) + (Number(line.conductSalary) || 0);
   return { rows, took: round2(took) };
 }
 
@@ -183,7 +189,9 @@ export async function payslipPdf({ line, company = {}, property = '', month, cur
     head(L, 'HOW THE BONUS CAME OUT', wy);
     let by = wy + 22;
     for (const sc of (b.schemes ?? [])) by = row(L, by, sc.name, cash(sc.amount), `${cash(sc.award)} at ${round2(sc.score)}%`);
-    if (b.docked) by = row(L, by, 'Less deductions for misconduct', `-${cash(b.docked)}`);
+    for (const c of (line.conduct?.onBonus ?? [])) by = row(L, by, `Less: ${String(c.name).toLowerCase()}`, `-${cash(c.amount)}`, lateDays([c]));
+    const otherDocked = round2((b.docked ?? 0) - (line.conduct?.bonusTotal ?? 0));
+    if (otherDocked > 0) by = row(L, by, 'Less deductions for misconduct', `-${cash(otherDocked)}`);
     if (b.notTaken) by = row(L, by, 'More was docked than the bonus could carry', cash(b.notTaken));
     by += 8;
     by = total(L, by, 'Bonus paid', cash(b.net));

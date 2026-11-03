@@ -57,6 +57,7 @@ import * as workload from './routes/workload.js';
 import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
 import * as lateCharges from './routes/late-charges.js';
+import * as conduct from './routes/conduct.js';
 import * as feedback from './routes/feedback.js';
 import { watchFeedback } from './lib/feedback.js';
 import * as approvals from './routes/approvals.js';
@@ -225,6 +226,8 @@ export const ROUTES = [
   ['POST', '/api/me/feedback', 'att_me', feedback.answerFeedback],
   ['POST', '/api/me/late-charges/reason', 'att_me', lateCharges.myLateReason],
   ['POST', '/api/me/late-rule/accept', 'att_me', lateCharges.acceptLateRule],
+  ['GET', '/api/me/conduct', 'att_me', conduct.myConduct],
+  ['POST', '/api/me/conduct/reply', 'att_me', conduct.replyConduct],
 
   // My till: closing a front-desk shift, and answering for the shifts that did
   // not agree. Insight does the checking over the till link; these keep what
@@ -404,6 +407,14 @@ export const ROUTES = [
   ['GET', '/api/late-charges/rule', 'hr_pay', lateCharges.lateRuleGet],
   ['POST', '/api/late-charges/rule', 'hr_pay', lateCharges.lateRuleSave],
   ['POST', '/api/late-charges/exempt', 'hr_pay', lateCharges.lateExempt],
+  // Bonus deductions: anyone with pay can read them; levying, dropping and the
+  // list itself are for an administrator, checked in the handlers.
+  ['GET', '/api/conduct', 'hr_pay', conduct.conductOverview],
+  ['GET', '/api/conduct/rules', 'hr_pay', conduct.conductRules],
+  ['POST', '/api/conduct/rules', 'hr_pay', conduct.saveConductRules],
+  ['GET', '/api/conduct/staff/:id', 'hr_pay', conduct.conductForStaff],
+  ['POST', '/api/conduct/levy', 'hr_pay', conduct.levyConduct],
+  ['POST', '/api/conduct/levy/:id/drop', 'hr_pay', conduct.dropConduct],
   ['POST', '/api/advances/:id/decide', 'hr_pay', advance.decideAdvance],
   ['PATCH', '/api/advances/:id', 'hr_pay', advance.adjustAdvance],
   // Correcting the record rather than the arrangement. Admin only, checked

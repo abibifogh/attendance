@@ -160,6 +160,11 @@ export function journalFor({ lines = [], totals, rates, tiers = TIERS }) {
       detail: 'Withheld for clocking in late',
       amount: round2(sum.lateCharge ?? 0),
     },
+    {
+      account: 'Conduct deductions',
+      detail: 'Withheld from salary for a house rule broken, where there was no bonus',
+      amount: round2(sum.conductSalary ?? 0),
+    },
     { account: 'Net pay', detail: 'What goes out to people', amount: round2(sum.net ?? 0) },
   ].filter((row) => row.amount > 0);
 

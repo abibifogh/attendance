@@ -138,7 +138,7 @@ test('a member of staff gets their five places, and Home first', () => {
   assert.deepEqual(tabsOf(menu[1]).map((t) => t.label), ['My shifts', 'My swaps', 'Lunch', 'Report', 'Your say']);
   // The leave plan opens from a card on Requests, not from a tab.
   assert.deepEqual(tabsOf(menu[2]), []);
-  assert.deepEqual(tabsOf(menu[3]).map((t) => t.label), ['Payslips', 'Advance', 'Medical']);
+  assert.deepEqual(tabsOf(menu[3]).map((t) => t.label), ['Payslips', 'Advance', 'Medical', 'Deductions']);
   assert.deepEqual(tabsOf(menu[4]).map((t) => t.label), ['Documents', 'Directory', 'Handbook', 'Guide']);
   // The FAQ is a view of the handbook.
   const me = menu[4];
@@ -178,7 +178,7 @@ test('an administrator who works shifts reads the six, then Me and Settings', ()
   // On a screen under one of those, the parent lights and its own tabs come up.
   const under = mineTabs(me, 'att-my-medical');
   assert.equal(under.parent, 'att-my-payslips');
-  assert.deepEqual(under.siblings.map((t) => t.label), ['Payslips', 'Advance', 'Medical']);
+  assert.deepEqual(under.siblings.map((t) => t.label), ['Payslips', 'Advance', 'Medical', 'Deductions']);
   // The year's leave plan opens from Requests, not from a second row.
   assert.deepEqual(mineTabs(me, 'requests').siblings, []);
 });

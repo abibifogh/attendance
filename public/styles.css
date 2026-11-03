@@ -8604,3 +8604,48 @@ button.lp-row:disabled { cursor: default; }
 .fb-pick-row input { width: 1.05rem; height: 1.05rem; flex: none; margin: 0; }
 .fb-pick-row span { display: flex; flex-direction: column; }
 .fb-pick-row small { font-size: .74rem; }
+
+/* Bonus deductions: the quick levy */
+.conduct-pick { display: grid; gap: .4rem; margin: .2rem 0 .8rem; }
+.conduct-rule { display: flex; justify-content: space-between; align-items: center; gap: .75rem; text-align: left; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 12px; padding: .6rem .8rem; cursor: pointer; font: inherit; }
+.conduct-rule:hover { border-color: var(--text-dim); }
+.conduct-rule.on { background: var(--text); border-color: var(--text); color: var(--surface); }
+.conduct-rule-name { display: flex; flex-direction: column; font-weight: 650; font-size: .9rem; }
+.conduct-rule-name small, .conduct-rule strong small { font-weight: 500; font-size: .75rem; opacity: .7; }
+.conduct-rule strong { display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.conduct-double { color: #b45309; opacity: 1 !important; }
+.conduct-rule.on .conduct-double { color: #f0a94c; }
+.conduct-hint { margin: .5rem 0 0; font-size: .84rem; color: var(--text-dim); }
+.conduct-had { margin-top: 0; font-size: .84rem; }
+.toast-undo { margin-left: .4rem; border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 8px; padding: .1rem .55rem; font: inherit; font-weight: 700; cursor: pointer; }
+.tday-act { display: flex; gap: .3rem; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+
+/* Money › Advances › Bonus deductions */
+.conduct-row { grid-template-columns: 2rem minmax(9rem, 1.1fr) 8rem minmax(12rem, 2fr) 6.5rem minmax(5.5rem, auto); }
+.conduct-row.is-dropped { opacity: .6; }
+.conduct-what { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.conduct-what small { color: var(--text-dim); font-size: .78rem; line-height: 1.35; }
+.conduct-what .conduct-doubled { align-self: flex-start; background: color-mix(in srgb, var(--bad) 14%, var(--surface)); color: var(--bad); }
+.is-struck { text-decoration: line-through; }
+.conduct-replied { display: inline-flex; font-size: .7rem; font-weight: 750; border-radius: 999px; padding: 0 .45rem; background: color-mix(in srgb, #3b82f6 14%, var(--surface)); color: #1d4ed8; }
+.conduct-layout { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: .9rem; align-items: start; }
+.conduct-side { display: flex; flex-direction: column; gap: .75rem; }
+.conduct-byrule { display: flex; flex-direction: column; gap: .35rem; margin-top: .35rem; color: var(--text); }
+.conduct-byrule div { display: flex; justify-content: space-between; gap: .5rem; }
+@media (max-width: 900px) { .conduct-layout { grid-template-columns: 1fr; } }
+
+/* Settings › Pay & tax › Bonus deductions */
+.conduct-rules { display: flex; flex-direction: column; gap: .4rem; overflow-x: auto; margin-bottom: .6rem; }
+.conduct-rule-row { display: grid; grid-template-columns: minmax(12rem, 1.4fr) minmax(10rem, 1fr) 6.5rem 9rem 3.5rem; gap: .5rem; align-items: center; min-width: 640px; }
+.conduct-rule-head { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.conduct-rule-row input[type=checkbox] { width: 1.1rem; height: 1.1rem; justify-self: center; }
+
+/* My pay › Deductions */
+.my-conduct-list { display: flex; flex-direction: column; gap: .6rem; max-width: 40rem; }
+.my-conduct-card { display: flex; flex-direction: column; gap: .35rem; }
+.my-conduct-card.is-dropped { opacity: .7; }
+.my-conduct-top { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+.my-conduct-top b { color: var(--bad); white-space: nowrap; }
+.my-conduct-state { color: #b45309; font-weight: 650; }
+.my-conduct-state.is-good { color: var(--good); }
+.my-conduct-reply { display: flex; flex-direction: column; gap: .45rem; margin-top: .3rem; }

@@ -9,6 +9,7 @@ import { EVENTS, STATUS } from './contract.js';
 import { renderAttStaff } from './att-staff.js';
 import { openFirstWeek } from './onboarding.js';
 import { welcomeSummary } from './rec-candidate.js';
+import { levyButton } from './conduct.js';
 
 /**
  * One person's file.
@@ -75,6 +76,7 @@ export async function renderPerson(params) {
       ),
       h('div.btn-row',
         h('button.btn-sm', { onclick: () => navigate('people') }, '‹ All staff'),
+        data.person.active ? levyButton({ id: data.person.id, name: data.person.name }) : null,
         data.canManage
           ? h('button.btn-sm', {
             title: 'The welcome and the checklist a new hire is landed on',
