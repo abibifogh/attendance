@@ -8,7 +8,7 @@ they are the six buttons along the bottom.
 | **Assistant** | Today (your one list, by when each thing is due; see assistant.md) · Approvals (everything waiting for an admin, in every system) · Brief · Notifications (your inbox, and push to your phone; see notifications.md) |
 | **To sort out** | Everything to act on from the shifts and Odoo: drawer, card & bank, POs, to-dos, Nice Place, Odoo |
 | **Front desk** | Shifts (with Closing reports) · People · Safe · Nice Place (Counters & money, Pickups) |
-| **Buying** | Suppliers · Receipts · Floats · Spend · Fixed assets (admins; see fixed-assets.md) |
+| **Buying** | Suppliers · Receipts · Floats · Spend · Fixed assets (admins; see fixed-assets.md) · Stock from Odoo (admins; see stock-from-odoo.md) |
 | **Reports** | Team (admins; see team.md) · Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) · Staff costs |
 | **Settings** | People & access (People, Supervisors, Reports they see) · Connections & files (Connections, Shift files) · Rules (Front desk, Nice Place, Receipts) · Notifications (HIVE alerts, Management report, Prepaid summary) · Shared reports |
 
