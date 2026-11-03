@@ -4,10 +4,11 @@ import { state } from '../app.js';
 import { npReviewBox, npMoveBox } from './np-review.js';
 
 /**
- * Nice Place, the public washroom: the counters each shift against the money
- * the income workbook reports for it, the toilets and the showers apart.
- * The link staff send the counters from, the workbook upload, and the
- * settings (names, walk-throughs by staff, prices) are here too.
+ * Nice Place, the public washroom: what the desk sends each shift (the
+ * takings, and a picture of the four door counters), and the people paid
+ * for against the people counted. Today's two shifts and what needs somebody
+ * first; then the figures, a chart, the staff on the desk, and each shift.
+ * The desk link and the settings (names, walk-throughs, prices) are here too.
  */
 
 const SHIFT = { day: 'Day', night: 'Night' };
@@ -31,41 +32,203 @@ export async function renderNicePlace(root, { part = null } = {}) {
   let open = null;
   let flash = null;
 
+  let days = 7;
+  let filter = 'all';
+
   async function load(message = null) {
     flash = message;
-    const q = range.from ? `?from=${range.from}&to=${range.to}` : '';
+    const q = days ? `?days=${days}` : `?from=${range.from}&to=${range.to}`;
     data = await api(`/np${q}`);
     range = { from: data.from, to: data.to };
     if (open && !data.rows.some((r) => r.key === open)) open = null;
     paint();
   }
 
+  const shiftOf = (key) => data.rows.find((r) => r.key === key);
+  function openShift(key) { open = key; paint(); setTimeout(() => document.querySelector('.np-detail')?.scrollIntoView({ behavior: 'smooth' }), 30); }
+
   function paint() {
     if (part === 'settings') { mount(view, flash ? h(`div.banner.${flash[0]}`, flash[1]) : null, settingsBlock()); return; }
-    const rows = data.rows;
-    const count = (st) => rows.filter((r) => r.status === st && !r.answer).length;
-    const waiting = rows.filter((r) => ['no-revenue', 'no-reading'].includes(r.status)).length;
-    const toRead = rows.filter((r) => r.pending).length;
+    const g = data.glance;
     mount(view,
       flash ? h(`div.banner.${flash[0]}`, flash[1]) : null,
-      toRead ? h('div.banner.warning', `${toRead} picture${toRead === 1 ? '' : 's'} sent with a counter that could not be read. Open ${toRead === 1 ? 'it' : 'them'} below (“! Counter to read”) and read the number off the picture. Supervisors given Nice Place see ${toRead === 1 ? 'it' : 'them'} in their Inbox too.`) : null,
-      h('section.card',
-        h('div.np-bar',
-          linkBlock(),
-          h('span.np-grow'),
-          uploadBlock())),
-      h('div.np-tiles',
-        tile('Shifts shown', rows.length, ''),
-        tile('✕ Not adding up', count('bad'), 'bad'),
-        tile('! More people than paid', count('warn') + count('over'), 'warn'),
-        tile('Waiting: picture or workbook', waiting, '')),
-      h('section.card', chartBlock(rows)),
-      h('section.card', tableBlock(rows)),
-      open ? detailBlock(rows.find((r) => r.key === open)) : null,
-      isAdmin ? h('p.small.muted', 'Names on the link, prices and walk-throughs: Settings › Rules › Nice Place.') : null);
+      h('div.npg-head', h('p.npg-lede', 'Each shift the desk sends its takings and a picture of the four door counters. Insight sets the people paid for against the people counted.'), h('span.sp'),
+        h('div.seg', [[1, 'Today'], [7, '7 days'], [30, '30 days']].map(([n, label]) => h('button', {
+          type: 'button', 'aria-selected': String(days === n), onclick: () => { days = n; load(); },
+        }, label))),
+        isAdmin ? h('button.btn', { type: 'button', onclick: linkDialog }, '🔗 Desk link') : null),
+      h('div.npg-now', g.today.map(shiftCard), needsCard(g)),
+      tilesRow(g),
+      h('div.npg-two', h('section.card.npg-chartbox', chartBlock(g)), h('section.card', staffBlock(g))),
+      h('section.card', tableBlock(data.rows, g)),
+      open ? detailBlock(shiftOf(open)) : null,
+      isAdmin ? h('p.small.muted', 'Prices, staff walk-throughs and names on the desk link: Settings › Rules › Nice Place.') : null);
   }
 
-  const tile = (label, n, tone) => h(`div.np-tile${tone ? `.${tone}` : ''}`, h('small', label), h('b.num', String(n)));
+  // ------------------------------------------------------------- today --
+  const cedis = (minor) => money(minor || 0, { places: 0 });
+  const pct = (a, b) => (b ? `${Math.max(0, Math.min(100, (a / b) * 100))}%` : '0%');
+  function meter(paid, counted) {
+    if (counted == null || paid == null || !counted) return null;
+    const p = Math.min(paid, counted);
+    return h('div.npg-meter', h('i.p', { style: `width:${pct(p, counted)}` }), counted > p ? h('i.u', { style: `width:${pct(counted - p, counted)}` }) : null);
+  }
+  function statusChip(st, notPaid) {
+    if (st === 'good') return h('span.npg-chip.ok', '✓ Adds up');
+    if (st === 'bad' || st === 'warn') return h('span.npg-chip.bad', notPaid ? `! ${notPaid} not paid for` : '! Less money than people');
+    if (st === 'over') return h('span.npg-chip.warn', '! More money than people');
+    if (st === 'review') return h('span.npg-chip.warn', '! Counter to read');
+    if (st === 'no-revenue') return h('span.npg-chip.no', 'No takings sent');
+    if (st === 'no-reading') return h('span.npg-chip.no', 'No picture');
+    return h('span.npg-chip.no', 'Waiting');
+  }
+  function shiftCard(t) {
+    const title = h('div.npg-top', h('b', `Today · ${SHIFT[t.shift]}`), h('small', t.hours), h('span.sp'),
+      t.state === 'sent' ? statusChip(t.status, t.notPaid) : t.state === 'on' ? h('span.npg-chip.live', 'On now')
+        : t.state === 'missing' ? h('span.npg-chip.bad', 'Not sent') : h('span.npg-chip.no', 'Later'));
+    if (t.state === 'sent') {
+      return h('div.npg-shift', title,
+        h('div.npg-big', h('b', cedis(t.revenue)), h('span', `sent ${t.at || ''}${t.by ? ` by ${t.by}` : ''}${t.late ? ' · late' : ''}`)),
+        h('div.npg-facts', h('div', h('small', 'Counted'), h('b', t.counted ?? '—')), h('div', h('small', 'Paid for'), h('b', t.paid ?? '—')), h('div', h('small', 'Not paid'), h('b', t.notPaid ?? '—'))),
+        meter(t.paid, t.counted),
+        h('button.sh-link', { type: 'button', onclick: () => openShift(`${t.day}|${t.shift}`) }, 'Open the shift'));
+    }
+    if (t.state === 'missing') {
+      return h('div.npg-shift', title, h('div.npg-big', h('b.muted', '—'), h('span', `Nothing sent: it was due at ${t.due}.`)),
+        h('p.npg-hint', 'You were told at ', t.chase, '. Ask the desk to send it from the desk link.'));
+    }
+    return h('div.npg-shift', title,
+      h('div.npg-big', h('b.muted', '—'), h('span', t.state === 'on' ? `report due ${t.due}` : `starts ${t.hours.split('–')[0]}`)),
+      h('div.npg-facts',
+        h('div', h('small', 'Same shift last week'), h('b', t.lastWeek != null ? cedis(t.lastWeek) : '—')),
+        h('div', h('small', 'Usual'), h('b', t.usual ? `${cedis(t.usual[0])}–${cedis(t.usual[1]).replace('GH₵', '')}` : '—')),
+        h('div', h('small', 'Chased at'), h('b', t.chase))),
+      h('p.npg-hint', `If it is not sent by ${t.chase}, you are told.`));
+  }
+
+  function needsCard(g) {
+    const n = g.needs;
+    const when = (x) => `${dayText(x.day)} ${SHIFT[x.shift].toLowerCase()}`;
+    const items = [];
+    if (n.toRead.length) items.push([n.toRead.length, `Picture${n.toRead.length === 1 ? '' : 's'} with a counter Insight could not read`, 'Read the number off the picture', 'Read them', () => openShift(`${n.toRead[0].day}|${n.toRead[0].shift}`)]);
+    if (n.missing.length) items.push([n.missing.length, `Shift${n.missing.length === 1 ? '' : 's'} with nothing sent`, n.missing.slice(0, 3).map(when).join(', ') + (n.missing.length > 3 ? '…' : ''), 'See', () => { filter = 'look'; paint(); }]);
+    for (const x of n.sensors) {
+      items.push(x.kind === 'stuck'
+        ? [1, `${COUNTER[x.counter].split(' · ')[1]} counter not moving`, `${x.counter.toUpperCase()} has not moved for ${x.shifts} shifts while the others have: the sensor may be off`, null, null]
+        : [1, `${COUNTER[x.counter].split(' · ')[1]} counter jumped`, `${x.counter.toUpperCase()} moved ${whole(x.moved)} on ${when(x)}; usually about ${whole(x.usual)}. Look at the picture`, 'Look', () => openShift(`${x.day}|${x.shift}`)]);
+    }
+    if (n.notPaid.length) items.push([n.notPaid.length, `Shift${n.notPaid.length === 1 ? '' : 's'} with more people than paid`, n.notPaid.slice(0, 2).map((x) => `${when(x)}: ${x.notPaid ?? '?'} not paid for`).join(' · '), 'See', () => { filter = 'look'; paint(); }]);
+    if (n.envelopes.shifts) items.push([n.envelopes.shifts, `Envelope${n.envelopes.shifts === 1 ? '' : 's'} not picked up`, `${cedis(n.envelopes.amount)} in the safe since ${dayText(n.envelopes.since)}`, 'Pickups', () => { location.hash = '#/np-pickups'; }]);
+    const count = items.length;
+    return h(`div.npg-needs${count ? '' : '.calm'}`,
+      h('div.npg-top', h('b', 'Needs you'), h('span.sp'), count ? h('span.npg-chip.warn', String(count)) : h('span.npg-chip.ok', '✓')),
+      count ? items.map(([num, title, sub, label, go]) => h('div.npg-need',
+        h('span.npg-n', String(num)), h('span.npg-t', title, h('small', sub)),
+        label ? h('button.sh-link', { type: 'button', onclick: go }, `${label} ›`) : null))
+        : h('p.npg-hint', 'Nothing needs you: every shift is sent, read and adds up.'));
+  }
+
+  function tilesRow(g) {
+    const t = g.tiles;
+    const span = days === 1 ? 'today' : days ? `${days} days` : 'these days';
+    const tile = (label, big, sub, tone = '') => h(`div.npg-tile${tone ? `.${tone}` : ''}`, h('small', label), h('b', big), h('em', sub));
+    return h('div.npg-tiles',
+      tile(`Takings · ${span}`, cedis(t.takings), [`toilet ${cedis(t.toilet).replace('GH₵', '')} · shower ${cedis(t.shower).replace('GH₵', '')}`,
+        t.change != null ? h(`span.${t.change >= 0 ? 'up' : 'down'}`, ` · ${t.change >= 0 ? '▲' : '▼'} ${Math.abs(t.change)}%`) : null]),
+      tile('People counted', whole(t.counted), 'after staff walk-throughs'),
+      tile('Paid for', t.paidPct != null ? `${t.paidPct}%` : '—', `${whole(t.paid)} of ${whole(t.counted)}`),
+      tile('Not paid for', whole(t.notPaid), `≈ ${cedis(t.notPaidMoney)} at the usual mix`, t.notPaid ? 'red' : ''),
+      tile('Reports sent', `${t.sent} of ${t.expected}`, `${t.onTime} on time${t.missing ? ` · ${t.missing} missing` : ''}`, t.missing ? 'amber' : ''));
+  }
+
+  // --------------------------------------------------------------- chart --
+  function chartBlock(g) {
+    const most = Math.max(10, ...g.chart.flatMap((d) => d.shifts.map((x) => Math.max(x.counted || 0, x.paid || 0))));
+    const step = [10, 20, 25, 50, 100, 200, 250, 500].find((v) => most / v <= 4) || 1000;
+    const top = Math.ceil(most / step) * step;
+    const y = (v) => `${(v / top) * 100}%`;
+    const wide = g.chart.length > 10;
+    return [
+      h('div.npg-row', h('h2', 'People counted, and how many paid'), h('span.sp'),
+        h('div.npg-legend', h('span', h('i.p'), 'Paid for'), h('span', h('i.u'), 'Not paid for'), h('span', h('i.miss'), 'Nothing sent'), h('span', h('i.read'), 'Counter to read'), h('span', h('i.dot'), 'More paid than counted'))),
+      h('p.npg-hint', 'Each day: the day shift, then the night. The height is the people the counters saw, after staff walk-throughs; the red top is those not paid for.'),
+      h('div.npg-chart',
+        Array.from({ length: top / step }, (_, i) => h('div.npg-grid', { style: `bottom:${y((i + 1) * step)}` }, h('span', String((i + 1) * step)))),
+        g.chart.map((d) => h('div.npg-day', d.shifts.map((x) => {
+          const label = `${dayText(d.day)} ${SHIFT[x.shift].toLowerCase()}`;
+          if (x.state === 'missing') return h('div.npg-bar.miss', { title: `${label}: nothing sent`, onclick: () => openShift(`${d.day}|${x.shift}`) });
+          if (x.state === 'toread') return h('div.npg-bar.read', { title: `${label}: a counter to read`, onclick: () => openShift(`${d.day}|${x.shift}`) });
+          if (x.state !== 'ok') return h('div.npg-bar.none', { title: `${label}: ${x.state === 'on' ? 'on now' : x.state === 'later' ? 'later' : 'no counters'}` });
+          const p = Math.min(x.paid ?? x.counted, x.counted);
+          return h('div.npg-bar', { title: `${label}: ${x.paid ?? '—'} paid for of ${x.counted} counted · ${cedis(x.revenue)}`, onclick: () => openShift(`${d.day}|${x.shift}`) },
+            x.paid != null && x.counted > p ? h('i.u', { style: `height:${y(x.counted - p)}` }) : null,
+            h('i.p', { style: `height:${y(p)}` }),
+            x.paid != null && x.paid > x.counted ? h('span.dot', { style: `bottom:calc(${y(x.counted)} + 4px)` }) : null);
+        })))),
+      h('div.npg-x', g.chart.map((d) => h('span', wide ? String(Number(d.day.slice(8))) : [h('b', dayText(d.day, { weekday: 'short', day: 'numeric' })), 'D · N']))),
+    ];
+  }
+
+  function staffBlock(g) {
+    return [
+      h('h2', 'On the desk'),
+      g.staff.length ? h('table.npg-table',
+        h('thead', h('tr', h('th', 'Name'), h('th.n', 'Shifts'), h('th.n', 'On time'), h('th.n', 'Paid for'))),
+        h('tbody', g.staff.map((p) => h('tr', h('td', h('b', p.name)), h('td.n', String(p.shifts)), h('td.n', String(p.onTime)), h('td.n', p.paidPct != null ? `${p.paidPct}%` : '—')))))
+        : h('p.npg-hint', 'Nothing sent in these days.'),
+      h('h2', { style: 'margin-top:1rem' }, 'Envelopes'),
+      g.needs.envelopes.shifts
+        ? h('p', h('b', `${g.needs.envelopes.shifts} shift${g.needs.envelopes.shifts === 1 ? '' : 's'}`), ` not picked up: ${cedis(g.needs.envelopes.amount)} in the safe since ${dayText(g.needs.envelopes.since)}. `, h('a', { href: '#/np-pickups' }, 'Pickups ›'))
+        : h('p.npg-hint', 'Every envelope is picked up.'),
+    ];
+  }
+
+  // --------------------------------------------------------------- table --
+  function tableBlock(rows, g) {
+    const look = (r) => (['bad', 'warn', 'over', 'review'].includes(r.status) && !r.answer) || (!g.sent[r.key]?.at && g.sent[r.key]?.revenue == null);
+    const shown = filter === 'look' ? rows.filter(look) : rows;
+    const fac = (r, f) => {
+      const x = r.facilities[f];
+      const own = g.sent[r.key]?.[f];
+      if (own == null) return h('td.n', '—');
+      return h('td.n', cedis(own), x.paying != null && x.reportedPeople != null ? h('small', `${whole(x.reportedPeople)} paid · ${whole(x.paying)} counted`) : null);
+    };
+    return [
+      h('div.npg-row', h('h2', 'Shift by shift'), h('span.sp'),
+        h('div.seg', [['all', 'All'], ['look', 'Needs a look']].map(([k, label]) => h('button', { type: 'button', 'aria-selected': String(filter === k), onclick: () => { filter = k; paint(); } }, label))),
+        h('span.np-range', h('input', { type: 'date', value: range.from, 'aria-label': 'From', onchange: (e) => { range.from = e.target.value; } }), ' to ',
+          h('input', { type: 'date', value: range.to, 'aria-label': 'To', onchange: (e) => { range.to = e.target.value; } }),
+          h('button.btn', { type: 'button', onclick: () => { days = null; load(); } }, 'Show'))),
+      shown.length ? h('div.np-scroll', h('table.npg-table.npg-shifts',
+        h('thead', h('tr', h('th', 'Shift'), h('th', 'Sent'), h('th.n', 'Toilet'), h('th.n', 'Shower'), h('th', 'Paid for / counted'), h('th', 'Envelope'), h('th', ''))),
+        h('tbody', shown.map((r) => {
+          const s = g.sent[r.key] || {};
+          const nothing = !s.at && s.revenue == null && !r.pending;
+          return h(`tr${open === r.key ? '.on' : ''}${nothing ? '.gap' : ''}`, { onclick: () => openShift(r.key) },
+            h('td', h('b', dayText(r.day)), ` ${SHIFT[r.shift].toLowerCase()}`, r.span ? h('small', `covers ${r.span.length} shifts`) : null),
+            nothing ? h('td.muted', { colspan: '5' }, 'Nothing sent.')
+              : [
+                h('td', s.by || '—', s.at ? h('small', `${String(s.at).slice(11, 16)} · ${s.late ? 'late' : 'on time'}`) : null),
+                fac(r, 'toilet'), fac(r, 'shower'),
+                h('td', r.pending ? h('small', `${r.pending.pending.map((c) => c.toUpperCase()).join(', ')} not read yet`) : [meter(s.paid, s.counted), s.counted != null ? h('small', `${s.paid ?? '—'} / ${s.counted}`) : h('small', '—')]),
+                h('td', s.envelope === 'safe' ? h('span.npg-chip.no', 'In the safe') : s.envelope === 'picked' ? h('span.npg-chip.ok', 'Picked up') : h('small', '—')),
+              ],
+            h('td', r.answer ? h('span.npg-chip.ok', `✓ ${r.answer.answer}`) : nothing ? h('span.npg-chip.bad', 'Not sent') : statusChip(r.status, s.notPaid)));
+        })))) : h('p.npg-hint', filter === 'look' ? 'Nothing needs a look in these days.' : 'Nothing in these days.'),
+      h('p.small.muted', 'Open a shift for its picture, the four counters (GB, GT, LB, LT), adults and children, and to correct or move it.'),
+    ];
+  }
+
+  // ---------------------------------------------------------- desk link --
+  function linkDialog() {
+    const close = () => shade.remove();
+    const body = h('div');
+    const card = h('div.fl-card', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Desk link' },
+      h('div.npg-row', h('h2', 'Desk link'), h('span.sp'), h('button.sh-link', { type: 'button', onclick: close }, 'Close')), body);
+    const shade = h('div.fl-dlg', { onclick: (e) => { if (e.target === shade) close(); } }, card);
+    mount(body, linkBlock());
+    document.body.append(shade);
+  }
 
   // ---------------------------------------------------------------- link --
   function linkBlock() {
@@ -73,139 +236,25 @@ export async function renderNicePlace(root, { part = null } = {}) {
     const said = h('span.small');
     const make = async (again) => {
       if (again && !window.confirm('Make a new link? The old one stops working: send the new one to the staff.')) return;
-      try { await api('/np/settings', { method: 'POST', body: { newLink: true } }); await load(['good', 'A new link is ready. Copy it and send it to the staff.']); } catch (err) { said.textContent = err.message; }
+      try { await api('/np/settings', { method: 'POST', body: { newLink: true } }); document.querySelector('.fl-dlg')?.remove(); await load(['good', 'A new link is ready. Copy it and send it to the staff.']); } catch (err) { said.textContent = err.message; }
     };
-    if (!data.link?.token) return h('span', h('b', 'Staff link '), h('button.btn.primary', { type: 'button', onclick: () => make(false) }, 'Make the link'), said);
+    if (!data.link?.token) return h('span', h('button.btn.primary', { type: 'button', onclick: () => make(false) }, 'Make the link'), said);
     // The short link (/niceplace) when an ending is set, the long one with its code otherwise.
     const url = data.link.slug ? `${location.origin}/${data.link.slug}` : `${location.origin}/np#${data.link.token}`;
     const ending = h('input.np-slug', { type: 'text', value: data.link.slug || '', placeholder: 'niceplace', 'aria-label': 'The link’s ending', maxlength: '30' });
     const setEnding = async () => {
       try {
         await api('/np/settings', { method: 'POST', body: { slug: ending.value } });
+        document.querySelector('.fl-dlg')?.remove();
         await load(['good', ending.value.trim() ? `The link is now ${location.origin}/${ending.value.trim().toLowerCase()}. The old one stops working: send the new one to the staff.` : 'The short link is taken away; the long one works.']);
       } catch (err) { said.textContent = err.message; }
     };
-    return h('span.np-link',
-      h('b', 'Staff link'), h('code', url),
-      h('button.btn', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch { window.prompt('Copy the link:', url); } } }, 'Copy'),
-      h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link'),
+    return h('div.np-link',
+      h('code', url),
+      h('div.np-inline', h('button.btn', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch { window.prompt('Copy the link:', url); } } }, 'Copy'),
+        h('button.sh-link', { type: 'button', onclick: () => make(true) }, 'New link')),
       h('span.np-ending', h('small', `${location.origin}/`), ending, h('button.btn', { type: 'button', onclick: setEnding }, 'Set the ending')),
       h('small.np-apphint', 'Open it once in Chrome on the desk phone and press “Put Nice Place on this phone”: it says how to add it to the home screen, where it opens with one tap. A new link, or a new ending, stops the old one. (With ?app at the end of the link it is put on as an app instead; an old phone may not start it.)'), said);
-  }
-
-  // -------------------------------------------------------------- upload --
-  function uploadBlock() {
-    const said = h('span.small');
-    const file = h('input', { type: 'file', accept: '.xlsx,.xls', hidden: true });
-    file.onchange = async () => {
-      const f = file.files[0];
-      if (!f) return;
-      said.textContent = 'Reading the workbook…';
-      try {
-        await script('/vendor/xlsx.mini.min.js');
-        const book = window.XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: 'array' });
-        const sheetName = book.SheetNames[0];
-        const rows = window.XLSX.utils.sheet_to_json(book.Sheets[sheetName], { header: 1, raw: true, defval: null });
-        const out = await api('/np/income', { method: 'POST', body: { rows, sheetName, fileName: f.name } });
-        await load(['good', `Workbook read: ${out.saved} shifts, ${dayText(out.from)} to ${dayText(out.to)}.${out.problems.length ? ` Left out: ${out.problems.join(' ')}` : ''}`]);
-      } catch (err) { said.textContent = err.message; }
-      file.value = '';
-    };
-    return h('span.np-upload',
-      data.revenueThrough ? h('span.small', `Workbook up to ${dayText(data.revenueThrough)}`) : h('span.small', 'No workbook uploaded yet'),
-      isAdmin ? [h('button.btn', { type: 'button', onclick: template }, '⬇ Template'),
-        h('button.btn.primary', { type: 'button', onclick: () => file.click() }, '⬆ Upload income workbook'), file] : null,
-      said);
-  }
-
-  /** The workbook's layout, empty, for a month. */
-  async function template() {
-    await script('/vendor/xlsx.mini.min.js');
-    const month = (data.to || new Date().toISOString()).slice(0, 7);
-    const [y, m] = month.split('-').map(Number);
-    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const name = new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' }).toUpperCase();
-    const rows = [
-      [null, 'Toilet', null, null, null, null, null, 'Shower', null, null, null, null, null, null, null],
-      ['Date', 'Day', null, null, 'Night', null, null, 'Day', null, null, 'Night', null, null, 'Shifts', null],
-      [null, 'Adult', 'Child', 'Revenue', 'Adult', 'Child', 'Revenue', 'Adult', 'Child', 'Revenue', 'Adult', 'Child', 'Revenue', 'Day', 'Night'],
-      ...Array.from({ length: days }, (_, i) => [i + 1]),
-      ['Total'],
-    ];
-    const book = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(book, window.XLSX.utils.aoa_to_sheet(rows), `${name} ${String(y).slice(2)}`);
-    window.XLSX.writeFile(book, `Nice_Place_Income_${name.charAt(0)}${name.slice(1).toLowerCase()}_${String(y).slice(2)}.xlsx`);
-  }
-
-  // --------------------------------------------------------------- chart --
-  function chartBlock(rows) {
-    const shown = rows.filter((r) => r.reading);
-    // A round scale: steps of 50, 100, 200, 250, 500… cedis, four or five of them.
-    const most = Math.max(100, ...shown.flatMap((r) => Object.values(r.facilities).flatMap((x) => [x.maxRevenue || 0, x.revenue || 0])));
-    const step = [5000, 10000, 20000, 25000, 50000, 100000, 200000, 250000, 500000].find((s) => most / s <= 5) || 1000000;
-    const top = Math.ceil(most / step) * step;
-    const pct = (v) => `${Math.max(0, Math.min(100, (v / top) * 100))}%`;
-    const ticks = Array.from({ length: top / step + 1 }, (_, i) => money(i * step, { places: 0 }));
-    const strip = (r, f) => {
-      const x = r.facilities[f];
-      const [tone] = STATUS[x.status] || STATUS.waiting;
-      const tip = x.revenue == null ? `${FAC[f][0]}: ${x.people ?? '—'} people, no revenue yet`
-        : `${FAC[f][0]}: ${x.paying} paying people allow ${money(x.minRevenue)} to ${money(x.maxRevenue)}; reported ${money(x.revenue)}`;
-      return h('div.np-strip', { title: tip },
-        h('span.np-fac', FAC[f][0]),
-        h('div.np-track',
-          h('div.np-axis'),
-          x.maxRevenue != null ? h('div.np-band', { style: `left:${pct(x.minRevenue)};width:calc(${pct(x.maxRevenue)} - ${pct(x.minRevenue)})` }) : null,
-          x.usualRevenue != null ? h('div.np-usual', { style: `left:${pct(x.usualRevenue)}` }) : null,
-          x.revenue != null ? h(`div.np-dot.${tone}`, { style: `left:${pct(x.revenue)}` }) : null));
-    };
-    return [
-      h('h2', 'Money against the people counted'),
-      h('p.sh-sub', 'For each shift, the toilets and the showers apart. The grey band is what the people counted allow: every one a child (left end) to every one an adult (right end), after the staff walk-throughs. The line is the usual mix of adults and children. The dot is what the workbook reports.'),
-      shown.length ? h('div.np-chart',
-        h('div.np-scale', h('span'), h('div', ticks.map((t) => h('span', t))), h('span')),
-        shown.map((r) => h(`div.np-row${open === r.key ? '.on' : ''}`, { onclick: () => { open = r.key; paint(); document.querySelector('.np-detail')?.scrollIntoView({ behavior: 'smooth' }); } },
-          h('span.np-when', h('b', dayText(r.day)), ` · ${SHIFT[r.shift].toLowerCase()}`),
-          h('div.np-pair', strip(r, 'toilet'), strip(r, 'shower')),
-          chip(r)))) : h('p', 'No counters sent for these days yet.'),
-      h('div.np-legend',
-        h('span', h('i.np-k-band'), 'What the people counted allow'), h('span', h('i.np-k-usual'), 'Usual mix'),
-        h('span', h('i.np-k-dot.good'), '✓ Fits'), h('span', h('i.np-k-dot.warn'), '! More people than paid'), h('span', h('i.np-k-dot.bad'), '✕ Not adding up')),
-    ];
-  }
-
-  const chip = (r) => {
-    if (r.answer) return h('span.sh-chip.ok', `✓ ${r.answer.answer}`);
-    const [tone, words] = STATUS[r.status] || STATUS.waiting;
-    return h(`span.sh-chip.np-${tone}`, words);
-  };
-
-  // --------------------------------------------------------------- table --
-  function tableBlock(rows) {
-    const people = (r, c) => (r.moved ? Math.floor(r.moved[c] / 2) : '—');
-    return [
-      h('div.np-head', h('h2', 'Shift by shift'),
-        h('span.np-range', h('input', { type: 'date', value: range.from, onchange: (e) => { range.from = e.target.value; } }), ' to ',
-          h('input', { type: 'date', value: range.to, onchange: (e) => { range.to = e.target.value; } }),
-          h('button.btn', { type: 'button', onclick: () => load() }, 'Show'))),
-      h('div.np-scroll', h('table.np-table',
-        h('thead', h('tr', h('th', 'Shift'), h('th', 'Picture'), ...['GB', 'GT', 'LB', 'LT'].map((c) => h('th.n', c)),
-          h('th.n', 'Toilet people'), h('th.n', 'Paid for'), h('th.n', 'Toilet GH₵'), h('th.n', 'Shower people'), h('th.n', 'Paid for'), h('th.n', 'Shower GH₵'), h('th', ''))),
-        h('tbody', rows.map((r) => h(`tr${open === r.key ? '.on' : ''}${r.status === 'bad' && !r.answer ? '.bad' : ''}`, { onclick: () => { open = r.key; paint(); } },
-          h('td', h('b', dayText(r.day)), ` ${SHIFT[r.shift].toLowerCase()}`, h('small', r.reading?.name || r.pending?.name || r.staff || ''),
-            r.pending ? h('small.np-typed', `${r.pending.pending.map((c) => c.toUpperCase()).join(', ')} not read yet`) : null,
-            r.span ? h('small', `covers ${r.span.length} shifts`) : null, r.resets.length ? h('small', `${r.resets.map((c) => c.toUpperCase()).join(', ')} reset`) : null,
-            r.reading?.differs?.length || r.reading?.unread?.length ? h('small.np-typed', `${[...(r.reading.differs || []), ...(r.reading.unread || [])].map((c) => c.toUpperCase()).join(', ')} typed, not as read`) : null,
-            r.reading?.typed ? h('small.np-typed', 'typed: picture not read') : null),
-          h('td', (r.reading || r.pending)?.photoId ? h('img.np-thumb', { src: `/api/np/photo/${(r.reading || r.pending).photoId}`, alt: '', loading: 'lazy' }) : h('span.muted', r.reading ? 'typed' : '—')),
-          ...['gb', 'gt', 'lb', 'lt'].map((c) => h('td.n.num', String(people(r, c)))),
-          ...['toilet', 'shower'].flatMap((f) => {
-            const x = r.facilities[f];
-            return [h('td.n.num', x.paying != null ? whole(x.paying) : '—'), h('td.n.num', x.reportedPeople != null ? whole(x.reportedPeople) : '—'), h('td.n.num', x.revenue != null ? money(x.revenue, { places: 0 }) : '—')];
-          }),
-          h('td', chip(r))))))),
-      h('p.small.muted', 'People per counter is the movements since the shift before, halved. "Toilet people" and "Shower people" are after the staff walk-throughs; "Paid for" is the adults’ money ÷ the adult price plus the children’s ÷ the child price. Click a shift to open it.'),
-    ];
   }
 
   // -------------------------------------------------------------- detail --
@@ -233,14 +282,14 @@ export async function renderNicePlace(root, { part = null } = {}) {
         ['If every one was a child', x.minRevenue != null ? money(x.minRevenue) : '—'],
         ['If every one was an adult', x.maxRevenue != null ? money(x.maxRevenue) : '—'],
         x.usualRevenue != null ? ['At the usual mix', money(x.usualRevenue)] : null,
-        ['Reported in the workbook', x.revenue != null ? money(x.revenue) : 'not uploaded yet'],
-        x.reportedPeople != null ? ['Paid for, by the workbook', `${whole(x.reportedPeople)} (${whole(x.adults)} adults, ${whole(x.children)} children)`] : null,
+        ['Sent from the desk', x.revenue != null ? money(x.revenue) : 'not sent'],
+        x.reportedPeople != null ? ['Paid for, by the takings', `${whole(x.reportedPeople)} (${whole(x.adults)} adults, ${whole(x.children)} children)`] : null,
       ].filter(Boolean);
       return h('div.np-fac-box',
         h('h3', name),
         h('div.np-sums', rows.map(([a, b]) => h('div', h('span', a), h('b', b)))),
         verdict(x, name),
-        x.sheetGap ? h('p.small', `The workbook’s adults and children come to ${money(x.adultMoney + x.childMoney)}, but its revenue says ${money(x.revenue)}.`) : null);
+        null);
     };
     if (r.pending) {
       return h('section.card.np-detail',
@@ -251,7 +300,7 @@ export async function renderNicePlace(root, { part = null } = {}) {
     const fix = isAdmin ? fixBlock(r, set) : null;
     return h('section.card.np-detail',
       h('div.np-head', h('h2', `${dayText(r.day, { weekday: 'long', day: 'numeric', month: 'long' })} · ${SHIFT[r.shift]}`), h('button.sh-link', { type: 'button', onclick: () => { open = null; paint(); } }, 'Close')),
-      h('p.sh-sub', [r.reading ? `${r.reading.editedBy ? `Typed in Insight by ${r.reading.editedBy}` : `Sent by ${r.reading.name || 'somebody'} at ${String(r.reading.sentAt).slice(11, 16)}`}` : 'No reading for this shift', r.staff ? `On the workbook: ${r.staff}` : null].filter(Boolean).join(' · ')),
+      h('p.sh-sub', [r.reading ? `${r.reading.editedBy ? `Typed in Insight by ${r.reading.editedBy}` : `Sent by ${r.reading.name || 'somebody'} at ${String(r.reading.sentAt).slice(11, 16)}`}` : 'No reading for this shift', null].filter(Boolean).join(' · ')),
       h('div.np-cols',
         h('div',
           r.reading?.photoId ? h('a', { href: `/api/np/photo/${r.reading.photoId}`, target: '_blank', rel: 'noopener' }, h('img.np-photo', { src: `/api/np/photo/${r.reading.photoId}`, alt: 'The counters as sent' })) : h('div.np-nophoto', r.reading ? 'Typed in Insight: no picture' : 'No picture sent', isAdmin ? addPicture(r) : null),
@@ -282,11 +331,11 @@ export async function renderNicePlace(root, { part = null } = {}) {
     const t = {
       bad: () => `✕ Not adding up. ${n(x.paying)} people should have paid for the ${name.toLowerCase()}s. Even if every one was a child, that is ${money(x.minRevenue)}. ${money(x.revenue)} was reported: at least ${money(x.minRevenue - x.revenue)} short.`,
       warn: () => (x.gap != null && x.gap > 0
-        ? `! ${n(x.gap)} more people counted than paid for. ${n(x.paying)} should have paid; the workbook has ${n(x.reportedPeople)}.`
+        ? `! ${n(x.gap)} more people counted than paid for. ${n(x.paying)} should have paid; the takings are for ${n(x.reportedPeople)}.`
         : `! Lower than usual: at the usual mix, ${n(x.paying)} people bring about ${money(x.usualRevenue)}; ${money(x.revenue)} was reported.`),
       over: () => `! More money than people counted: ${money(x.revenue)} is more than even ${n(x.people)} adults would pay (${money(x.maxRevenue)}). A counter may not be counting.`,
-      good: () => `✓ Fits. ${n(x.paying)} should have paid${x.reportedPeople != null ? `; the workbook has ${n(x.reportedPeople)}` : ''}, and ${money(x.revenue)} is within ${money(x.minRevenue)} to ${money(x.maxRevenue)}.`,
-      'no-revenue': () => 'The workbook for this shift is not uploaded yet.',
+      good: () => `✓ Fits. ${n(x.paying)} should have paid${x.reportedPeople != null ? `; the takings are for ${n(x.reportedPeople)}` : ''}, and ${money(x.revenue)} is within ${money(x.minRevenue)} to ${money(x.maxRevenue)}.`,
+      'no-revenue': () => 'No takings sent from the desk for this shift.',
       'no-reading': () => 'No picture of the counters for this shift.',
       waiting: () => 'Nothing to compare yet.',
     }[x.status] || (() => '');
