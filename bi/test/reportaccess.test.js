@@ -37,7 +37,7 @@ test('only an admin chooses; admins see every report and cannot be narrowed', as
   assert.equal(listed.status, 200);
   const level = Object.fromEntries(listed.data.people.map((p) => [p.name, p.levelWords]));
   assert.deepEqual(level, { 'Ade Admin': 'Admin', 'Gina Manager': 'Hub only', 'Ola Owner': 'Owner', 'Sam Supervisor': 'Supervisor', 'Uche Uploader': 'Uploads only' });
-  const refused = await call(2, 'POST', '/api/report-access', { accountId: 2, reports: ['brief'] });
+  const refused = await call(2, 'POST', '/api/report-access', { accountId: 2, reports: ['labour'] });
   assert.equal(refused.status, 400);
   assert.match(refused.data.error, /every report already/);
   assert.equal((await call(2, 'POST', '/api/report-access', { accountId: 3, reports: ['nope'] })).status, 400);
@@ -52,7 +52,6 @@ test('a supervisor given Labour opens Labour and nothing else of the reports', a
   const pnl = await call(3, 'GET', '/api/pnl');
   assert.equal(pnl.status, 403);
   assert.match(pnl.data.error, /Profit & loss has not been shared with you/);
-  assert.equal((await call(3, 'POST', '/api/findings/1', {})).status, 403, 'what only an admin does stays an admin\'s');
   const me = await call(3, 'GET', '/api/auth/me');
   assert.deepEqual(me.data.account.reports, ['labour']);
   assert.equal(me.data.account.till.role, 'supervisor', 'still a supervisor for Shifts');
@@ -60,22 +59,22 @@ test('a supervisor given Labour opens Labour and nothing else of the reports', a
 
 test('somebody with only the hub, given a report, gets Insight as Reports only; the last one taken away takes it back', async () => {
   const { db, call } = await world();
-  await call(2, 'POST', '/api/report-access', { accountId: 4, reports: ['management', 'brief'] });
+  await call(2, 'POST', '/api/report-access', { accountId: 4, reports: ['management', 'labour'] });
   const grant = async () => (await all(db, "SELECT role FROM account_access WHERE account_id = 4 AND system_id = 'insight'"))[0]?.role ?? null;
   assert.equal(await grant(), 'reports');
   const me = await call(4, 'GET', '/api/auth/me');
-  assert.deepEqual(me.data.account.reports.sort(), ['brief', 'management']);
+  assert.deepEqual(me.data.account.reports.sort(), ['labour', 'management']);
   assert.equal(me.data.account.canSeeReports, false, 'not an admin');
-  assert.notEqual((await call(4, 'GET', '/api/brief')).status, 403);
+  assert.notEqual((await call(4, 'GET', '/api/labour')).status, 403);
   assert.notEqual((await call(4, 'GET', '/api/bootstrap')).status, 403, 'the reports\' bootstrap');
-  assert.equal((await call(4, 'GET', '/api/labour')).status, 403);
+  assert.equal((await call(4, 'GET', '/api/pnl')).status, 403);
   assert.equal((await call(4, 'GET', '/api/shifts')).status, 403, 'no Shifts');
   assert.equal((await call(4, 'GET', '/api/approvals')).status, 403);
   assert.equal(me.data.account.mayViewAs, false, 'cannot look as others');
 
   await call(2, 'POST', '/api/report-access', { accountId: 4, reports: [] });
   assert.equal(await grant(), null);
-  assert.equal((await call(4, 'GET', '/api/brief')).status, 403);
+  assert.equal((await call(4, 'GET', '/api/labour')).status, 403);
 });
 
 test('an uploader given a report keeps the files and reads that report', async () => {
@@ -83,13 +82,13 @@ test('an uploader given a report keeps the files and reads that report', async (
   await call(1, 'POST', '/api/report-access', { accountId: 5, reports: ['cash'] });
   assert.notEqual((await call(5, 'GET', '/api/cash')).status, 403);
   assert.notEqual((await call(5, 'GET', '/api/bootstrap')).status, 403);
-  assert.equal((await call(5, 'GET', '/api/brief')).status, 403);
+  assert.equal((await call(5, 'GET', '/api/labour')).status, 403);
   assert.notEqual((await call(5, 'GET', '/api/shifts/files')).status, 403);
   assert.equal((await call(5, 'GET', '/api/shifts')).status, 403);
 });
 
 test('every report page reads only endpoints named with its report', () => {
-  assert.equal(new Set(access.REPORTS.map((r) => r.key)).size, 10);
+  assert.equal(new Set(access.REPORTS.map((r) => r.key)).size, 9);
   assert.equal(access.reportOfEndpoint('GET', '/api/pnl'), 'money');
   assert.equal(access.reportOfEndpoint('GET', '/api/money/cash'), 'money');
   assert.equal(access.reportOfEndpoint('POST', '/api/money/cash/refresh'), null, 'refreshing stays an admin\'s');

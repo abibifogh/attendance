@@ -63,7 +63,7 @@ test('an admin looks as a supervisor: answered as them, and nothing can be chang
   assert.equal(me.data.account.mayViewAs, true, 'the admin can still switch to somebody else');
 
   // What Sam cannot open, the admin cannot open while looking as Sam.
-  assert.equal((await call('GET', '/api/brief')).status, 403);
+  assert.equal((await call('GET', '/api/labour')).status, 403);
   // Every change is refused, saying why.
   const refused = await call('POST', '/api/shifts/answer', { key: 'x', answer: 'Explained' });
   assert.equal(refused.status, 403);

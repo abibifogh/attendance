@@ -23,7 +23,6 @@ import { roleOf } from './till.js';
  */
 
 export const REPORTS = [
-  { key: 'brief', label: 'Brief', note: 'The morning summary and its findings.' },
   { key: 'management', label: 'Management report', note: 'The weekly and monthly report: breakfast and maintenance.' },
   { key: 'money', label: 'Profit & loss', note: 'Revenue and costs, and how spending was paid.' },
   { key: 'yardstick', label: 'Health', note: 'Each part of the business against its targets.' },
@@ -38,8 +37,6 @@ const KEYS = new Set(REPORTS.map((r) => r.key));
 
 /** Each endpoint a report page reads, with its report. */
 const ENDPOINTS = {
-  'GET /api/brief': 'brief',
-  'GET /api/findings': 'brief',
   'GET /api/reports/management': 'management',
   'POST /api/reports/management/send': 'management', // to the person pressing it; to everybody needs an admin
   'GET /api/pnl': 'money',

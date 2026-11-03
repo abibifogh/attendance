@@ -1,7 +1,7 @@
 # Who sees which reports
 
 **Settings › People & access › Reports they see.** Admins and owners see every report. For
-everybody else an admin ticks the report pages they may open: Brief,
+everybody else an admin ticks the report pages they may open:
 Management, Overview, Yardstick, Prepaid stays, Tills & collections, Labour,
 Guests, Buying, Nice Place. A ticked page appears in their Reports menu;
 nothing else is opened to them.

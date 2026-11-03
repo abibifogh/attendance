@@ -36,6 +36,12 @@ let tab = 'lists'; // lists | eval
 export async function renderTeam(root) {
   const box = h('div.tm');
   mount(root, box);
+  // Opened from Team › Evaluations: straight to that person's evaluation.
+  try {
+    const go = JSON.parse(sessionStorage.getItem('insight-team-open') || 'null');
+    sessionStorage.removeItem('insight-team-open');
+    if (go?.id) { who = go.id; view = 'person'; tab = go.tab || 'lists'; }
+  } catch { /* private mode */ }
   await paint();
 
   async function paint(message = null) {
@@ -217,9 +223,8 @@ function notesCard(e, after) {
 const ordinal = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
 
 /** How the rating is worked out: each measure's weight, an admin's own measures, and whether people see their own. */
-async function settingsDialog() {
-  let s;
-  try { s = await api('/team/settings'); } catch (err) { alert(err.message); return; }
+/** How the rating is worked out: the weights, an admin's own measures, and people seeing their own. `done` runs after a save. */
+function ratingForm(s, done) {
   const MEASURES = [['turns_up', 'Turns up'], ['on_time', 'On time'], ['gets_done', 'Gets it done'], ['throughput', 'Gets through work'], ['answers', 'Answers'], ['first_time', 'Done right first time'], ['routine', 'Follows the routine'], ['money', 'Money and stock']];
   const weight = (id, v) => h('select', { 'data-id': id }, [0, 0.5, 1, 1.5, 2, 3].map((n) => h('option', { value: String(n), selected: Number(v) === n }, n === 0 ? 'Not counted' : `×${n}`)));
   const rows = [...MEASURES.map(([id, label]) => [id, label, s.weights[id], false]), ...s.custom.map((c) => [c.id, c.label, c.weight, true])];
@@ -228,23 +233,38 @@ async function settingsDialog() {
   const what = h('input', { placeholder: 'What it is about (optional)', maxlength: 120 });
   const show = h('input', { type: 'checkbox', checked: s.showOwn });
   const err = h('p.small.form-error');
-  const close = () => shade.remove();
   const save = async (extra = {}) => {
     try {
       await api('/team/settings', { method: 'POST', body: { weights: Object.fromEntries(selects.map((x) => [x.dataset.id, Number(x.value)])), showOwn: show.checked, ...extra } });
-      close(); location.reload();
+      done();
     } catch (e) { err.textContent = e.message; }
   };
-  const card = h('div.fl-card', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'How the rating is worked out' },
-    h('div.fl-dlg-head', h('h2', 'How the rating is worked out'), h('button.btn', { type: 'button', onclick: close }, '✕')),
+  return [
     h('p.small.muted', 'Each measure is 1 to 5 over the last three months, against others in the same role. The rating is their average, each counted as many times as its weight. Your own measures you score by hand on each person’s Evaluation.'),
     h('div.tm-wts', rows.map(([id, label, , custom], i) => h('div.tm-wrow', h('span', label, custom ? h('small.muted', ' (yours)') : null), selects[i],
       custom ? h('button.sh-link', { type: 'button', onclick: () => save({ remove: id }) }, 'Take off') : h('span')))),
     h('h3', 'Add a measure of your own'), h('div.fl-two', name, what), h('button.btn', { type: 'button', onclick: () => save({ add: { label: name.value, what: what.value } }) }, '＋ Add it'),
     h('label.tm-show', show, ' Let people see their own evaluation (in Insight, by their email in HIVE; never your notes)'),
-    err, h('div.fl-dlg-acts', h('button.btn.primary', { type: 'button', onclick: () => save() }, 'Save')));
+    err, h('div.fl-dlg-acts', h('button.btn.primary', { type: 'button', onclick: () => save() }, 'Save')),
+  ];
+}
+
+async function settingsDialog() {
+  let s;
+  try { s = await api('/team/settings'); } catch (err) { alert(err.message); return; }
+  const close = () => shade.remove();
+  const card = h('div.fl-card', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'How the rating is worked out' },
+    h('div.fl-dlg-head', h('h2', 'How the rating is worked out'), h('button.btn', { type: 'button', onclick: close }, '✕')),
+    ...ratingForm(s, () => { close(); location.reload(); }));
   const shade = h('div.fl-dlg', { onclick: (e) => { if (e.target === shade) close(); } }, card);
   document.body.append(shade);
+}
+
+/** Settings › Rules › Team rating: the same, as a page. */
+export async function renderTeamRules(root) {
+  let s;
+  try { s = await api('/team/settings'); } catch (err) { mount(root, h('div.card', h('h2', 'That did not work'), h('p', err.message))); return; }
+  mount(root, h('div.card', h('h2', 'How the Team rating is worked out'), ...ratingForm(s, () => renderTeamRules(root).then(() => root.prepend(banner('good', 'Saved.'))))));
 }
 
 /** Their own evaluation, when an admin allows it. */
@@ -253,3 +273,26 @@ export async function renderMyEvaluation(root) {
   try { e = await api('/team/me'); } catch (err) { mount(root, h('div.tm', h('h1', 'My evaluation'), banner('none', err.message))); return; }
   mount(root, h('div.tm', h('div.tm-head', h('h1', 'My evaluation'), h('span.sp'), h('span.small.muted', `${e.from} – ${e.to}`)), evaluationBody(e)));
 }
+
+/** Team › Evaluations: everybody's rating at once, by role, to compare. A row opens that person's evaluation. */
+export async function renderEvaluations(root) {
+  let d;
+  try { d = await api('/team/evaluations'); } catch (err) { mount(root, h('div.tm', banner('problem', err.message))); return; }
+  const trend = { up: '▲', down: '▼', same: '=' };
+  const open = (id) => { try { sessionStorage.setItem('insight-team-open', JSON.stringify({ id, tab: 'eval' })); } catch { /* private mode */ } location.hash = '#/team'; };
+  mount(root, h('div.tm',
+    h('div.tm-head', h('p.small.muted.tm-lede', `Everybody’s rating over the last three months (${d.from} – ${d.to}), by role. Press a person for their evaluation, their patterns and your notes.`), h('span.sp'),
+      h('button.btn', { type: 'button', onclick: () => window.print() }, 'Print')),
+    d.roles.length ? d.roles.map((g) => h('section.card.tm-evgroup',
+      h('h2', g.role, h('small.muted', ` · ${g.people.length}`)),
+      h('div.tm-tablewrap', h('table.tm-table',
+        h('thead', h('tr', ['Person', 'Rating', 'Place', 'Verdict', 'Best at', 'Watch'].map((x, i) => h(`th${i === 1 || i === 2 ? '.n' : ''}`, x)))),
+        h('tbody', g.people.map((p) => h('tr', { tabindex: '0', onclick: () => open(p.id), onkeydown: (e) => { if (e.key === 'Enter') open(p.id); } },
+          h('td', h('div.tm-who', avatar(p.name, p.id), h('div', h('b', p.name), h('small', p.department || '')))),
+          h('td.n', p.score != null ? [h(`span.tm-grade.${grade(p.score)}`, p.score.toFixed(1)), h(`small.tm-trend.${p.trend}`, trend[p.trend])] : h('span.muted', '—')),
+          h('td.n', p.rank != null ? `${p.rank} of ${p.peers}` : '—'),
+          h('td', p.verdict),
+          h('td', p.best ? `${p.best.label} (${p.best.score.toFixed(1)})` : h('span.muted', '—')),
+          h('td', p.watch ? h('span.tm-watch', `${p.watch.label} (${p.watch.score.toFixed(1)})`) : h('span.muted', '—'))))))))) : h('p.muted', 'Nobody in HIVE yet, or HIVE is not linked.')));
+}
+

@@ -1,6 +1,6 @@
 # The Assistant: Today
 
-Assistant › Today is each person's **one list**: everything that is theirs,
+Today › My list is each person's **one list**: everything that is theirs,
 from every place Insight reads, sorted by when it wants doing, with the button
 that does it. Everybody given Insight has one, and it opens first; an admin's
 covers everything, anybody else's only what their access already shows them.
@@ -88,18 +88,17 @@ they simply have nothing there.
 | **Admin** (and owners) | To-dos given to them, proof asked of them, envelopes, and everything below in **What else is on an admin's list** |
 | **Supervisor** | To-dos given to them; proof asked of them; POs to chase given to them, and sent back; each shift of the last week not checked (if they may check shifts); each staff answer from HIVE waiting (if they act on staff answers); envelopes not marked received (if they act on envelopes); Nice Place counters to read (if they read them) |
 | **Uploader** | The ASSD journal not loaded lately, with a link to Upload files |
-| **Anybody given report pages** | Insight's checks, if the Brief is shared with them; Nice Place shifts with no sales sent, if the Nice Place page is |
+| **Anybody given report pages** | Nice Place shifts with no sales sent, if the Nice Place page is shared with them |
 
 Amounts show only for whoever may see money (an admin, or a supervisor given
-amounts); the Brief's own findings show theirs, as the Brief does. The summary
+amounts). The summary
 and **Ask Insight** use only that person's list.
 
 ## What else is on an admin's list
 
 Approvals waiting in every system; receipts with no PO, drafts to check; float
 receipts to look at and money held in floats with nothing sent for 14 days;
-answers on POs to chase, and POs to chase nobody has; Insight's own checks
-(drawers, food cost and the rest); Odoo bills owed more than 30 days (only
+answers on POs to chase, and POs to chase nobody has; Odoo bills owed more than 30 days (only
 when turned on, see below); Nice Place pickups to approve and shifts with no
 sales sent; the ASSD journal not loaded for two days; last week's management
 report when it has not gone; supplier names not linked to Odoo. **Done today**
@@ -124,7 +123,7 @@ out. At the bottom of the side, an admin's page says Odoo bills are *off*.
 Under it, an admin ticks **Flag bills owed in Odoo** to bring them back
 (suppliers owed for more than 30 days, two months and over as *Soon*), and
 unticks it to leave them out again. It is one setting for every admin.
-Buying › Suppliers shows every bill either way, and **Ask Insight** still
+Buying & stock › Suppliers shows every bill either way, and **Ask Insight** still
 answers a question about what is owed when they are off.
 
 ## The summary and Ask

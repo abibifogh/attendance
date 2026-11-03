@@ -1,6 +1,6 @@
 # Notifications
 
-Everything Insight tells a person is in **Assistant › Notifications**, and on
+Everything Insight tells a person is in **Today › Notifications**, and on
 their phone or computer too once they turn that on. The bell at the top shows
 how many are unread.
 

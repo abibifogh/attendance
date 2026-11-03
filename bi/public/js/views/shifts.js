@@ -20,8 +20,8 @@ import { LAYOUTS as RECON_LAYOUTS, reportHtml, fileName as reconFile } from '../
  *   story: the closing report from HIVE beside ASSD, the drawer as a
  *   waterfall, how it was paid, card and MoMo on the clock, where the cash went.
  * - **Inbox**: everything somebody has to act on, in one list: what does not
- *   agree, staff answers, POs, advances, unpaid stays, and what waits for an
- *   admin. Kind chips filter it; the one picked opens beside the list.
+ *   agree, staff answers, POs, advances, and what waits for an admin. Kind
+ *   chips filter it; the one picked opens beside the list.
  * - **People**: each person's shifts, how their drawer came out, and their list.
  * - **Closing reports**: every report from HIVE and the shift it is on, the
  *   ones that look misplaced picked out, each movable to another shift.
@@ -116,7 +116,7 @@ const MOVED = {
 };
 const PERIODS = ['day', 'week', 'month'];
 /** The Inbox's kinds, in the order the chips show them. */
-const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['stay', 'Unpaid stays'], ['admin', 'Waiting for admin'],
+const INBOX_KINDS = [['drawer', 'Drawer'], ['bank', 'Card & bank'], ['po', 'POs'], ['advance', 'Advances'], ['admin', 'Waiting for admin'],
   ['task', 'To-do'], ['store', 'Store requests'], ['np', 'Nice Place'], ['proof', 'Proof asked'], ['odoo', 'Odoo'], ['mine', '✓ Mine in Odoo']];
 /** What Odoo calls the records activities sit on, in words. */
 const ODOO_MODELS = { 'purchase.order': 'Purchase order', 'account.move': 'Bill or invoice', 'res.partner': 'Contact', 'stock.picking': 'Transfer', 'hr.employee': 'Employee', 'crm.lead': 'Lead' };
@@ -221,7 +221,7 @@ function inboxSources(who) {
   const admin = who.role === 'admin';
   const may = (area, level = 1) => admin || (who.access?.[area] || 0) >= level;
   return {
-    exceptions: may('bank') || may('moves'), stays: may('unpaid'), todo: admin || who.role === 'supervisor',
+    exceptions: may('bank') || may('moves'), todo: admin || who.role === 'supervisor',
     answers: may('answers'), advances: may('advances'), approvals: admin, niceplace: may('niceplace'),
   };
 }
@@ -316,21 +316,15 @@ export async function renderShifts(root, { range, section: only = null, onSectio
     }
   });
 
-  // What the Inbox reads besides the period's own exceptions: stays not
-  // fully paid, the money to-do, advances, and the till's answers and
-  // approvals. Read in the background on opening, so the tab shows its count,
-  // and again after anything in it is answered.
-  let stays = null;
+  // What the Inbox reads besides the period's own exceptions: the money
+  // to-do, advances, and the till's answers and approvals. Read in the
+  // background on opening, so the tab shows its count, and again after
+  // anything in it is answered.
   const sources = { todo: null, tasks: null, advances: null, till: null, refunds: null, odoo: null, np: null, proof: null, drawerPos: null };
   let askOdoo = false;
-  function readStays() {
-    if (!can.stays) return Promise.resolve(null);
-    return api('/stays').then((d) => { stays = d; return d; });
-  }
   async function readInbox(force = false) {
     const quiet = (p) => p.catch(() => null);
     await Promise.all([
-      can.stays ? quiet(readStays()) : null,
       can.todo ? quiet(api(`/todo${inbox.showDone ? '?closed=1' : ''}`).then((d) => { sources.todo = d; })) : null,
       can.todo ? quiet(api(`/shifts/tasks${inbox.showDone ? '?done=1' : ''}`).then((d) => { sources.tasks = d; })) : null,
       can.advances ? quiet(api('/advances').then((d) => { sources.advances = d; })) : null,
@@ -798,58 +792,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         t.counted ? `${t.counted} of ${t.shifts} shifts with an opening and closing count` : 'No counts in these days yet'),
       tile('inbox', 'var(--sh-bad)', 'Waiting for an answer', String(open),
         open ? 'Differences somebody has to explain' : 'Everything answered or explained', null, open ? 'var(--sh-bad-ink)' : 'var(--sh-good-ink)'));
-  }
-
-  // ------------------------------------------------------- unpaid stays --
-
-  const STAY_ANSWERS = ['Paid, not in the journal yet', 'Guest is paying now', 'Company or agent pays', 'Guest owes, chasing', 'Written off', 'Not a problem'];
-
-  /**
-   * One stay not fully paid: a guest leaving in the next 24 hours who still
-   * owes, or one who left owing. Answered here; a supervisor's answer waits
-   * for an admin.
-   */
-  function stayCard(x, after) {
-    const d = stays || {};
-    const tone = x.unsure ? 'info' : x.left ? 'bad' : 'warn';
-    const nights = `${x.nights} night${x.nights === 1 ? '' : 's'}, ${dayText(x.firstNight)} to ${dayText(x.checkout)}`;
-    const methods = Object.entries(x.byMethod || {}).filter(([, a]) => a).map(([m, a]) => `${({ cash: 'cash', card: 'card', prepaid: 'prepaid', other: 'other' })[m] || m} ${money(a)}`).join(' · ');
-    const note = h('input', { type: 'text', maxlength: '600', placeholder: 'What happened (optional)', value: x.answer?.note || '' });
-    const said = h('span.small');
-    const answer = async (value) => {
-      said.textContent = 'Saving…';
-      try {
-        const out = await api('/shifts/answer', { method: 'POST', body: { key: x.key, answer: value, note: value ? note.value : '' } });
-        await after(out?.pending ? 'Sent to an admin to approve.' : 'Saved.');
-      } catch (err) { said.textContent = err.message; }
-    };
-    const decide = (ok) => async () => {
-      try { await api('/till/approve', { method: 'POST', body: { answer: x.key, ok } }); await after(ok ? 'Approved.' : 'Rejected.'); } catch (err) { said.textContent = err.message; }
-    };
-    return h(`article.sh-ex.${tone}${x.answer ? '.done' : ''}`,
-      h('div.hd', h('span.sq', '₵'), h('h3', `Reservation ${x.ref || x.seq}`), h('span.amt.num', d.redacted ? 'owes' : money(x.balance))),
-      h('div.sh-meta',
-        h('span', x.rooms.join(', ') || 'Room'),
-        h('span', nights),
-        h('span', `check-out ${dayText(x.checkout)} ${x.checkoutAt.slice(11)}`),
-        x.bookedBy ? h('span', `booked by ${nameOf(x.bookedBy)}`) : null),
-      h('p.small', x.left ? 'Checked out, still owing.' : 'Leaving in the next 24 hours, not fully paid. Collect before they go.'),
-      d.redacted ? null : h('div.sh-staymoney',
-        h('div', h('small', 'Charged'), h('b', whole(x.charged))),
-        h('div', h('small', 'Paid'), h('b', whole(x.paid))),
-        h('div.owes', h('small', 'Owes'), h('b', whole(x.balance)))),
-      methods ? h('p.small', `Paid so far: ${methods}`) : h('p.small', 'No payment in the journal loaded.'),
-      x.unsure ? h('p.small.muted', `Booked ${dayText(x.bookedOn)}, before the first day of journal loaded (${dayText(d.journal?.from)}). A payment taken then would not show: check ASSD.`) : null,
-      x.proposed ? h('div.sh-waiting',
-        h('span', `⏳ Waiting for an admin: ${x.proposed.answer}${x.proposed.note ? `: ${x.proposed.note}` : ''} (${x.proposed.by})`),
-        admin ? [
-          h('button.btn.primary', { type: 'button', onclick: decide(true) }, 'Approve'),
-          h('button.btn', { type: 'button', onclick: decide(false) }, 'Reject'),
-        ] : null, said)
-        : x.answer ? h('div.sh-done',
-          h('span', `✓ ${x.answer.answer}${x.answer.note ? `: ${x.answer.note}` : ''} (${x.answer.by})`),
-          may('unpaid', 2) ? h('button.sh-link', { type: 'button', onclick: () => answer('') }, 'Change') : null, said)
-          : may('unpaid', 2) ? h('div.sh-answers', note, STAY_ANSWERS.map((a) => h('button', { type: 'button', onclick: () => answer(a) }, a)), said) : null);
   }
 
   // -------------------------------------------------------------- week --
@@ -2663,10 +2605,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
 
   /** An exception by its key, in words, for the Approvals view. */
   function describeKey(key) {
-    if (String(key).startsWith('stay:')) {
-      const x = stays && [...stays.leaving, ...stays.left].find((o) => o.key === key);
-      return `Unpaid stay, reservation ${String(key).slice(5)}${x ? `, leaving ${dayText(x.checkout)}, owes ${money(x.balance)}` : ''}`;
-    }
     const x = data?.exceptions?.find((o) => o.key === key);
     if (x) {
       return `${(KIND[x.kind] || [x.kind])[0]}, ${x.day ? dayText(x.day) : ''}${x.slot ? ` ${SLOT[x.slot].label.toLowerCase()}` : ''}`
@@ -3923,25 +3861,6 @@ export async function renderShifts(root, { range, section: only = null, onSectio
         });
       }
     }
-    // Stays not fully paid.
-    if (can.stays && stays) {
-      for (const [list, left] of [[stays.leaving || [], false], [stays.left || [], true]]) {
-        for (const x0 of list) {
-          const x = { ...x0, left };
-          if (admin && x.proposed) continue;
-          const done = Boolean(x.answer);
-          if (done && !inbox.showDone) continue;
-          out.push({
-            id: `st:${x.key}`, kind: x.proposed ? 'admin' : 'stay', title: `${x.rooms.join(', ') || 'Room'} · ${left ? 'left owing' : 'leaving, owes'}`,
-            sub: `Reservation ${x.ref || x.seq} · check-out ${dayText(x.checkout)}`, amount: stays.redacted ? '' : money(x.balance),
-            chip: done ? ['ok', 'Answered'] : x.unsure ? ['none', 'Check in ASSD'] : x.proposed ? ['none', 'Waiting for admin'] : null,
-            tone: left ? 'short' : 'over', done, age: daysAgo(x.checkout), counts: !done && !x.unsure && !x.proposed,
-            render: () => stayCard(x, after),
-            bulk: !done && !x.proposed && may('unpaid', 2) ? { type: 'answer', key: x.key, stay: true } : null,
-          });
-        }
-      }
-    }
     // To-dos made from a difference: one's own count; an admin sees them all.
     for (const t of sources.tasks?.tasks || []) {
       const done = t.state !== 'open';
@@ -3992,15 +3911,13 @@ export async function renderShifts(root, { range, section: only = null, onSectio
    * the one picked in full beside it.
    */
   /**
-   * One answer for everything ticked: exceptions and unpaid stays take the
-   * chosen answer (a supervisor's wait for an admin, as one by one); money
-   * to-dos take the note, or the answer when there is no note, and an admin's
-   * answer closes them.
+   * One answer for everything ticked: exceptions take the chosen answer (a
+   * supervisor's wait for an admin, as one by one); money to-dos take the
+   * note, or the answer when there is no note, and an admin's answer closes
+   * them.
    */
   function bulkActions(items, redraw) {
-    const answers = items.some((x) => x.bulk.stay) && items.every((x) => x.bulk.stay || x.bulk.type === 'todo')
-      ? STAY_ANSWERS : items.some((x) => x.bulk.stay) ? [...new Set([...ANSWERS, ...STAY_ANSWERS])] : ANSWERS;
-    const pick = h('select', { 'aria-label': 'Answer' }, h('option', { value: '' }, 'Answer…'), answers.map((a) => h('option', { value: a }, a)));
+    const pick = h('select', { 'aria-label': 'Answer' }, h('option', { value: '' }, 'Answer…'), ANSWERS.map((a) => h('option', { value: a }, a)));
     const note = h('input', { type: 'text', maxlength: '400', placeholder: 'Note (optional; what happened, for to-dos)', 'aria-label': 'Note' });
     const said = h('span.small');
     const go = h('button.btn.primary', {

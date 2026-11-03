@@ -3,7 +3,7 @@
 The breakfast store and the Maintenance store fill themselves from Odoo.
 Nobody types a PO number into either store any more.
 
-**Buying › Stock from Odoo** (admins) shows every line of every confirmed PO,
+**Buying & stock › Stock from Odoo** (admins) shows every line of every confirmed PO,
 where it went, and the settings.
 
 ## How it works

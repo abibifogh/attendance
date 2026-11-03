@@ -5,7 +5,7 @@ supplies. They send a picture of each receipt from their own link; each
 becomes a draft PO in Odoo marked with **their reference**, and comes off what
 they hold.
 
-## Giving money (Buying › Floats)
+## Giving money (Buying & stock › Floats)
 
 Everybody holding a float is a card on the left: what is still with them, a
 bar of spent and given back, and a flag (receipts to look at, days with
@@ -46,7 +46,7 @@ pictures, or a PDF, say what it was for if the receipt does not, and send.
 ## Their receipts
 
 
-Each receipt is read like Buying › Receipts (vendor, total, date, what was
+Each receipt is read like Buying & stock › Receipts (vendor, total, date, what was
 bought) and becomes a **draft PO** in Odoo with:
 
 | In Odoo | What goes there |
@@ -75,7 +75,7 @@ When a receipt's PO is changed in Odoo to another total (GH₵2,200 on the
 receipt, GH₵2,250 on the PO), the receipt's own amount still counts, and both
 are asked. On their page the person sees **The PO was changed in Odoo to …**,
 in a box at the top and on the receipt, with **Yes** or **No, it is not
-right**; saying Yes, they say why the amount changed, which an admin sees. In Buying › Floats the receipt says what changed and what they said,
+right**; saying Yes, they say why the amount changed, which an admin sees. In Buying & stock › Floats the receipt says what changed and what they said,
 with **Accept** or **Keep** for an admin; until then it counts among the
 receipts to look at. The new total counts once they accept it, unless an
 admin keeps the receipt's amount: an admin's answer stands over theirs, and
@@ -87,7 +87,7 @@ changed back to the receipt's amount, nothing is asked.
 ## Where receipts go: Odoo or the POS
 
 Some people buy for the bistro, the bar or the craft shop, whose stock and
-purchase orders live in the POS, not in Odoo. **Buying › Floats › Where
+purchase orders live in the POS, not in Odoo. **Buying & stock › Floats › Where
 receipts go** has a tick per person for each place: **Odoo (hotel)**, **POS
 Bistro**, **POS Bar** and **POS Craft**. Admins only; each save is in the
 audit trail.
@@ -146,7 +146,7 @@ On a person, **⬇ Statement**: choose the dates, then
   statements. `src/routes/receipts.js` reads the receipt and makes the PO
   (`mark` carries the reference); `src/connectors/odoo.js` `createDraftPo`
   sets `partner_ref`.
-- `public/js/views/floats.js` (Buying › Floats), `public/float.html` and
+- `public/js/views/floats.js` (Buying & stock › Floats), `public/float.html` and
   `public/js/float.js` (their link).
 - Tables `float_person`, `float_move`, `float_receipt` (migration 0040).
   Where receipts go: `float_person.dests`, and on `float_receipt` the `dest`,

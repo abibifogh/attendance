@@ -23,8 +23,8 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
    and the hub, and none of the numbers.
 4. **Choose what supervisors see.** Insight → Settings › Rules → Who sees
    what. Pick a preset for each supervisor: **Front desk supervisor** (shifts
-   and closing reports without amounts; acts on staff answers, unpaid stays and
-   advances, and reopens a report) or **Accounts** (amounts, bank and Odoo;
+   and closing reports without amounts; acts on staff answers and advances,
+   and reopens a report) or **Accounts** (amounts, bank and Odoo;
    acts on card and bank, cash movements, POs, staff answers, money out and
    advances; loads files). **Custom** sets each part by hand as Hidden, See,
    or See and act. "New supervisors start as" sets what somebody gets before

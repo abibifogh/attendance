@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { freshDb } from './helpers.js';
 import worker from '../src/index.js';
 import { runEtl } from '../src/warehouse/etl.js';
-import { analyse } from '../src/insight/engine.js';
 import {
   createToken, sessionCookie, checkBootstrapPassword, readToken,
   getPepper, storedPassword,
@@ -27,7 +26,6 @@ async function app({ loaded = true } = {}) {
   const env = { DB: db, ...SECRETS, ASSETS: { fetch: async () => new Response('index', { status: 200 }) } };
   if (loaded) {
     await runEtl(env, { ...WINDOW, trigger: 'test' });
-    await analyse(db, WINDOW);
   }
   // An owner account, so the reports and the setup screens are reachable. The
   // shared password is a bootstrap route and is tested separately.
@@ -51,8 +49,8 @@ async function app({ loaded = true } = {}) {
 
 test('every panel answers, over a window with data', async () => {
   const { call } = await app();
-  for (const path of ['/api/bootstrap', '/api/brief', '/api/pnl', '/api/labour', '/api/demand',
-    '/api/cash', '/api/suppliers', '/api/findings', '/api/sources', '/api/runs']) {
+  for (const path of ['/api/bootstrap', '/api/pnl', '/api/labour', '/api/demand',
+    '/api/cash', '/api/suppliers', '/api/sources', '/api/runs']) {
     const response = await call(`${path}${path.includes('?') ? '&' : '?'}from=${WINDOW.from}&to=${WINDOW.to}`);
     assert.equal(response.status, 200, `${path} answered ${response.status}`);
     const body = await response.json();
@@ -64,7 +62,7 @@ test('every panel answers over a window with nothing in it', async () => {
   const { call } = await app();
   // The commonest real failure: somebody picks a date range before the group
   // had any data. Not one of these screens may throw.
-  for (const path of ['/api/brief', '/api/pnl', '/api/labour', '/api/demand',
+  for (const path of ['/api/pnl', '/api/labour', '/api/demand',
     '/api/cash', '/api/suppliers']) {
     const response = await call(`${path}?from=2019-01-01&to=2019-01-31`);
     assert.equal(response.status, 200, `${path} fell over on an empty window`);
@@ -79,14 +77,14 @@ test('a panel answers before anything has ever been loaded', async () => {
   assert.equal(body.lastRun, null);
   assert.equal(body.data.firstDay, null);
 
-  const brief = await call('/api/brief');
-  assert.equal(brief.status, 200, 'an empty warehouse must render, not error');
+  const pnl = await call('/api/pnl');
+  assert.equal(pnl.status, 200, 'an empty warehouse must render, not error');
 });
 
 test('nothing but the sign-in endpoints answers without a session', async () => {
   const { call } = await app();
-  for (const path of ['/api/bootstrap', '/api/brief', '/api/pnl', '/api/cash',
-    '/api/findings', '/api/sources', '/api/runs', '/api/export']) {
+  for (const path of ['/api/bootstrap', '/api/pnl', '/api/cash',
+    '/api/sources', '/api/runs', '/api/export']) {
     const response = await call(path, { signedIn: false });
     assert.equal(response.status, 401, `${path} let somebody in without a session`);
   }
@@ -174,22 +172,6 @@ test('the export is a CSV with one row per day per line', async () => {
   assert.match(lines[1].split(',')[4], /^-?\d+\.\d\d$/);
 });
 
-test('a finding can be put down, and stays down', async () => {
-  const { call } = await app();
-  const list = await (await call('/api/findings?state=live')).json();
-  assert.ok(list.findings.length > 0);
-  const target = list.findings[0];
-
-  const bad = await call(`/api/findings/${target.id}`, { method: 'POST', body: { state: 'nonsense' } });
-  assert.equal(bad.status, 400);
-
-  const ok = await call(`/api/findings/${target.id}`, { method: 'POST', body: { state: 'dismissed' } });
-  assert.equal(ok.status, 200);
-
-  const after = await (await call('/api/findings?state=dismissed')).json();
-  assert.ok(after.findings.some((f) => f.id === target.id));
-});
-
 test('a source address must be https, and a key is never accepted here', async () => {
   const { call } = await app();
   const bad = await call('/api/sources/pos', { method: 'POST', body: { base: 'http://reports.example.com' } });
@@ -209,7 +191,7 @@ test('a source address must be https, and a key is never accepted here', async (
 test('an unknown endpoint is a 404, not a 500', async () => {
   const { call } = await app();
   assert.equal((await call('/api/nothing-here')).status, 404);
-  assert.equal((await call('/api/brief', { method: 'POST' })).status, 404);
+  assert.equal((await call('/api/pnl', { method: 'POST' })).status, 404);
 });
 
 test('anything outside /api is handed to the static assets', async () => {
@@ -219,15 +201,12 @@ test('anything outside /api is handed to the static assets', async () => {
   assert.equal(await response.text(), 'index');
 });
 
-test('a refresh loads and then re-reads, in that order', async () => {
+test('a refresh loads the sources', async () => {
   const { call, raw } = await app({ loaded: false });
   const response = await call('/api/refresh', { method: 'POST', body: { to: '2026-06-30' } });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.etl.status, 'ok');
   assert.ok(body.etl.rows > 0);
-  assert.ok(body.analysed.findings >= 0);
-  assert.deepEqual(body.analysed.errors, []);
-  assert.ok(raw.prepare('SELECT COUNT(*) AS n FROM findings').get().n > 0,
-    'the findings must be computed over the days that were just loaded');
+  assert.equal(body.analysed, undefined, 'nothing is judged after a load any more');
 });

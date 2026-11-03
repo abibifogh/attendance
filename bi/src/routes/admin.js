@@ -5,7 +5,6 @@ import { runEtl } from '../warehouse/etl.js';
 import { rebuildAssdRevenue } from './revenue.js';
 import { refreshCashPos, restoreCashCost } from './cashpo.js';
 import { tellDifferences } from './advances.js';
-import { analyse } from '../insight/engine.js';
 import { badRequest, str } from '../lib/http.js';
 import { isDay, todayIn, addDays } from '../lib/dates.js';
 
@@ -192,13 +191,7 @@ async function cleanLineMap(env, value) {
   return out;
 }
 
-/**
- * Load, then think.
- *
- * Always in that order and always in one call, because a dashboard whose
- * findings were computed against a different set of days than its charts is
- * worse than one that is simply out of date.
- */
+/** Load the sources, then what follows from them (room revenue, cash POs, price differences). */
 export async function refresh(env, body) {
   const config = await groupConfig(env.DB);
   const today = todayIn(config.timezone);
@@ -223,16 +216,9 @@ export async function refresh(env, body) {
   // A PO's final price that differs from what a drawer paid: said once, to
   // the next reception shift or, when old, to the admins. Never throws.
   extra.advances = await tellDifferences(env, { on: today });
-  // Findings are computed over a longer window than the load, because a trend
-  // needs a run-up. Loading ten days and then judging a trend on ten days
-  // would call every ordinary week a crisis.
-  const analysisFrom = addDays(to, -89);
-  const insight = await analyse(env.DB, { from: analysisFrom, to, persist: true });
-
   return {
     etl,
     ...extra,
-    analysed: { from: analysisFrom, to, findings: insight.findings.length, errors: insight.errors },
   };
 }
 
@@ -262,17 +248,6 @@ export async function settings(env, body) {
   return groupConfig(env.DB);
 }
 
-export async function decideFinding(env, id, body) {
-  const state = str(body?.state, 'State', { required: true, max: 20 });
-  if (!['open', 'acknowledged', 'actioned', 'dismissed'].includes(state)) {
-    throw badRequest('A finding can be open, acknowledged, actioned or dismissed');
-  }
-  const note = str(body?.note, 'Note', { max: 500 });
-  await run(env.DB, `
-    UPDATE findings SET state = ?2, state_at = datetime('now'), state_by = ?3, state_note = ?4
-     WHERE id = ?1`, Number(id), state, str(body?.by, 'By', { max: 80 }) || 'owner', note);
-  return { ok: true };
-}
 
 export async function runs(env) {
   const rows = await all(env.DB, 'SELECT * FROM etl_run ORDER BY id DESC LIMIT 20');

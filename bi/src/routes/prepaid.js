@@ -2,7 +2,7 @@ import { all, getSettings, setSetting } from '../lib/db.js';
 import { addDays } from '../lib/dates.js';
 import { badRequest } from '../lib/http.js';
 import { callLink } from '../lib/link.js';
-import { isNight } from './stays.js';
+import { isNight } from '../shifts/assd.js';
 import { frame, esc } from './invitations.js';
 
 /**
