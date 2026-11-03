@@ -21,6 +21,7 @@ import * as notes from './routes/notes.js';
 import * as tasks from './routes/tasks.js';
 import * as notices from './routes/notices.js';
 import * as team from './routes/team.js';
+import * as stockFeed from './routes/stockfeed.js';
 import * as storeReq from './routes/storereq.js';
 import * as stays from './routes/stays.js';
 import * as revenue from './routes/revenue.js';
@@ -415,6 +416,11 @@ const ROUTES = [
   ['GET', '/api/assistant', 'session', (env, ctx) => today.today(env, ctx.account)],
   // Their notifications, as an inbox; and the phones and computers they turned them on for.
   // Team: each person's work across the apps, and their evaluation. Admins; their own, when an admin allows it.
+  ['GET', '/api/stock', 'session', (env, ctx) => stockFeed.overview(env, ctx.account, { days: ctx.query.days })],
+  ['POST', '/api/stock/settings', 'session', (env, ctx) => stockFeed.saveFeedSettings(env, ctx.body, ctx.account)],
+  ['POST', '/api/stock/run', 'session', (env, ctx) => stockFeed.runNow(env, ctx.account)],
+  ['GET', '/api/stock/items', 'session', (env, ctx) => stockFeed.storeItems(env, ctx.query.app, ctx.account)],
+  ['POST', '/api/stock/match', 'session', (env, ctx) => stockFeed.matchProduct(env, ctx.body, ctx.account)],
   ['GET', '/api/team', 'session', (env, ctx) => team.overview(env, ctx.query, ctx.account)],
   ['GET', '/api/team/me', 'session', (env, ctx) => team.own(env, ctx.account)],
   ['GET', '/api/team/settings', 'session', (env, ctx) => team.settingsOf(env)],
@@ -706,6 +712,9 @@ export default {
       execution.waitUntil(storeReq.syncStore(env, { now: event.scheduledTime || Date.now() })
         .then((out) => { if (out.skipped) console.log('Store requests', out.skipped); })
         .catch((err) => console.error('Store requests', err)));
+      execution.waitUntil(stockFeed.syncStock(env, { now: event.scheduledTime || Date.now() })
+        .then((out) => { if (out.skipped) console.log('Stock from Odoo', out.skipped); })
+        .catch((err) => console.error('Stock from Odoo', err)));
       return;
     }
     if (event?.cron === HOURLY_CRON) {

@@ -403,13 +403,42 @@ function storeLines(mine, now) {
   });
 }
 
+/**
+ * Stock from Odoo given to this person: which store a new product goes to, a
+ * delivery short, one not received, stock left after its PO was cancelled.
+ */
+function stockLines(mine, now) {
+  const STORE = { breakfast: 'breakfast store', maintenance: 'Maintenance store' };
+  return mine.filter((t) => String(t.kind).startsWith('stock') && t.state === 'open').map((t) => {
+    const d = t.detail || {};
+    const title = {
+      stockmatch: `Which store is ${t.ref}?`,
+      stockshort: `${t.ref}: ${d.item} came in short`,
+      stocklate: `${t.ref} not received after 3 days`,
+      stockkept: `${t.ref} cancelled, but its stock stayed`,
+    }[t.kind] || t.kindLabel;
+    const why = {
+      stockmatch: `On ${(d.lines || []).map((l) => l.po).join(', ')} from ${d.supplier || 'a supplier'}`,
+      stockshort: `${d.received} of ${d.expected} ${d.unit || ''} received in the ${STORE[d.app] || 'store'}`,
+      stocklate: `${d.supplier || 'The supplier'}, in the ${STORE[d.app] || 'store'}`,
+      stockkept: `${d.item} in the ${STORE[d.app] || 'store'}${d.reason ? `: ${d.reason}` : ''}`,
+    }[t.kind] || null;
+    return {
+      tab: 'fix', key: `todo:${t.id}`, sev: t.kind === 'stockmatch' ? 'info' : 'warn', tag: 'Stock',
+      title, why, age: daysSince(t.day || t.openedAt, now), system: 'Odoo',
+      advice: t.kind === 'stockmatch' ? 'Say which store it goes to, once; every later PO with it follows.' : 'Look into it and put it right in the store, or say why nothing is needed.',
+      actions: [{ label: t.kind === 'stockmatch' ? 'Choose the store' : 'Open To sort out', href: '#/inbox', primary: true }],
+    };
+  });
+}
+
 /** Answers waiting for an admin, to-dos nobody has been given, and an admin's own stand-in POs and store requests. */
 async function readTodos(env, account, now) {
   const { items } = await listTodos(env, account);
   const answered = items.filter((t) => t.state === 'answered');
   const nobody = items.filter((t) => t.state === 'open' && !t.assignee);
   const own = account?.id != null ? items.filter((t) => Number(t.assignee?.id) === Number(account.id)) : [];
-  const out = [...storeLines(own, now), ...placeholderLines(own, now)];
+  const out = [...storeLines(own, now), ...placeholderLines(own, now), ...stockLines(own, now)];
   if (answered.length) out.push({ tab: 'decide', key: 'todos:answered', sev: 'info', title: `${answered.length} answer${answered.length === 1 ? '' : 's'} on POs to chase to decide`, advice: 'A supervisor said what happened; accept it, or send it back.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   if (nobody.length) out.push({ tab: 'fix', key: 'todos:nobody', sev: 'warn', title: `${nobody.length} PO${nobody.length === 1 ? '' : 's'} to chase that nobody has been given`, advice: 'Give each to a supervisor so somebody chases it.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });
   return out;
@@ -473,8 +502,8 @@ async function readFiles(env, account, now, { href = '#/files' } = {}) {
 /** A supervisor's own to-dos: given to them, and sent back. */
 async function readMyTodos(env, account, now) {
   const { items } = await listTodos(env, account);
-  const out = [...storeLines(items, now), ...placeholderLines(items, now)];
-  const open = items.filter((t) => t.state === 'open' && !['placeholder', 'store'].includes(t.kind));
+  const out = [...storeLines(items, now), ...placeholderLines(items, now), ...stockLines(items, now)];
+  const open = items.filter((t) => t.state === 'open' && !['placeholder', 'store'].includes(t.kind) && !String(t.kind).startsWith('stock'));
   const back = open.filter((t) => t.sentBack);
   if (back.length) {
     out.push({ tab: 'fix', key: 'mytodos:back', sev: 'warn', title: `${back.length} PO item${back.length === 1 ? '' : 's'} sent back to you`, why: back.slice(0, 3).map((t) => `${t.kindLabel}${t.ref ? ` ${t.ref}` : ''}: ${t.sentBack}`).join(' · '), advice: 'An admin asked for more: say what happened, or what you found.', actions: [{ label: 'Open To sort out', href: '#/inbox', primary: true }] });

@@ -62,6 +62,10 @@ export const KIND_LABEL = {
   nopo: 'A bill with no PO',
   placeholder: 'PO with a stand-in vendor or item',
   store: 'Kitchen store request',
+  stockmatch: 'Which store?',
+  stockshort: 'Delivered short',
+  stocklate: 'Not received yet',
+  stockkept: 'Cancelled PO, stock stayed',
 };
 
 /** Who stand-in POs go to: an active supervisor or admin an admin chose, or null (shared out like the rest). */

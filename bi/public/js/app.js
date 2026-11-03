@@ -10,6 +10,7 @@ import { renderSafe } from './views/safe.js';
 import { renderSpend } from './views/suppliers.js';
 import { renderSupplierBook } from './views/supplierbook.js';
 import { renderFixedAssets } from './views/fixedassets.js';
+import { renderStockFeed } from './views/stockfeed.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub, appsPanel } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
@@ -98,6 +99,7 @@ const ROUTES = [
   { path: 'floats', label: 'Floats', section: 'buying', page: 'Floats', render: renderFloats, needs: 'admin', own: true },
   { path: 'spend', label: 'Spend', section: 'buying', page: 'Spend', render: renderSpend, needs: 'insight', report: 'buying' },
   { path: 'assets', label: 'Fixed assets', section: 'buying', page: 'Fixed assets', render: renderFixedAssets, needs: 'admin', own: true },
+  { path: 'stock', label: 'Stock from Odoo', section: 'buying', page: 'Stock from Odoo', render: renderStockFeed, needs: 'admin', own: true },
 
   // What the business made, the week's report from the other apps, the guests and the staff.
   // Each person's work across the apps, what holds them back, and their evaluation.
