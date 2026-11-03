@@ -26,11 +26,18 @@ async function setUp({ mondaysLate = true } = {}) {
     INSERT INTO account_access (account_id, system_id, role) VALUES (51, 'insight', 'supervisor');`);
   // Only the made-up people: HIVE's own set-up adds some of its own.
   hive.raw.exec('PRAGMA foreign_keys = OFF; DELETE FROM att_days; DELETE FROM att_roster; DELETE FROM att_staff;');
-  hive.raw.exec(`INSERT INTO users (id, name, email, role, active) VALUES (801, 'Yaw Test', 'yaw@example.test', 'staff', 1), (802, 'Kojo Test', 'kojo@example.test', 'staff', 1), (803, 'Ama Test', 'ama@example.test', 'staff', 1);
-    INSERT INTO att_shifts (id, name, starts_at, ends_at) VALUES (99, 'Test day', '07:00', '16:00');
+  // How HIVE links people to an email: a staff login points at its record
+  // (users.staff_id, Yaw); a manager who also clocks in is pointed at from the
+  // record (att_staff.user_id, Kojo); somebody with no login has a personal
+  // email on their HR profile (Ama). A login that only opens somebody else's
+  // record (user_staff) is not theirs.
+  hive.raw.exec(`INSERT INTO att_shifts (id, name, starts_at, ends_at) VALUES (99, 'Test day', '07:00', '16:00');
     INSERT INTO att_staff (id, employee_no, name, department, job_title, user_id, active) VALUES
-      (1, 'E1', 'Yaw Test', 'Maintenance', 'Artisan', 801, 1), (2, 'E2', 'Kojo Test', 'Maintenance', 'Artisan', 802, 1), (3, 'E3', 'Ama Test', 'Kitchen', 'Cook', 803, 1),
-      (4, 'E4', 'Left Test', 'Kitchen', 'Cook', NULL, 0);`);
+      (1, 'E1', 'Yaw Test', 'Maintenance', 'Artisan', NULL, 1), (2, 'E2', 'Kojo Test', 'Maintenance', 'Artisan', 802, 1), (3, 'E3', 'Ama Test', 'Kitchen', 'Cook', NULL, 1),
+      (4, 'E4', 'Left Test', 'Kitchen', 'Cook', NULL, 0);
+    INSERT INTO users (id, name, email, role, active, staff_id) VALUES (801, 'Yaw Test', 'Yaw@Example.test', 'staff', 1, 1), (802, 'Kojo Test', 'kojo@example.test', 'staff', 1, NULL), (804, 'Esi Test', 'esi@example.test', 'staff', 1, NULL);
+    INSERT INTO user_staff (user_id, staff_id) VALUES (804, 3);
+    INSERT INTO hr_profile (staff_id, personal_email) VALUES (3, 'ama@example.test');`);
   // 120 days of day shifts, Monday to Saturday. Yaw late most Mondays; missed two.
   for (let i = 120; i >= 0; i -= 1) {
     const d = addDays(today, -i);
@@ -95,6 +102,8 @@ test('everybody in HIVE: what they are doing, have coming up, overdue, done and 
   assert.ok(calls.some((c) => c.url.includes('mx.example') && c.body.action === 'activity' && c.signed && c.body.emails.includes('yaw@example.test')));
   assert.ok(calls.some((c) => c.url.includes('pos-fn') && c.signed));
   assert.equal(out.sources.maintenance, 'ok');
+  const asked = calls.find((c) => c.url.includes('mx.example')).body.emails.sort();
+  assert.deepEqual(asked, ['ama@example.test', 'kojo@example.test', 'yaw@example.test'], 'a login, a manager’s record, a personal email; not a login that only opens somebody else’s record');
   const yaw = out.rows.find((r) => r.name === 'Yaw Test');
   assert.equal(yaw.rows, undefined);
   assert.equal(yaw.doing, 1, 'the generator service');
@@ -198,4 +207,12 @@ test('periods: a day, the week from Monday, the month', () => {
   // On time allows for days held by somebody else.
   assert.equal(team.onTime({ status: 'done', due: '2026-11-01', done_at: '2026-11-04T10:00:00Z', waited_days: 3 }), true);
   assert.equal(team.onTime({ status: 'done', due: '2026-11-01', done_at: '2026-11-04T10:00:00Z', waited_days: 1 }), false);
+});
+
+test('nobody in HIVE has an email: the page says so, not that the apps are not linked', async () => {
+  const { env, hive } = await setUp();
+  hive.raw.exec('UPDATE users SET email = NULL; DELETE FROM hr_profile; UPDATE att_staff SET user_id = NULL;');
+  const out = await team.overview(env, { period: 'day', day: addDays(today, 30) }, OWNER);
+  assert.match(out.sources.maintenance, /nobody in HIVE has an email/);
+  assert.match(out.sources.pos, /nobody in HIVE has an email/);
 });
