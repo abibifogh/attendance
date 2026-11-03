@@ -35,6 +35,7 @@ function world() {
         if (had) { out[l.lineId] = { state: 'already', current: had.state, item: had.item, qty: had.qty }; continue; }
         const m = s.map.get(`${l.productId}:${l.uomId}`);
         if (m === 'ignore') { out[l.lineId] = { state: 'ignored' }; continue; }
+        if (s.closed && body.mode !== 'store') { out[l.lineId] = { state: 'refused', reason: 'That period is closed.' }; continue; }
         if (!m) { out[l.lineId] = { state: 'unknown' }; continue; }
         const state = body.mode === 'store' ? 'expected' : 'recorded';
         const rec = { state, item: m.item, qty: l.qty * m.factor, unitCost: Math.round((l.priceUnit / m.factor) * 10000) / 10000 };
@@ -275,5 +276,21 @@ test('Maintenance not updated yet: said plainly, and its lines wait', async () =
   const out = await sf.syncStock(env, { now: at('2026-11-05') });
   assert.match(out.said.maintenance, /does not take stock from Odoo yet/);
   assert.equal(line(raw, 902).state, 'waiting');
+});
+
+test('a closed period in the store: the line waits there, and is not offered to the other store', async () => {
+  const { env, raw, w } = await setUp();
+  w.stores.breakfast.closed = true;
+  w.po(1, 'P04131', '2026-11-04');
+  w.line(901, 1, [1, 'Eggs, crate of 30'], [1, 'Units'], 6, 95);
+  await sf.syncStock(env, { now: at('2026-11-05') });
+  assert.equal(line(raw, 901).state, 'waiting');
+  assert.equal(line(raw, 901).app, 'breakfast');
+  assert.match(line(raw, 901).note, /closed/);
+  assert.equal(w.calls.filter((c) => c.store === 'maintenance' && c.body.action === 'offer').length, 0);
+  assert.equal(todos(raw).length, 0);
+  w.stores.breakfast.closed = false;
+  await sf.syncStock(env, { now: at('2026-11-05', '10:15:00') });
+  assert.equal(line(raw, 901).state, 'recorded');
 });
 

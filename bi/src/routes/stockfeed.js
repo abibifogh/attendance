@@ -254,6 +254,9 @@ export async function syncStock(env, { now = Date.now() } = {}) {
       if (a && PLACED.includes(a.state)) {
         await saveAnswer(env, l.lineId, app, a, at); // eslint-disable-line no-await-in-loop
         counts.placed += 1;
+      } else if (a?.state === 'refused') {
+        // Its store, but it cannot take it now (a closed period): tried again next time, there.
+        await run(env.DB, 'UPDATE stock_line SET app = ?2, state = \'waiting\', note = ?3, updated_at = ?4 WHERE line_id = ?1', l.lineId, app, a.reason || `The ${STORES[app]} could not take it just now.`, at); // eslint-disable-line no-await-in-loop
       } else next.push(l);
     }
     rest = next;
