@@ -567,3 +567,38 @@ test('who a chapter is for is ticked from what the property has', async () => {
   assert.ok(leads, 'a tag somebody actually carries is offered');
   assert.ok(leads.people >= 1);
 });
+
+// ---------------------------------------------------------------------------
+// Told only once staff can see it
+// ---------------------------------------------------------------------------
+
+test('publishing while the handbook is shut to staff tells nobody; opening it tells them once', async () => {
+  const { updateSettings } = await import('../src/routes/attendance-setup.js');
+  const { raw, db } = setup({ on: false });
+  const notices = () => raw.prepare("SELECT * FROM app_notices WHERE kind = 'handbook.published'").all();
+  const a = draft(raw, { code: 'one', title: 'Hours', asks: 'ack' });
+  const b = draft(raw, { code: 'two', title: 'Pay', asks: 'sign' });
+  draft(raw, { code: 'three', title: 'Map of the building', asks: 'read' });
+  const outA = await publish(db, a);
+  await publish(db, b);
+  assert.equal(outA.told, false);
+  assert.equal(notices().length, 0, 'nobody told while it is shut');
+
+  const res = await updateSettings(ctx(db, { user: { id: 90, name: 'Akua', role: 'admin' }, permissions: ['att_setup'] },
+    { handbook_on: '1' }));
+  const out = await res.json();
+  assert.equal(out.announced, 2);
+  const told = notices();
+  assert.equal(told.length, 1, 'one message for both, not one each');
+  assert.match(told[0].title, /2 chapters/);
+
+  // Saving the same setting again tells nobody again.
+  await updateSettings(ctx(db, { user: { id: 90, name: 'Akua', role: 'admin' }, permissions: ['att_setup'] },
+    { handbook_on: '1' }));
+  assert.equal(notices().length, 1);
+
+  // Open now: a new chapter is told about when it is published.
+  const c = draft(raw, { code: 'four', title: 'Uniform', asks: 'ack' });
+  assert.equal((await publish(db, c)).told, true);
+  assert.equal(notices().length, 2);
+});

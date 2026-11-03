@@ -350,8 +350,12 @@ export async function publishChapter(ctx, id) {
   });
 
   // Everybody it applies to hears about it once, and only where it wants
-  // something back. A reference page quietly appearing is not news.
-  if (asksOf(chapter) !== 'read') {
+  // something back. A reference page quietly appearing is not news. And only
+  // while staff can open the handbook: a message about a chapter nobody can
+  // reach is a message to ignore. Switching it on tells them then, in one go
+  // (announceHandbook below).
+  const open = await isOn(ctx.db);
+  if (open && asksOf(chapter) !== 'read') {
     await createNotice(ctx.db, {
       kind: 'handbook.published',
       title: version > 1 && !fresh
@@ -364,7 +368,54 @@ export async function publishChapter(ctx, id) {
     }, ctx);
   }
 
-  return json({ ok: true, version, asked: fresh });
+  return json({ ok: true, version, asked: fresh, told: open && asksOf(chapter) !== 'read' });
+}
+
+/**
+ * The handbook has just been opened to staff: one message for everything
+ * published that asks something of them, rather than one per chapter, which
+ * on a first opening is a dozen phones buzzing a dozen times.
+ */
+export async function announceHandbook(db, ctx) {
+  const waiting = (await chapters(db))
+    .filter((c) => c.status === 'published' && asksOf(c) !== 'read');
+  if (!waiting.length) return 0;
+  if (waiting.length === 1) {
+    const chapter = waiting[0];
+    const version = Number(chapter.version || 1);
+    await createNotice(db, {
+      kind: 'handbook.published',
+      title: `${chapter.live_title || chapter.title}: please read and ${asksOf(chapter) === 'sign' ? 'sign' : 'tick'} it`,
+      body: chapter.summary || 'It is in the handbook, under Handbook.',
+      link: '#/handbook',
+      audience: 'att_me',
+      mail: handbookMail(chapter, { version, fresh: true, again: false }),
+    }, ctx);
+    return 1;
+  }
+  const signs = waiting.filter((c) => asksOf(c) === 'sign').length;
+  const names = waiting.map((c) => c.live_title || c.title);
+  await createNotice(db, {
+    kind: 'handbook.published',
+    title: `The staff handbook is open: ${waiting.length} chapters to read`,
+    body: `${names.slice(0, 4).join(', ')}${names.length > 4 ? ` and ${names.length - 4} more` : ''}. `
+      + (signs ? `${signs} of them ${signs === 1 ? 'asks' : 'ask'} for a signature.` : 'Each asks for a tick.'),
+    link: '#/handbook',
+    audience: 'att_me',
+    mail: {
+      status: 'Please read',
+      tone: 'info',
+      eyebrow: 'Handbook',
+      subject: `The staff handbook is open: ${waiting.length} chapters to read`,
+      preheader: `${waiting.length} chapters ask for your tick${signs ? ' or signature' : ''}.`,
+      headline: 'The staff handbook is open',
+      intro: 'These chapters ask something of you. Read each one in HIVE under Handbook and tick or sign it.',
+      facts: waiting.map((c) => [c.live_title || c.title, asksOf(c) === 'sign' ? 'Read it and sign' : 'Read it and tick it']),
+      button: 'Open the handbook',
+      why: 'You get this because the staff handbook was opened to staff.',
+    },
+  }, ctx);
+  return waiting.length;
 }
 
 /** The email for a published chapter: what it is and what it asks. */

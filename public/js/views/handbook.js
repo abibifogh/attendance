@@ -308,14 +308,17 @@ export async function renderHandbook() {
             h('div.alert-title', 'Staff cannot see any of this yet'),
             h('div.alert-detail',
               'The handbook is switched off, so publishing a chapter puts it in front of the '
-              + 'office and nobody else.'),
+              + 'office and nobody else, and nobody is told. Turning it on tells staff about '
+              + 'everything published that asks them to read or sign.'),
             h('button.btn.btn-sm.btn-primary', {
               type: 'button',
               style: { marginTop: '.6rem' },
               onclick: async () => {
                 try {
-                  await api.attUpdateSettings({ handbook_on: '1' });
-                  toast('The handbook is open to staff.', 'good');
+                  const out = await api.attUpdateSettings({ handbook_on: '1' });
+                  toast(out?.announced
+                    ? `The handbook is open to staff. They have been told about ${out.announced === 1 ? 'the chapter' : `the ${out.announced} chapters`} to read.`
+                    : 'The handbook is open to staff.', 'good');
                   await paint();
                 } catch (err) { toast(err.message || 'That did not work.', 'bad'); }
               },
@@ -324,7 +327,7 @@ export async function renderHandbook() {
 
       chapter ? chapterPage(chapter) : contents,
 
-      manage && !chapter ? adminCard(manage, paint) : null,
+      manage && !chapter ? adminCard(manage, paint, data.on) : null,
     );
   };
 
@@ -337,7 +340,7 @@ export async function renderHandbook() {
 // ---------------------------------------------------------------------------
 
 /** Every chapter, its state, and who is behind. */
-function adminCard(manage, paint) {
+function adminCard(manage, paint, open = true) {
   const rows = manage.chapters.map((chapter) => h('div.hb-row',
     h('div',
       h('div.hb-row-title', chapter.title,
@@ -369,7 +372,7 @@ function adminCard(manage, paint) {
       manage.mayEdit
         ? h('button.btn.btn-sm.btn-primary', {
           type: 'button',
-          onclick: async () => { if (await publishDialog(chapter)) await paint(); },
+          onclick: async () => { if (await publishDialog(chapter, open)) await paint(); },
         }, chapter.status === 'published' ? 'Publish again' : 'Publish')
         : null,
       manage.mayEdit && chapter.status === 'published'
@@ -505,7 +508,7 @@ async function editDialog(chapter, manage) {
 }
 
 /** Publishing one, which is the moment it reaches people. */
-async function publishDialog(chapter) {
+async function publishDialog(chapter, open = true) {
   const again = h('input', { type: 'checkbox' });
   const fresh = chapter.status !== 'published' || chapter.changed;
 
@@ -524,11 +527,14 @@ async function publishDialog(chapter) {
       h('p.muted', chapter.departments.length || chapter.tags.length
         ? `It goes to ${[...chapter.departments, ...chapter.tags].join(', ')} and nobody else.`
         : 'It goes to everybody on the staff list.'),
-      chapter.asks !== 'read'
-        ? h('p.muted', chapter.asks === 'sign'
-          ? 'It asks for a signature. Everybody it applies to will be told once.'
-          : 'It asks for a tick. Everybody it applies to will be told once.')
-        : h('p.muted', 'It is a reference page. Nobody is asked for anything and nobody is told.'),
+      chapter.asks === 'read'
+        ? h('p.muted', 'It is a reference page. Nobody is asked for anything and nobody is told.')
+        : !open
+          ? h('p.muted', `It asks for a ${chapter.asks === 'sign' ? 'signature' : 'tick'}. Staff cannot see the handbook yet, `
+            + 'so nobody is told now. They are told about it when you turn the handbook on for staff.')
+          : h('p.muted', chapter.asks === 'sign'
+            ? 'It asks for a signature. Everybody it applies to will be told once.'
+            : 'It asks for a tick. Everybody it applies to will be told once.'),
       !fresh && chapter.asks !== 'read'
         ? h('label.hb-again', again,
           h('span', 'Ask everybody to read and confirm it again anyway'))

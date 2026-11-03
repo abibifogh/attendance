@@ -13,6 +13,7 @@ import { ghanaHolidays, toMinutes } from '../lib/attendance.js';
 import { listeningHostSettings } from '../lib/push-events.js';
 import { claimOrphans, hashDeviceToken, recompute } from '../lib/attendance-ingest.js';
 import { beginFor } from './onboarding.js';
+import { announceHandbook } from './handbook.js';
 import { settleLeaving } from '../lib/leaving.js';
 import { getPepper } from '../lib/auth.js';
 import { asBytes, fromBase64 } from '../lib/files.js';
@@ -1511,8 +1512,17 @@ export async function updateSettings(ctx) {
     recomputed = (await recompute(ctx.db, { from: addDays(today, -60), to: today })).days;
   }
 
+  // The handbook opened to staff: now is when they hear about what is in it.
+  // Publishing a chapter while it was shut told nobody.
+  let announced = 0;
+  const nowOn = changed.includes('handbook_on')
+    && (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'handbook_on'").first())?.value === '1';
+  if (nowOn) {
+    announced = await announceHandbook(ctx.db, ctx).catch((err) => { console.error('handbook announce failed', err); return 0; });
+  }
+
   await audit(ctx, 'attendance.settings', null, { changed });
-  return json({ ok: true, changed, recomputed });
+  return json({ ok: true, changed, recomputed, announced });
 }
 
 /**
