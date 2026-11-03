@@ -410,6 +410,7 @@ const ROUTES = [
   ['POST', '/api/stock/run', 'session', (env, ctx) => stockFeed.runNow(env, ctx.account)],
   ['GET', '/api/stock/items', 'session', (env, ctx) => stockFeed.storeItems(env, ctx.query.app, ctx.account)],
   ['POST', '/api/stock/match', 'session', (env, ctx) => stockFeed.matchProduct(env, ctx.body, ctx.account)],
+  ['GET', '/api/team/evaluations', 'session', (env, ctx) => team.evaluations(env, ctx.account)],
   ['GET', '/api/team', 'session', (env, ctx) => team.overview(env, ctx.query, ctx.account)],
   ['GET', '/api/team/me', 'session', (env, ctx) => team.own(env, ctx.account)],
   ['GET', '/api/team/settings', 'session', (env, ctx) => team.settingsOf(env)],

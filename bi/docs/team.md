@@ -1,6 +1,6 @@
 # Team
 
-**Reports › Team** shows admins what is on each person's table, in every
+**Team** shows admins what is on each person's table, in every
 app, and what is holding them back. Only admins see it.
 
 Everybody active in HIVE is on it. A person is matched across the apps by

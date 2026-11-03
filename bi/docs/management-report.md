@@ -44,7 +44,7 @@ Insight's email, attaches only CSV files).
 
 ## The Saturday report and the morning digest
 
-Settings › Notifications › Management report, **Saturday report and morning
+Settings › Who gets what › Management report, **Saturday report and morning
 digest**, an admin's:
 
 - **Saturday report.** One supervisor, chosen there, sends this week's report

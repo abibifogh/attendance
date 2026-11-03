@@ -109,3 +109,30 @@ export async function renderStockFeed(root) {
   mount(root, h('p.muted', 'Loading…'));
   await load();
 }
+
+/** Settings › Rules › Stock: when a line becomes stock, and from which day. Who answers “Which store?” is under Who gets what. */
+export async function renderStockRules(root) {
+  let data;
+  try { data = await api('/stock'); } catch (err) { mount(root, h('div.card', h('h2', 'That did not work'), h('p', err.message))); return; }
+  const s = data.settings;
+  const said = h('p.small');
+  const save = async (body) => {
+    said.textContent = 'Saving…'; said.className = 'small';
+    try { await api('/stock/settings', { method: 'POST', body }); await renderStockRules(root); } catch (e) { said.textContent = e.message; said.className = 'small form-error'; }
+  };
+  const SUB = {
+    confirmed: 'Stock goes up as soon as the PO is confirmed in Odoo. Nobody taps anything in the store.',
+    store: 'It shows as “On its way” in the store’s Deliveries, filled in. One tap; change the number if the delivery is short.',
+    odoo: 'Only if goods are received in Odoo itself: it goes in once Odoo says the line is received.',
+  };
+  const from = h('input', { type: 'date', value: s.from || '' });
+  mount(root, h('div.card.sf-set',
+    h('h2', 'Stock from Odoo'),
+    h('h3', 'When it becomes stock'),
+    Object.entries(data.modes).map(([k, label]) => h(`button.sf-opt${s.mode === k ? '.on' : ''}`, { type: 'button', 'aria-pressed': String(s.mode === k), onclick: () => save({ mode: k }) }, h('b', h('i'), label), h('small', SUB[k]))),
+    h('label.sf-field', h('small', 'Start from POs confirmed on'), from),
+    h('button.btn.sf-save', { type: 'button', onclick: () => save({ from: from.value }) }, 'Save the day'),
+    h('p.small.muted', 'Who answers “Which store?”: Settings › Who gets what. What came through: Buying & stock › Stock from Odoo.'),
+    said));
+}
+

@@ -750,3 +750,30 @@ export async function own(env, account) {
   if (!m) throw notFound('Your email in Insight is not the one HIVE has for you.');
   return evaluation(env, m.id, account, { own: true });
 }
+
+/** Team › Evaluations: everybody's rating at once, by role, to compare. Admins only. */
+export async function evaluations(env, account) {
+  mustAdmin(account);
+  const today = todayIn('UTC');
+  const { people } = await gatherTeam(env, { ...periodOf('day', today), today });
+  const evals = await evaluateAll(env, today);
+  const settings = await settingsOf(env);
+  const rows = people.map((m) => {
+    const e = evals.get(m.id) || {};
+    const scored = MEASURES.map((x) => ({ label: x.label, weight: settings.weights[x.id], score: e.measures?.[x.id]?.score ?? null })).filter((x) => x.score != null && x.weight > 0);
+    const best = [...scored].sort((a, b) => b.score - a.score)[0] || null;
+    const worst = [...scored].sort((a, b) => a.score - b.score)[0] || null;
+    return {
+      id: m.id, name: m.name, role: m.role, department: m.department,
+      score: e.score ?? null, was: e.was ?? null, trend: e.trend || 'same', verdict: verdict(e.score ?? null, e.trend), rank: e.rank ?? null, peers: e.peers ?? 1,
+      best: best && best.score >= 4 ? { label: best.label, score: best.score } : null,
+      watch: worst && worst.score < 3 ? { label: worst.label, score: worst.score } : null,
+    };
+  });
+  const roles = [...new Set(rows.map((r) => r.role || 'Staff'))].sort();
+  return {
+    from: addDays(today, -EVAL_DAYS), to: addDays(today, -1),
+    roles: roles.map((role) => ({ role, people: rows.filter((r) => (r.role || 'Staff') === role).sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.name.localeCompare(b.name)) })),
+  };
+}
+

@@ -1,4 +1,4 @@
-# Buying › Suppliers
+# Buying & stock › Suppliers
 
 One list of suppliers. **Odoo is the list**: its vendors (anybody a PO or bill
 went to) are read into Insight each night and when somebody presses

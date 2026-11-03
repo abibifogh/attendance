@@ -216,3 +216,15 @@ test('nobody in HIVE has an email: the page says so, not that the apps are not l
   assert.match(out.sources.maintenance, /nobody in HIVE has an email/);
   assert.match(out.sources.pos, /nobody in HIVE has an email/);
 });
+
+test('Team › Evaluations: everybody’s rating at once, by role, admins only', async () => {
+  const { env } = await setUp();
+  await assert.rejects(team.evaluations(env, SUP), /for admins/);
+  const out = await team.evaluations(env, OWNER);
+  assert.deepEqual(out.roles.map((g) => g.role), ['Artisan', 'Cook']);
+  const artisans = out.roles.find((g) => g.role === 'Artisan').people;
+  assert.deepEqual(artisans.map((p) => p.name).sort(), ['Kojo Test', 'Yaw Test']);
+  const yaw = artisans.find((p) => p.name === 'Yaw Test');
+  assert.ok(yaw.score != null && yaw.verdict && yaw.rank >= 1 && yaw.peers === 2);
+  assert.ok(artisans[0].score >= artisans[1].score, 'best first');
+});

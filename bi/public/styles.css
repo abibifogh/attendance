@@ -3310,3 +3310,20 @@ main img, main svg, main canvas, main video { max-width: 100%; }
   .npg-shifts td small { display: inline; margin-left: .3rem; }
   .npg-legend { font-size: .68rem; gap: .5rem; }
 }
+
+/* ------------------------------------------- Settings › Who gets what */
+.wg-wrap { overflow-x: auto; }
+.wg-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.wg-table th { text-align: left; font: 600 .66rem var(--mono, monospace); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: .5rem; border-bottom: 1px solid var(--border); }
+.wg-table td { padding: .65rem .5rem; border-top: 1px solid var(--border); vertical-align: middle; }
+.wg-table td small { display: block; color: var(--muted); font-weight: 600; font-size: .75rem; margin-top: .1rem; }
+.wg-table select { max-width: 100%; }
+.wg-fixed { color: var(--ink-2, var(--ink)); font-weight: 600; }
+.wg-said:empty { display: none; }
+.tm-evgroup h2 small { font-weight: 600; }
+.tm-watch { color: #9b2416; font-weight: 700; }
+@media (max-width: 640px) {
+  .wg-table thead { display: none; }
+  .wg-table tr { display: grid; gap: .35rem; padding: .7rem 0; border-top: 1px solid var(--border); }
+  .wg-table td { border: 0; padding: 0; }
+}

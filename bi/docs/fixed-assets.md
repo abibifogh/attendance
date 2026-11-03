@@ -1,6 +1,6 @@
 # Fixed assets
 
-Buying › **Fixed assets** (admins): Insight finds the fixed assets in Odoo,
+Buying & stock › **Fixed assets** (admins): Insight finds the fixed assets in Odoo,
 an admin confirms each, and Maintenance keeps them: where each is, and its
 servicing.
 

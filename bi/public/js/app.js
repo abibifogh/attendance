@@ -9,7 +9,8 @@ import { renderSafe } from './views/safe.js';
 import { renderSpend } from './views/suppliers.js';
 import { renderSupplierBook } from './views/supplierbook.js';
 import { renderFixedAssets } from './views/fixedassets.js';
-import { renderStockFeed } from './views/stockfeed.js';
+import { renderStockFeed, renderStockRules } from './views/stockfeed.js';
+import { renderWhoGets } from './views/whogets.js';
 import { renderSetup } from './views/setup.js';
 import { renderHub, appsPanel } from './views/hub.js';
 import { renderAccounts } from './views/accounts.js';
@@ -30,7 +31,7 @@ import { renderAssistant } from './views/assistant.js';
 import { renderReceipts } from './views/receipts.js';
 import { renderFloats } from './views/floats.js';
 import { renderNotifications } from './views/notifications.js';
-import { renderTeam, renderMyEvaluation } from './views/team.js';
+import { renderTeam, renderMyEvaluation, renderEvaluations, renderTeamRules } from './views/team.js';
 import { openViewAs, viewAsBar } from './views/viewas.js';
 import { openPalette } from './views/palette.js';
 import { watchFigures } from './fit.js';
@@ -56,13 +57,15 @@ export const state = {
  * others under the same heading. Old addresses still open (ALIASES).
  */
 const SECTIONS = [
-  { id: 'assistant', label: 'Assistant', icon: 'spark' },
+  { id: 'assistant', label: 'Today', icon: 'spark' },
   // Everything to act on, from the shifts and Odoo, in one place of its own.
   { id: 'sortout', label: 'To sort out', short: 'To sort', icon: 'tray' },
   { id: 'desk', label: 'Front desk', short: 'Desk', icon: 'desk' },
-  { id: 'buying', label: 'Buying', icon: 'cart' },
+  { id: 'buying', label: 'Buying & stock', short: 'Buying', icon: 'cart' },
+  { id: 'team', label: 'Team', icon: 'people' },
   { id: 'reports', label: 'Reports', icon: 'chart' },
-  { id: 'settings', label: 'Settings', icon: 'gear' },
+  // Rarely opened: at the foot of the rail on a computer, under your name on a phone.
+  { id: 'settings', label: 'Settings', icon: 'gear', phone: false },
 ];
 
 /** One part of the Shifts screen as a page of its own, telling the menu when it moves to another part. */
@@ -72,8 +75,8 @@ const SHIFT_PATHS = { shifts: 'shifts', inbox: 'inbox', people: 'people', report
 const ROUTES = [
   // What needs an admin in every system, with advice; every approval, decided here; and the morning numbers.
   // Everybody's own: an admin's covers everything, anybody else's what their access shows them.
-  { path: 'assistant', label: 'Today', section: 'assistant', page: 'Assistant', render: renderAssistant, needs: 'member', own: true },
-  { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Assistant', render: renderApprovals, needs: 'admin', own: true, count: true },
+  { path: 'assistant', label: 'My list', section: 'assistant', page: 'Today', render: renderAssistant, needs: 'member', own: true, aka: 'Assistant Brief' },
+  { path: 'approvals', label: 'Approvals', section: 'assistant', page: 'Today', render: renderApprovals, needs: 'admin', own: true, count: true },
   // Their own evaluation, once an admin lets people see it (the page says so until then).
   { path: 'my-evaluation', label: 'My evaluation', section: 'assistant', page: 'My evaluation', render: renderMyEvaluation, needs: 'member', own: true, hidden: true },
   // Everything Insight told this person, as an inbox, and whether their phone gets it too.
@@ -83,7 +86,7 @@ const ROUTES = [
   { path: 'shifts', label: 'Shifts', section: 'desk', page: 'Shifts', render: shiftsPart('shifts'), needs: 'shifts', part: 'shifts' },
   { path: 'inbox', label: 'To sort out', section: 'sortout', page: 'To sort out', render: shiftsPart('inbox'), needs: 'shifts', part: 'inbox' },
   { path: 'closing', label: 'Closing reports', section: 'desk', page: 'Shifts', render: shiftsPart('reports'), needs: 'shifts', part: 'reports' },
-  { path: 'people', label: 'People', section: 'desk', page: 'People', render: shiftsPart('people'), needs: 'shifts', part: 'people' },
+  { path: 'people', label: 'Cashiers', section: 'desk', page: 'Cashiers', render: shiftsPart('people'), needs: 'shifts', part: 'people', aka: 'People drawers' },
   { path: 'safe', label: 'Safe', section: 'desk', page: 'Safe', render: renderSafe, needs: 'safe' },
   { path: 'niceplace', label: 'Counters & money', section: 'desk', page: 'Nice Place', render: renderNicePlace, needs: 'insight' },
   // The envelopes taken from the safe, what was paid out of them and the count: the supervisor given it, and admins.
@@ -91,38 +94,43 @@ const ROUTES = [
   // The one screen an uploader gets: the three shift files, nothing in them.
   { path: 'upload', label: 'Upload files', section: 'desk', page: 'Upload files', render: renderUpload, needs: 'upload', own: true },
 
-  // Odoo's suppliers, receipts made into POs, money given out to buy with, and what it all cost.
-  { path: 'suppliers', label: 'Suppliers', section: 'buying', page: 'Suppliers', render: renderSupplierBook, needs: 'insight', report: 'buying' },
-  { path: 'receipts', label: 'Receipts', section: 'buying', page: 'Receipts', render: renderReceipts, needs: 'admin', own: true },
+  // As the money moves: given out to buy with, receipts made into POs, what it cost, where it went (the stores, the assets), and who from.
   { path: 'floats', label: 'Floats', section: 'buying', page: 'Floats', render: renderFloats, needs: 'admin', own: true },
+  { path: 'receipts', label: 'Receipts', section: 'buying', page: 'Receipts', render: renderReceipts, needs: 'admin', own: true },
   { path: 'spend', label: 'Spend', section: 'buying', page: 'Spend', render: renderSpend, needs: 'insight', report: 'buying' },
-  { path: 'assets', label: 'Fixed assets', section: 'buying', page: 'Fixed assets', render: renderFixedAssets, needs: 'admin', own: true },
   { path: 'stock', label: 'Stock from Odoo', section: 'buying', page: 'Stock from Odoo', render: renderStockFeed, needs: 'admin', own: true },
+  { path: 'assets', label: 'Fixed assets', section: 'buying', page: 'Fixed assets', render: renderFixedAssets, needs: 'admin', own: true },
+  { path: 'suppliers', label: 'Suppliers', section: 'buying', page: 'Suppliers', render: renderSupplierBook, needs: 'insight', report: 'buying' },
 
-  // What the business made, the week's report from the other apps, the guests and the staff.
-  // Each person's work across the apps, what holds them back, and their evaluation.
-  { path: 'team', label: 'Team', section: 'reports', page: 'Team', render: renderTeam, needs: 'admin', own: true },
+  // Everybody's work across the apps and what holds them back, everybody's evaluation, and what the staff cost.
+  { path: 'team', label: 'Everybody', section: 'team', page: 'Team', render: renderTeam, needs: 'admin', own: true },
+  { path: 'evaluations', label: 'Evaluations', section: 'team', page: 'Team', render: renderEvaluations, needs: 'admin' },
+  { path: 'labour', label: 'Staff costs', section: 'team', page: 'Staff costs', render: renderLabour, needs: 'insight' },
+
+  // What the business made, the week's report from the other apps, and the guests.
   { path: 'money', label: 'Profit & loss', section: 'reports', page: 'Money', render: renderPnl, needs: 'insight' },
   { path: 'yardstick', label: 'Health', section: 'reports', page: 'Money', render: renderFinancials, needs: 'insight' },
   { path: 'cash', label: 'Cash & collections', section: 'reports', page: 'Money', render: renderCash, needs: 'insight' },
   { path: 'management', label: 'Management report', section: 'reports', page: 'Management report', render: renderMgmt, needs: 'insight', ownHash: true, own: true },
   { path: 'guests', label: 'Occupancy & spend', section: 'reports', page: 'Guests', render: renderDemand, needs: 'insight' },
   { path: 'prepaid', label: 'Prepaid stays', section: 'reports', page: 'Guests', render: renderPrepaid, needs: 'insight', ownHash: true, own: true },
-  { path: 'labour', label: 'Staff costs', section: 'reports', page: 'Staff costs', render: renderLabour, needs: 'insight' },
 
   // Who may do what, where the systems connect, how things are done, who is told, and reports shared by PIN.
   { path: 'accounts', label: 'People', section: 'settings', page: 'People & access', render: renderAccounts, needs: 'owner' },
   { path: 'supervisors', label: 'Supervisors', section: 'settings', page: 'People & access', render: shiftsPart('settings', ['who']), needs: 'shifts', part: 'settings', still: true },
   { path: 'report-access', label: 'Reports they see', section: 'settings', page: 'People & access', render: renderReportAccess, needs: 'admin', own: true },
-  { path: 'setup', label: 'Connections', section: 'settings', page: 'Connections & files', render: renderSetup, needs: 'owner' },
-  { path: 'speed', label: 'Speed', section: 'settings', page: 'Connections & files', render: renderSpeed, needs: 'admin' },
-  { path: 'files', label: 'Shift files', section: 'settings', page: 'Connections & files', render: shiftsPart('files'), needs: 'shifts', part: 'files', still: true },
+  { path: 'who-gets', label: 'People to ask', section: 'settings', page: 'Who gets what', render: renderWhoGets, needs: 'admin' },
+  { path: 'notify', label: 'HIVE alerts', section: 'settings', page: 'Who gets what', render: shiftsPart('settings', ['told']), needs: 'shifts', part: 'settings', still: true },
+  { path: 'notify-mgmt', label: 'Management report', section: 'settings', page: 'Who gets what', render: (root) => renderMgmt(root, { part: 'settings' }), needs: 'admin' },
+  { path: 'notify-prepaid', label: 'Prepaid summary', section: 'settings', page: 'Who gets what', render: renderPrepaidMail, needs: 'admin' },
   { path: 'rules', label: 'Front desk', section: 'settings', page: 'Rules', render: shiftsPart('settings', ['desk', 'limits', 'lock']), needs: 'shifts', part: 'settings', still: true },
   { path: 'np-rules', label: 'Nice Place', section: 'settings', page: 'Rules', render: (root) => renderNicePlace(root, { part: 'settings' }), needs: 'admin' },
   { path: 'receipt-rules', label: 'Receipts', section: 'settings', page: 'Rules', render: (root) => renderReceipts(root, { part: 'settings' }), needs: 'admin' },
-  { path: 'notify', label: 'HIVE alerts', section: 'settings', page: 'Notifications', render: shiftsPart('settings', ['told']), needs: 'shifts', part: 'settings', still: true },
-  { path: 'notify-mgmt', label: 'Management report', section: 'settings', page: 'Notifications', render: (root) => renderMgmt(root, { part: 'settings' }), needs: 'admin' },
-  { path: 'notify-prepaid', label: 'Prepaid summary', section: 'settings', page: 'Notifications', render: renderPrepaidMail, needs: 'admin' },
+  { path: 'stock-rules', label: 'Stock', section: 'settings', page: 'Rules', render: renderStockRules, needs: 'admin' },
+  { path: 'team-rules', label: 'Team rating', section: 'settings', page: 'Rules', render: renderTeamRules, needs: 'admin' },
+  { path: 'setup', label: 'Connections', section: 'settings', page: 'Connections & files', render: renderSetup, needs: 'owner' },
+  { path: 'speed', label: 'Speed', section: 'settings', page: 'Connections & files', render: renderSpeed, needs: 'admin' },
+  { path: 'files', label: 'Shift files', section: 'settings', page: 'Connections & files', render: shiftsPart('files'), needs: 'shifts', part: 'files', still: true },
   { path: 'reports', label: 'Shared reports', section: 'settings', page: 'Shared reports', render: renderReports, needs: 'owner' },
 
   // The other systems, signed in: a page only for somebody given nothing here.
@@ -146,6 +154,7 @@ const ICONS = {
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   safe: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8V7M12 17v-1.8M15.2 12H17M7 12h1.8"/>',
   wallet: '<path d="M20 12V8H6a2 2 0 010-4h12v4"/><path d="M4 6v12a2 2 0 002 2h14v-4"/><path d="M18 12a2 2 0 000 4h4v-4z"/>',
+  people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0112 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.2A5 5 0 0121 19"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/>',
 };
 export const icon = (name) => h('span.ic', { html: `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>` });
@@ -266,7 +275,7 @@ async function renderApp() {
     mount(side, sections.map((s) => h('button.rail-b', {
       type: 'button', 'aria-current': here?.section === s.id ? 'page' : null, title: s.label, onclick: () => go(s.routes[0].path),
     }, icon(s.icon), h('span', s.short || s.label), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null)));
-    mount(bottom, sections.map((s) => h('button', { type: 'button', 'aria-current': here?.section === s.id ? 'page' : null, onclick: () => go(s.routes[0].path) },
+    mount(bottom, sections.filter((s) => s.phone !== false).map((s) => h('button', { type: 'button', 'aria-current': here?.section === s.id ? 'page' : null, onclick: () => go(s.routes[0].path) },
       icon(s.icon), h('span', s.short || s.label.split(' ')[0]), s.id === 'assistant' ? h('span.cnt.cnt-assistant', counts.textContent) : null)));
   }
 
@@ -307,6 +316,7 @@ async function renderApp() {
     h('div.me-who', h('b', account.name || 'Account'), h('small', roleName(account))),
     account.mayViewAs ? h('button', { type: 'button', onclick: () => { closePops(); openViewAs(); } }, '👁 View as somebody else…') : null,
     myEval,
+    sections.some((x) => x.id === 'settings') ? h('button.me-settings', { type: 'button', onclick: () => { closePops(); go(sections.find((x) => x.id === 'settings').routes[0].path); } }, '⚙ Settings') : null,
     h('button', { type: 'button', onclick: () => { toggleTheme(); closePops(); } }, '◐ Light or dark'),
     installButton(),
     h('button', { type: 'button', onclick: async () => { await api('/auth/logout', { method: 'POST' }); renderLogin(); } }, 'Sign out'));
@@ -327,7 +337,7 @@ async function renderApp() {
   document.addEventListener('click', (e) => { if (!apps.contains(e.target) && !me.contains(e.target)) closePops(); });
 
   const palette = () => openPalette({
-    pages: shown.map((r) => ({ label: r.page === r.label ? r.label : `${r.page} › ${r.label}`, section: sections.find((s) => s.id === r.section)?.label || '', go: () => go(r.path) })),
+    pages: shown.map((r) => ({ label: r.page === r.label ? r.label : `${r.page} › ${r.label}`, section: `${sections.find((s) => s.id === r.section)?.label || ''}${r.aka ? ` · was ${r.aka.split(' ')[0]}` : ''}`, go: () => go(r.path) })),
     actions: [
       isAdmin ? { label: 'New purchase order', go: () => openNewPo() } : null,
       shown.some((r) => r.path === 'floats') ? { label: 'Give money (floats)', go: () => go('floats') } : null,
