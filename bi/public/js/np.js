@@ -170,7 +170,10 @@ function installBox() {
 /** Step 0: whose shift. */
 function who() {
   top('Nice Place', 'Who are you?');
-  put(page, installBox(), 
+  // A shift that ended without its report: said first, so whoever opens the page sends it.
+  const owed = (form.choices || []).filter((c) => c.overdue);
+  put(page, owed.length ? el('p', { class: 'warn' }, `Not sent yet: ${owed.map((c) => `${c.day === form.today ? 'today' : 'yesterday'}’s ${c.shift} shift`).join(' and ')}. Send it now.`) : null,
+    installBox(), 
     form.staff.length ? el('div', { class: 'names' }, form.staff.map((n, i) => el('button', {
       type: 'button', class: `name${n === name ? ' on' : ''}`, onclick: () => { name = n; remember(n); money(); },
     }, el('span', { class: 'face', style: `background:${COLOURS[i % COLOURS.length]}` }, n.trim().charAt(0).toUpperCase()), n)))
@@ -230,7 +233,7 @@ function chooseShift() {
     type: 'button', class: `name shift${c.day === when.day && c.shift === when.shift ? ' on' : ''}`,
     onclick: () => { when = { day: c.day, shift: c.shift }; money(); },
   }, el('span', { class: `face ${c.shift}` }, c.shift === 'day' ? '☀' : '☾'),
-  el('span', {}, `${c.day === form.today ? 'Today' : 'Yesterday'} · ${c.shift === 'day' ? 'Day' : 'Night'}`, el('small', {}, c.sent ? 'sent already' : form.hours[c.shift]))))));
+  el('span', {}, `${c.day === form.today ? 'Today' : 'Yesterday'} · ${c.shift === 'day' ? 'Day' : 'Night'}`, el('small', {}, c.sent ? 'sent already' : c.overdue ? 'not sent yet' : form.hours[c.shift]))))));
 }
 
 /** Step 2: one picture of the counters. */

@@ -712,6 +712,8 @@ export default {
       execution.waitUntil(storeReq.syncStore(env, { now: event.scheduledTime || Date.now() })
         .then((out) => { if (out.skipped) console.log('Store requests', out.skipped); })
         .catch((err) => console.error('Store requests', err)));
+      execution.waitUntil(np.remindMissing(env, { now: event.scheduledTime || Date.now() })
+        .catch((err) => console.error('Nice Place reminder', err)));
       execution.waitUntil(stockFeed.syncStock(env, { now: event.scheduledTime || Date.now() })
         .then((out) => { if (out.skipped) console.log('Stock from Odoo', out.skipped); })
         .catch((err) => console.error('Stock from Odoo', err)));
