@@ -9,6 +9,7 @@ import { renderChecklistSetup } from './onboarding.js';
 import { renderLunchSetup } from './att-lunch.js';
 import { renderLateRuleSetup } from './late-charges.js';
 import { renderConductSetup } from './conduct.js';
+import { renderRotaDraftSetup } from './rota-review.js';
 import { renderLeavePlanSetup } from './leave-plans.js';
 
 /**
@@ -71,6 +72,7 @@ export const SECTIONS = [
       { key: 'reasons', label: 'Absence reasons', need: 'att_setup', render: setup('reasons'), words: 'absent sick reason code' },
       { key: 'workload', label: 'Workload limits', need: 'att_setup', render: setup('workload'), words: 'hours limit days sunday sustainable rest' },
       { key: 'swaps', label: 'Swapping shifts', need: 'att_setup', render: cards(['Swapping shifts']), words: 'swap give up shift trade' },
+      { key: 'draft', label: 'Draft deadline', need: 'att_setup', render: () => renderRotaDraftSetup(), words: 'draft rota deadline monday reminder review approve planner weekly' },
       { key: 'lunch', label: 'Lunch', need: 'lunch', render: () => renderLunchSetup(), words: 'lunch link opens shuts times kitchen' },
     ],
   },

@@ -4,6 +4,7 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
 import { showPublishHistory, showWhoHeard } from './rota-heard.js';
+import { rotaReviewParts } from './rota-review.js';
 import { printButton } from '../print.js';
 import { sayAskedDays } from '../availability-rules.js';
 import { draftEntries } from './draft-entries.js';
@@ -2478,13 +2479,16 @@ export async function renderAttRota(params) {
     onchange: (e) => e.target.value && reload({ from: mondayOf(e.target.value) }),
   });
   const sep = () => h('span.joined-sep', { 'aria-hidden': 'true' });
-  const headButtons = h('div.btn-row.rota-head-buttons', saveState, heardButton, publishButton);
+  // Sending the shown weeks to the administrators before they are published.
+  const review = mayEdit ? rotaReviewParts({ from, to, label: rangeShort }) : null;
+  const headButtons = h('div.btn-row.rota-head-buttons', saveState, heardButton, review?.button, publishButton);
 
   mount(host,
     h('div.page-head.rota-head',
       h('div', h('h1', 'Rota'), h('div.rota-range', rangeLong)),
       headButtons,
     ),
+    review?.strip,
 
     // One bar rather than two. Wide, the whole thing sits on a line; narrow,
     // the two halves take a line each. Either way it is two rows at the very

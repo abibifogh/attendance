@@ -58,6 +58,8 @@ import * as pay from './routes/pay.js';
 import * as advance from './routes/advances.js';
 import * as lateCharges from './routes/late-charges.js';
 import * as conduct from './routes/conduct.js';
+import * as rotaReview from './routes/rota-review.js';
+import { watchRotaDraft } from './lib/rota-draft.js';
 import * as feedback from './routes/feedback.js';
 import { watchFeedback } from './lib/feedback.js';
 import * as approvals from './routes/approvals.js';
@@ -190,6 +192,12 @@ export const ROUTES = [
   // How the rota is treating people. Whoever builds it needs this most,
   // which is why it is not behind the reports permission.
   ['POST', '/api/att/roster/publish', 'att_rota', att.publishRoster],
+  // The draft sent for review before it is published, and the weekly deadline.
+  ['GET', '/api/att/rota-review', 'att_rota', rotaReview.rotaReviewState],
+  ['POST', '/api/att/rota-review', 'att_rota', rotaReview.sendRotaForReview],
+  ['POST', '/api/att/rota-review/:id/decide', 'att_rota', rotaReview.decideRotaReview],
+  ['GET', '/api/att/rota-draft', 'att_rota', rotaReview.rotaDraftRule],
+  ['POST', '/api/att/rota-draft', 'att_rota', rotaReview.saveRotaDraftRule],
   ['GET', '/api/att/roster/publishes', 'att_rota', att.publishHistory],
   ['GET', '/api/att/roster/publishes/:id', 'att_rota', att.publishTold],
   ['POST', '/api/att/roster/publishes/:id/again', 'att_rota', att.publishAgain],
@@ -1181,6 +1189,12 @@ export default {
       if (lateSynced.created || lateSynced.voided || lateSynced.reopened) {
         console.log(`Late charges: ${lateSynced.created ?? 0} new, ${lateSynced.voided ?? 0} taken away, ${lateSynced.reopened ?? 0} back`);
       }
+
+      // The weekly draft rota: remind whoever plans it, with a copy to the
+      // administrators, until it is sent for review.
+      const drafted = await watchRotaDraft(env.DB, { ctx: { env, executionContext } })
+        .catch((err) => { console.error('Draft rota watch failed', err); return {}; });
+      if (drafted.sent) console.log(`Draft rota: ${drafted.sent} reminders`);
 
       // And the closing report at the front desk: twenty minutes before a
       // reception shift ends, and again twenty minutes after if it is not in.
