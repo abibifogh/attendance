@@ -551,3 +551,17 @@ export async function hashBody(body) {
 export function shortHash(hash) {
   return String(hash ?? '').slice(0, 16).replace(/(.{4})(?=.)/g, '$1 ').toUpperCase();
 }
+
+/**
+ * Whether a typed name is the full name on record.
+ *
+ * Accepting a contract is done by typing one's full name, so it has to be the
+ * name the contract is made out to: the same words in the same order, with
+ * case, extra spaces and punctuation forgiven.
+ */
+export function sameFullName(typed, onRecord) {
+  const norm = (s) => String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const a = norm(typed);
+  return a.length > 0 && a.split(' ').length >= 2 && a === norm(onRecord);
+}

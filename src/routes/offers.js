@@ -9,7 +9,7 @@ import {
 } from '../lib/notify.js';
 import { firstUsableNumber, sendTexts, smsSetup } from '../lib/sms.js';
 import { firstName, renderMail, sayDate } from '../lib/email-design.js';
-import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate } from '../lib/people.js';
+import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate, sameFullName } from '../lib/people.js';
 import { siteOrigin } from '../lib/site.js';
 import { seal, unseal } from '../lib/seal.js';
 import {
@@ -824,6 +824,14 @@ export async function offerAccept(ctx, token) {
     throw badRequest('This contract has changed since it was sent to you. Nothing has been signed. Tell the office and they will send it again.');
   }
 
+  // Accepted by typing their full name; the paper copy is signed in person.
+  const signerName = str(body.name, 'Your full name', { required: true, max: 120 });
+  const named = await ctx.db.prepare('SELECT name FROM rec_candidate WHERE id = ?').bind(offer.candidate_id).first();
+  if (!sameFullName(signerName, named?.name)) {
+    throw badRequest(`Type your full name exactly as it is on the contract: ${named?.name ?? 'your name'}.`);
+  }
+  const ink = null;
+
   const route = await codeRouteFor(ctx, offer);
   let check = 'offer link';
   if (route.required) {
@@ -837,9 +845,6 @@ export async function offerAccept(ctx, token) {
     check = `${route.via} code`;
   }
 
-  const signerName = str(body.name, 'Your name', { required: true, max: 120 });
-  const ink = str(body.ink, 'Signature', { max: 200_000 });
-  if (!ink && signerName.trim().split(/\s+/).length < 2) throw badRequest('Sign with your finger, or type your full name.');
 
   const done = await ctx.db.prepare(
     `UPDATE rec_offer
@@ -852,12 +857,12 @@ export async function offerAccept(ctx, token) {
   const candidate = await ctx.db.prepare('SELECT * FROM rec_candidate WHERE id = ?').bind(offer.candidate_id).first();
   await trail(ctx.db, {
     candidateId: offer.candidate_id, offerId: offer.id, kind: 'offer_accepted',
-    detail: `${signerName} · ${ink ? 'drawn' : 'typed'} · ${check} · ${offer.body_hash.slice(0, 16)}`,
+    detail: `${signerName} · full name typed · ${check} · ${offer.body_hash.slice(0, 16)}`,
     actor: candidate?.name ?? signerName, ip: ipOf(ctx), agent: agentOf(ctx),
   });
   await tellOffice(ctx, offer, candidate, {
     title: `${candidate?.name ?? signerName} accepted the offer`,
-    body: `They signed the contract for ${offer.job_title}. Take them on to put them on the books.`,
+    body: `They accepted the contract for ${offer.job_title} by typing their full name. Take them on to put them on the books, and ask them in to sign the paper copy.`,
     level: 'info',
     status: 'Accepted',
     tone: 'good',

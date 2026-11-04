@@ -24,7 +24,7 @@ export async function signingBoard(ctx) {
 
   if (may('hr_view')) {
     const contracts = (await ctx.db.prepare(
-      `SELECT c.id, c.title, c.status, c.issued_at, c.signed_at, c.employer_at, c.decline_note, c.origin,
+      `SELECT c.id, c.title, c.status, c.issued_at, c.signed_at, c.employer_at, c.decline_note, c.origin, c.satisfies,
               p.name, p.id AS staff_id,
               (SELECT MAX(i.sent_at) FROM hr_invite i JOIN hr_invite_contract ic ON ic.invite_id = i.id
                 WHERE ic.contract_id = c.id) AS sent_at,
@@ -47,7 +47,9 @@ export async function signingBoard(ctx) {
         segments: [c.status === 'signed', Boolean(c.employer_at)],
       };
       if (c.status === 'signed' && !c.employer_at && c.origin !== 'paper') {
-        waitingOnUs.push({ ...row, status: 'Your turn to countersign', tone: 'blue', since: c.signed_at, meta: `signed by ${c.name}` });
+        waitingOnUs.push(c.satisfies === 'contract'
+          ? { ...row, status: 'Paper copy to sign', tone: 'blue', since: c.signed_at, meta: `accepted online by ${c.name}` }
+          : { ...row, status: 'Your turn to countersign', tone: 'blue', since: c.signed_at, meta: `signed by ${c.name}` });
       } else if (c.status === 'signed') {
         completed.push({ ...row, status: 'Completed', tone: 'good', since: c.employer_at ?? c.signed_at, segments: [true, true] });
       } else if (['sent', 'opened'].includes(c.status)) {

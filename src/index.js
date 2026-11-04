@@ -666,6 +666,7 @@ export const ROUTES = [
   ['GET', '/api/hr/people/:id/particulars', 'hr_manage', people.personParticulars],
   ['GET', '/api/hr/contracts/:id', 'hr_view', people.getContract],
   ['POST', '/api/hr/contracts/:id/countersign', 'hr_manage', people.countersignContract],
+  ['POST', '/api/hr/contracts/:id/paper', 'hr_manage', people.recordPaperSigning],
   ['POST', '/api/hr/contracts/:id/void', 'hr_manage', people.voidContract],
 
   // ------------------------------------------------- somebody with a link --

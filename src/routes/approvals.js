@@ -180,34 +180,39 @@ const KINDS = {
   // the contract itself, because a countersignature needs a signature and the
   // countersigner's own PIN or password; the Inbox says it is waiting.
   countersign: {
-    label: 'Countersign',
+    label: 'Contracts to finish',
     permission: 'hr_manage',
     link: '#/people',
     async list(run, db) {
       const rows = await db.prepare(
-        `SELECT c.id, c.title, c.signed_at, c.signer_name, c.signer_check, p.name
+        `SELECT c.id, c.title, c.signed_at, c.signer_name, c.signer_check, c.satisfies, p.name
            FROM hr_contract c JOIN att_staff p ON p.id = c.staff_id
           WHERE c.status = 'signed' AND c.employer_at IS NULL AND COALESCE(c.origin, 'electronic') <> 'paper'
           ORDER BY c.signed_at`,
       ).all().catch(() => ({ results: [] }));
-      return (rows.results ?? []).map((c) => ({
+      return (rows.results ?? []).map((c) => {
+        const paper = c.satisfies === 'contract';
+        return {
         id: c.id,
-        title: `Countersign · ${c.name}`,
-        sub: `${c.title}, signed ${shortDay(String(c.signed_at ?? '').slice(0, 10))}`,
+        title: paper ? `Paper copy to sign · ${c.name}` : `Countersign · ${c.name}`,
+        sub: `${c.title}, ${paper ? 'accepted online' : 'signed'} ${shortDay(String(c.signed_at ?? '').slice(0, 10))}`,
         who: c.name,
         askedAt: c.signed_at,
         details: [
           ['Document', c.title],
-          ['Signed by', c.signer_name],
+          [paper ? 'Accepted by' : 'Signed by', c.signer_name],
           ['Checked by', c.signer_check],
-          ['What to do', 'Open it and countersign with your own PIN or password'],
+          ['What to do', paper
+            ? 'Ask them in, print two copies, sign them together, then open it and record the paper signing'
+            : 'Open it and countersign with your own PIN or password'],
         ],
         decisions: [],
         link: `#/contract?id=${c.id}`,
-      }));
+        };
+      });
     },
     decide() {
-      throw badRequest('Open the contract to countersign it: it needs your signature and your PIN.');
+      throw badRequest('Open the contract to finish it: it needs your PIN or password.');
     },
   },
 

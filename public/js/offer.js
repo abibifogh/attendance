@@ -1,5 +1,4 @@
 import { h, mount, toast } from './util.js';
-import { signaturePad } from './fields.js';
 import { contractFlow } from './contract-flow.js';
 import { coverMasthead } from './views/contract-cover.js';
 
@@ -121,14 +120,18 @@ function showOffer() {
 function showContract() {
   const p = packet;
   const needCode = Boolean(p.signCode?.required && !p.signCode.verified);
-  const pad = signaturePad({ height: 150 });
   let codeSent = false;
+  const sameName = (a, b) => {
+    const norm = (s) => String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    return norm(a).length > 0 && norm(a) === norm(b);
+  };
 
   const agree = h('input', { type: 'checkbox' });
   const consentBox = h('label.sv2-consent.offer-step',
     agree,
-    h('span', 'I have read this contract. I accept the offer and agree to sign it electronically, '
-      + 'which has the same effect as signing on paper.'));
+    h('span', 'I have read this contract and I accept the offer. I understand that typing my full name '
+      + 'is my signature, and that I will also sign the paper copy when I come in.'));
 
   const codeInput = h('input.sv2-code', {
     type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 7,
@@ -158,31 +161,29 @@ function showContract() {
 
   const typed = h('input', { type: 'text', maxlength: 120, autocomplete: 'name', placeholder: p.name });
   const signBox = h('div.offer-step',
-    h('h3', 'Your signature'),
-    pad.element,
-    h('label.field', h('span', 'Or type your full name'), typed));
+    h('h3', 'Type your full name'),
+    h('label.field', h('span', `Exactly as it is on the contract: ${p.name}`), typed));
 
   const left = () => [
     !agree.checked ? { el: consentBox, say: 'Tick the box' } : null,
     needCode && !codeInput.value.replace(/\D/g, '') ? { el: codeBox, say: codeSent ? 'Enter the code' : 'Ask for a code' } : null,
-    !pad.isDrawn() && typed.value.trim().split(/\s+/).length < 2 ? { el: signBox, say: 'Sign' } : null,
+    !sameName(typed.value, p.name) ? { el: signBox, say: 'Type your full name' } : null,
   ].filter(Boolean);
 
   const count = h('span.offer-bar-count');
   const go = h('button.btn.btn-primary', { type: 'button' });
   const bar = h('div.offer-bar.no-print',
-    h('div.offer-bar-text', count, h('span.offer-bar-who', `Signing as ${p.name}`)),
+    h('div.offer-bar-text', count, h('span.offer-bar-who', `Accepting as ${p.name}`)),
     h('div.offer-bar-buttons',
       h('button.btn', { type: 'button', onclick: showOffer }, 'Back'),
       go));
   const refresh = () => {
     const todo = left();
-    count.textContent = todo.length ? `${todo.length} ${todo.length === 1 ? 'thing' : 'things'} left` : 'Ready to sign';
-    go.textContent = todo.length ? 'Next' : 'Accept the offer and sign';
+    count.textContent = todo.length ? `${todo.length} ${todo.length === 1 ? 'thing' : 'things'} left` : 'Ready to accept';
+    go.textContent = todo.length ? 'Next' : 'Accept the offer';
   };
   for (const el of [agree, codeInput, typed]) el.addEventListener('input', refresh);
   agree.addEventListener('change', refresh);
-  for (const ev of ['pointerup', 'touchend', 'mouseup']) pad.element.addEventListener(ev, () => setTimeout(refresh, 0));
 
   go.addEventListener('click', async () => {
     const todo = left();
@@ -193,12 +194,11 @@ function showContract() {
       return;
     }
     go.disabled = true;
-    go.textContent = 'Signing…';
+    go.textContent = 'Accepting…';
     try {
       await call(`${api}/accept`, {
         agreed: true,
-        name: typed.value.trim() || p.name,
-        ink: pad.read(),
+        name: typed.value.trim(),
         hash: p.hash,
         otp: codeInput.value.replace(/\D/g, '') || undefined,
       });
@@ -215,11 +215,11 @@ function showContract() {
     coverMasthead(p.cover),
     h('section.offer-paper', contractText(p.body)),
     h('section.sv2-card.offer-sign.no-print',
-      h('h2', 'Accept and sign'),
+      h('h2', 'Accept the offer'),
       consentBox,
       codeBox,
       signBox,
-      h('p.fineprint', 'When you sign, the time, your network address and a fingerprint of these exact words '
+      h('p.fineprint', 'When you accept, the name you typed, the time, your network address and a fingerprint of these exact words '
         + 'are recorded, so both you and the property can show later what was agreed.')),
     bar));
   refresh();
@@ -239,18 +239,18 @@ function accepted(justNow = false) {
     h('section.sv2-card',
       h('span.offer-yes', { 'aria-hidden': 'true' }, '✓'),
       h('h1', `Offer accepted. Welcome, ${p.firstName}.`),
-      h('p.sv2-lead', `You signed the contract for ${p.jobTitle}${p.signedAt ? ` on ${stamp(p.signedAt)}` : ''}. `
+      h('p.sv2-lead', `You accepted the contract for ${p.jobTitle}${p.signedAt ? ` on ${stamp(p.signedAt)}` : ''}. `
         + `${p.property} has been told.`)),
     h('section.sv2-card',
       h('ol.offer-steps',
-        step(1, true, 'You signed', p.signerCheck && p.signerCheck !== 'offer link' ? `With a code sent by ${p.signerCheck.replace(' code', '')}` : 'From your own link'),
-        step(2, false, `${p.property} countersigns`, 'When they put you on the books, before you start'),
-        step(3, false, 'Your signed copy arrives by email', p.signedTo ? `The PDF, signed by both sides, to ${p.signedTo}` : 'Ask the office for a copy whenever you want one'),
+        step(1, true, 'You accepted by typing your full name', p.signerCheck && p.signerCheck !== 'offer link' ? `With a code sent by ${p.signerCheck.replace(' code', '')}` : 'From your own link'),
+        step(2, false, 'You sign the paper copy', `At ${p.property}, with the person signing for the company. The office will tell you when.`),
+        step(3, false, 'You keep a signed copy', p.signedTo ? `One of the two paper copies, and the PDF by email to ${p.signedTo}` : 'One of the two paper copies'),
         step(4, false, `Your first day: ${longDay(p.startDate)}`, 'Details of your first week follow before then'))),
     h('div.offer-actions',
-      h('button.btn.btn-wide', { type: 'button', onclick: () => { showSigned(); setTimeout(() => window.print(), 300); } }, 'Print or save what you signed')),
+      h('button.btn.btn-wide', { type: 'button', onclick: () => { showSigned(); setTimeout(() => window.print(), 300); } }, 'Print or save what you accepted')),
     h('p.sv2-foot', 'This link keeps working, so you can come back to read the contract again.')));
-  if (justNow) toast('Signed. Thank you.', 'good');
+  if (justNow) toast('Accepted. Thank you.', 'good');
   window.scrollTo(0, 0);
 }
 
@@ -260,7 +260,7 @@ function showSigned() {
   mount(root, shell(p.property, p.title,
     coverMasthead(p.cover),
     h('section.offer-paper', contractText(p.body),
-      h('p.offer-signed', `Signed by ${p.signerName}${p.signedAt ? `, ${stamp(p.signedAt)}` : ''}.`)),
+      h('p.offer-signed', `Accepted by ${p.signerName}, by typing their full name${p.signedAt ? `, ${stamp(p.signedAt)}` : ''}.`)),
     h('div.offer-actions.no-print', h('button.btn.btn-wide', { type: 'button', onclick: () => accepted() }, 'Back'))));
 }
 

@@ -4,7 +4,7 @@ import { proofFrom } from './letter.js';
 import { fileLink } from '../file-view.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card, emptyState, table } from './components.js';
-import { can, navigate } from '../app.js';
+import { can, navigate, state } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { printButton } from '../print.js';
 import { contractCover } from './contract-cover.js';
@@ -70,6 +70,47 @@ export async function renderContract(params) {
     if (done) { toast('Countersigned.', 'good'); await reload(); }
   };
 
+  // A contract of employment is accepted online and then signed on paper at
+  // the property. Recording that is what completes it.
+  const paperFlow = contract.satisfies === 'contract' && contract.origin !== 'paper';
+  const recordPaper = async () => {
+    const me = await api.hrSignCheck().catch(() => ({ method: 'pin' }));
+    const today = new Date().toISOString().slice(0, 10);
+    const scan = h('input', { type: 'file', name: 'scan', accept: 'application/pdf,image/*' });
+    const done = await formDialog({
+      title: 'Record the paper signing',
+      submitLabel: 'Record it',
+      body: h('div',
+        h('p.muted', { style: { marginTop: 0 } }, `${contract.signer_name || contract.staff_name} accepted this online. `
+          + 'Once you have both signed the two paper copies (print them from Save as PDF above), record it here. '
+          + 'Give them one copy and keep the other.'),
+        field('Date the paper copies were signed', h('input', {
+          type: 'date', name: 'signedOn', required: true, value: today, max: today,
+          min: String(contract.signed_at ?? '').slice(0, 10) || undefined,
+        })),
+        field('Signed for the company by', h('input', {
+          type: 'text', name: 'name', required: true, maxlength: 120, value: state.name || '',
+        })),
+        field('Scan of the signed copy (optional)', scan, 'A photo or PDF of the signed pages, kept on their record.'),
+        confirmItIsYou(me),
+      ),
+      onSubmit: async (form) => {
+        const file = scan.files?.[0] ?? null;
+        let upload = {};
+        if (file) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          let bin = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          upload = { content: btoa(bin), filename: file.name, mime: file.type || 'application/pdf' };
+        }
+        return api.hrPaperSigned(id, {
+          ...(await proofFrom(form, me)), signedOn: form.get('signedOn'), name: form.get('name'), ...upload,
+        });
+      },
+    });
+    if (done) { toast('Recorded. The contract is complete.', 'good'); await reload(); }
+  };
+
   const withdraw = async () => {
     const done = await formDialog({
       title: 'Withdraw this document?',
@@ -88,7 +129,7 @@ export async function renderContract(params) {
     h('div.page-head.no-print',
       h('div',
         h('h1', contract.title),
-        h('div.sub', `${contract.staff_name} · ${STATUS[contract.status]?.[1] ?? contract.status}`),
+        h('div.sub', `${contract.staff_name} · ${statusLabel(contract)}`),
       ),
       h('div.btn-row',
         mine
@@ -110,7 +151,9 @@ export async function renderContract(params) {
           }, 'Download signed PDF')
           : null,
         canManage && contract.status === 'signed' && !contract.employer_at
-          ? h('button.btn.btn-primary', { onclick: countersign }, 'Countersign')
+          ? (paperFlow
+            ? h('button.btn.btn-primary', { onclick: recordPaper }, 'Record the paper signing')
+            : h('button.btn.btn-primary', { onclick: countersign }, 'Countersign'))
           : null,
         canManage && !['signed', 'void'].includes(contract.status)
           ? h('button.btn-sm', { onclick: withdraw }, 'Withdraw')
@@ -139,6 +182,18 @@ export async function renderContract(params) {
           h('div.alert-detail', 'The text stored here does not produce the fingerprint that was '
             + 'recorded when this was signed, so it has been altered since. Do not rely on it. '
             + 'Tell whoever looks after the system.'),
+        ))
+      : null,
+
+    paperFlow && contract.status === 'signed' && !contract.employer_at
+      ? h('div.alert.no-print',
+        h('span.alert-icon', '✍️'),
+        h('div',
+          h('div.alert-title', 'Accepted online. The paper copy is still to be signed.'),
+          h('div.alert-detail', mine
+            ? 'You accepted this by typing your full name. Please come in to sign the paper copy; the office will tell you when.'
+            : `${contract.signer_name} accepted it by typing their full name${contract.signed_at ? ` on ${fmtDay(String(contract.signed_at).slice(0, 10), { withYear: true })}` : ''}. `
+              + 'Print two copies from Save as PDF, sign them together, give one to them, then press Record the paper signing.'),
         ))
       : null,
 
@@ -198,10 +253,10 @@ export async function renderContract(params) {
         ? h('p.muted', { style: { marginTop: '.8rem' } },
           'Signed on paper. The signatures are on the scan above.')
         : h('div.sig-block',
-          signatureSlot('Signed by the employee', contract.signer_name, contract.signature_ink,
-            contract.signed_at, contract.signature_ink ? 'Drawn by hand' : 'Typed name'),
+          signatureSlot(paperFlow ? 'Accepted by the employee' : 'Signed by the employee', contract.signer_name, contract.signature_ink,
+            contract.signed_at, contract.signature_ink ? 'Drawn by hand' : 'Full name typed'),
           signatureSlot('For the property', contract.employer_name, contract.employer_ink,
-            contract.employer_at, null),
+            contract.paper_signed_on || contract.employer_at, contract.paper_signed_on ? 'Signed on paper' : null),
         ),
     ),
 
@@ -231,13 +286,20 @@ export async function renderContract(params) {
           row('Still matches the words above', contract.intact
             ? 'Yes — checked just now'
             : h('strong', 'NO — see the warning above')),
-          row('Signed by', contract.signer_name || '—'),
+          row(paperFlow ? 'Accepted by' : 'Signed by', contract.signer_name || '—'),
           row('How', contract.signature_ink ? 'Drawn by hand on a touchscreen' : 'Full name typed'),
           row('When (UTC)', contract.signed_at || 'Not signed'),
           row('From', contract.signer_ip || '—'),
           row('Device', h('small', contract.signer_agent || '—')),
-          row('Countersigned by', contract.employer_name
-            ? `${contract.employer_name}, ${contract.employer_at} UTC` : 'Not yet'),
+          paperFlow
+            ? row('Paper copies signed', contract.paper_signed_on
+              ? [`${fmtDay(contract.paper_signed_on, { withYear: true })}, for the company by ${contract.employer_name}; recorded by ${contract.paper_recorded_by || '—'}`,
+                contract.paper_document_id && !mine
+                  ? h('span', ' · ', fileLink({ href: api.hrDocumentUrl(contract.paper_document_id), name: 'Signed paper copy', label: 'the scan' }))
+                  : null]
+              : (contract.employer_at ? `Countersigned by ${contract.employer_name}, ${contract.employer_at} UTC` : 'Not yet'))
+            : row('Countersigned by', contract.employer_name
+              ? `${contract.employer_name}, ${contract.employer_at} UTC` : 'Not yet'),
         ),
 
       h('h4', { style: { margin: '1.1rem 0 .3rem' } }, 'What happened, in order'),
@@ -269,6 +331,15 @@ export const STATUS = {
   void: ['', 'Withdrawn'],
 };
 
+/** What a contract's state reads as, with the paper step where it has one. */
+export function statusLabel(c) {
+  if (c.status === 'signed' && c.satisfies === 'contract' && c.origin !== 'paper') {
+    if (!c.employer_at) return 'Accepted online, paper copy to sign';
+    return c.paper_signed_on ? 'Accepted online and signed on paper' : 'Signed and countersigned';
+  }
+  return STATUS[c.status]?.[1] ?? c.status;
+}
+
 export const EVENTS = {
   contract_issued: 'Issued',
   link_created: 'Link sent',
@@ -276,9 +347,10 @@ export const EVENTS = {
   link_pin_failed: 'Wrong code entered',
   link_revoked: 'Link cancelled',
   contract_viewed: 'Document opened',
-  signed: 'Signed',
+  signed: 'Accepted',
   declined: 'Refused',
   countersigned: 'Countersigned by the property',
+  paper_signed: 'Paper copies signed',
   contract_void: 'Withdrawn',
   contract_filed: 'Signed on paper, scan filed',
   details_sent: 'Details sent in',

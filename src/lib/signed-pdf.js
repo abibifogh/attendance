@@ -334,12 +334,18 @@ export async function contractPdf({ contract, events = [], property, reference, 
   if (y > A4[1] - 200) { page = doc.addPage(A4); y = 64; }
   y += 20;
   const col = (A4[0] - 2 * M - 30) / 2;
+  const onPaper = Boolean(contract.paper_signed_on);
   await signatureBlock(doc, page, f, M, y, col, {
-    label: 'Signed by the employee', ink: contract.signature_ink, name: contract.signer_name,
-    at: contract.signed_at, how: contract.signer_check ? `checked by ${contract.signer_check}` : null,
+    label: onPaper || !contract.signature_ink ? 'Accepted by the employee' : 'Signed by the employee',
+    ink: contract.signature_ink, name: contract.signer_name,
+    at: contract.signed_at,
+    how: [contract.signature_ink ? null : 'full name typed', contract.signer_check ? `checked by ${contract.signer_check}` : null]
+      .filter(Boolean).join(', ') || null,
   });
   await signatureBlock(doc, page, f, M + col + 30, y, col, {
-    label: 'For the employer', ink: contract.employer_ink, name: contract.employer_name, at: contract.employer_at,
+    label: 'For the employer', ink: contract.employer_ink, name: contract.employer_name,
+    at: onPaper ? `${contract.paper_signed_on} 12:00:00` : contract.employer_at,
+    how: onPaper ? 'signed on paper' : null,
   });
 
   await certificate(doc, f, {
@@ -357,7 +363,10 @@ export async function contractPdf({ contract, events = [], property, reference, 
       },
       contract.employer_at ? {
         role: 'Employer', name: contract.employer_name, at: contract.employer_at,
-        how: 'confirmed with their own PIN or password', ink: contract.employer_ink,
+        how: onPaper
+          ? `both paper copies signed on ${contract.paper_signed_on}; recorded by ${contract.paper_recorded_by || 'the office'}, confirmed with their own PIN or password`
+          : 'confirmed with their own PIN or password',
+        ink: contract.employer_ink,
       } : null,
     ].filter(Boolean),
     events,

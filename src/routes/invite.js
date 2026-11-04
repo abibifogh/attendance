@@ -1,6 +1,6 @@
 import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
 import { getPepper, hashPin, throttleCheck, throttleFail } from '../lib/auth.js';
-import { cleanSubmission, formPlan, hashBody, unanswered } from '../lib/people.js';
+import { cleanSubmission, formPlan, hashBody, sameFullName, unanswered } from '../lib/people.js';
 import { requiredDocumentsFor } from '../lib/ghana-templates.js';
 import { contractCover, currentPlan, logoResponse, storeFile } from './people.js';
 import { fromBase64 } from '../lib/files.js';
@@ -259,7 +259,7 @@ export async function inviteOpen(ctx, token) {
   }
 
   const contracts = await ctx.db.prepare(
-    `SELECT c.id, c.title, c.body, c.body_hash, c.status, c.signed_at, c.signer_name,
+    `SELECT c.id, c.title, c.body, c.body_hash, c.status, c.signed_at, c.signer_name, c.satisfies,
             c.fields, c.template_id, c.issued_at, c.created_at,
             p.name staff_name, p.employee_no, p.company_id staff_company_id
        FROM hr_contract c JOIN hr_invite_contract ic ON ic.contract_id = c.id
@@ -328,6 +328,8 @@ export async function inviteOpen(ctx, token) {
       signedAt: c.signed_at,
       signerName: c.signer_name,
       cover: covers.get(c.id) ?? null,
+      // A contract of employment is also signed on paper at the property.
+      paper: c.satisfies === 'contract',
     })),
   });
 }
@@ -618,12 +620,21 @@ export async function inviteSign(ctx, token) {
   const body = await readJson(ctx.request);
   const contract = await contractIn(ctx, invite, body.contractId);
 
-  if (contract.status === 'signed') throw badRequest('That one is already signed.');
+  if (contract.status === 'signed') throw badRequest('You have already accepted that one.');
   if (contract.status === 'void') throw badRequest('That document has been withdrawn.');
 
   if (body.agreed !== true) {
-    throw badRequest('Tick the box to say you agree to sign this electronically.');
+    throw badRequest('Tick the box to say you have read it and accept it.');
   }
+
+  // Accepted by typing their full name, as it is on the contract. No drawn
+  // mark: the paper copy is signed by hand at the property afterwards.
+  const signerName = str(body.name, 'Your full name', { required: true, max: 120 });
+  const person = await ctx.db.prepare('SELECT name FROM att_staff WHERE id = ?').bind(invite.staff_id).first();
+  if (!sameFullName(signerName, person?.name)) {
+    throw badRequest(`Type your full name exactly as it is on the contract: ${person?.name ?? 'your name'}.`);
+  }
+  const ink = null;
 
   // The code, where one can reach them. Checked before anything else about
   // the signature, so a wrong code changes nothing.
@@ -640,11 +651,6 @@ export async function inviteSign(ctx, token) {
     check = `${route.via} code`;
   }
 
-  const signerName = str(body.name, 'Your name', { required: true, max: 120 });
-  const ink = str(body.ink, 'Signature', { max: 200_000 });
-  if (!ink && signerName.trim().split(/\s+/).length < 2) {
-    throw badRequest('Sign with your finger, or type your full name.');
-  }
 
   const current = await hashBody(contract.body);
   if (current !== contract.body_hash || (body.hash && body.hash !== contract.body_hash)) {
@@ -663,12 +669,15 @@ export async function inviteSign(ctx, token) {
 
   await logEvent(ctx, invite, 'signed', {
     contractId: contract.id,
-    detail: `${signerName} · ${ink ? 'drawn' : 'typed'} · ${contract.body_hash.slice(0, 16)}`,
+    detail: `${signerName} · full name typed · ${contract.body_hash.slice(0, 16)}`,
   });
+  const paper = contract.satisfies === 'contract';
   await tellHr(ctx, invite, {
     kind: 'contract_signed',
-    title: (name) => `${name} signed ${contract.title}`,
-    body: 'Countersign it on their record to complete it.',
+    title: (name) => `${name} accepted ${contract.title}`,
+    body: paper
+      ? 'Accepted online by typing their full name. Ask them in to sign the paper copy, then record it on their record.'
+      : 'Accepted online by typing their full name.',
   });
   await maybeFinish(ctx, invite);
 

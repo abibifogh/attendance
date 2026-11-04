@@ -210,13 +210,19 @@ test('accepting is signing: a code first, then the signature against the fixed w
       offerAccept(pub(t.db, { agreed: true, name: 'Ama Owusu', ink: INK, otp: codeMail.subject.slice(0, 6), hash: 'f'.repeat(64) }), token),
       /changed since it was sent/,
     );
-    const ok = await body(await offerAccept(pub(t.db, { agreed: true, name: 'Ama Owusu', ink: INK, otp: codeMail.subject.slice(0, 6) }), token));
+    // Accepted by typing the full name on the contract; any other name is refused.
+    await assert.rejects(
+      offerAccept(pub(t.db, { agreed: true, name: 'Ama', otp: codeMail.subject.slice(0, 6) }), token),
+      /full name exactly as it is on the contract: Ama Owusu/,
+    );
+    const ok = await body(await offerAccept(pub(t.db, { agreed: true, name: '  ama   OWUSU ', ink: INK, otp: codeMail.subject.slice(0, 6) }), token));
     assert.equal(ok.ok, true);
 
     const offer = t.raw.prepare('SELECT * FROM rec_offer').get();
     assert.equal(offer.status, 'accepted');
     assert.equal(offer.signer_check, 'email code');
-    assert.equal(offer.signature_ink, INK);
+    assert.equal(offer.signature_ink, null, 'no drawn mark: the paper copy is signed in person');
+    assert.equal(offer.signer_name.trim().toLowerCase().replace(/\s+/g, ' '), 'ama owusu');
     assert.equal(offer.signer_ip, '5.6.7.8');
     assert.equal(t.raw.prepare('SELECT staff_id FROM rec_candidate WHERE id = ?').get(person.id).staff_id, null,
       'nobody is on the books yet');

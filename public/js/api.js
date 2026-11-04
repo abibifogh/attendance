@@ -632,6 +632,7 @@ export const api = {
   hrFileContract: (id, body) => request(`/api/hr/people/${id}/contracts/file`, { method: 'POST', body }),
   hrLoadStandardTemplates: () => request('/api/hr/templates/standard', { method: 'POST' }),
   hrContract: (id) => request(`/api/hr/contracts/${id}`),
+  hrPaperSigned: (id, body) => request(`/api/hr/contracts/${id}/paper`, { method: 'POST', body }),
   hrCountersign: (id, body) => request(`/api/hr/contracts/${id}/countersign`, { method: 'POST', body }),
   hrSignCheck: () => request('/api/hr/sign-check'),
   signing: () => request('/api/signing'),

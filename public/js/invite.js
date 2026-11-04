@@ -1,5 +1,5 @@
 import { h, mount, toast } from './util.js';
-import { control, listEditor, signaturePad } from './fields.js';
+import { control, listEditor } from './fields.js';
 import { contractFlow } from './contract-flow.js';
 import { coverMasthead } from './views/contract-cover.js';
 
@@ -459,9 +459,14 @@ const LABELS = {
 function showContract(contract) {
   call(`/api/i/${encodeURIComponent(token)}/viewed`, { contractId: contract.id }).catch(() => {});
 
-  const pad = signaturePad();
   let agreed = false;
   let typed = '';
+  // Their full name as the contract has it, which is what they type to accept.
+  const sameName = (a, b) => {
+    const norm = (s) => String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    return norm(a).length > 0 && norm(a) === norm(b);
+  };
   let otp = '';
   let codeSent = false;
   const needCode = Boolean(packet.signCode?.required && !packet.signCode.verified);
@@ -498,41 +503,42 @@ function showContract(contract) {
   const sign = async (button) => {
     if (!agreed) return toast('Tick the box first.', 'bad');
     if (needCode && !otp.trim()) return toast(codeSent ? 'Enter the code we sent you.' : 'Press "Send me a code" first.', 'bad');
-    if (!pad.isDrawn() && typed.trim().split(/\s+/).length < 2) {
-      return toast('Sign with your finger, or type your full name.', 'bad');
+    if (!sameName(typed, packet.name)) {
+      return toast(`Type your full name exactly as it is on the contract: ${packet.name}.`, 'bad');
     }
 
     button.disabled = true;
-    button.textContent = 'Signing…';
+    button.textContent = 'Accepting…';
     try {
       await call(`/api/i/${encodeURIComponent(token)}/sign`, {
         contractId: contract.id,
-        name: typed.trim() || packet.name,
-        ink: pad.read(),
+        name: typed.trim(),
         hash: contract.hash,
         agreed: true,
         otp: otp.trim() || undefined,
       });
       if (packet.signCode) packet.signCode.verified = true;
       contract.signed = true;
-      contract.signerName = typed.trim() || packet.name;
-      thanks('Signed. Thank you.',
-        'The office has a copy with the time and date on it. Ask them for one whenever you want it.');
+      contract.signerName = typed.trim();
+      thanks('Accepted. Thank you.', contract.paper
+        ? 'The office has a record of your acceptance with the time and date on it. '
+          + 'Please come in to sign the paper copy; the office will tell you when. You keep one of the two copies.'
+        : 'The office has a record of it with the time and date on it.');
     } catch (err) {
       toast(err.message, 'bad');
       button.disabled = false;
-      button.textContent = 'Sign this';
+      button.textContent = 'Accept';
     }
     return undefined;
   };
 
   const refuse = async () => {
-    const why = window.prompt('You do not have to sign. Tell the office why, if you want to:');
+    const why = window.prompt('You do not have to accept it. Tell the office why, if you want to:');
     if (why === null) return;
     try {
       await call(`/api/i/${encodeURIComponent(token)}/decline`, { contractId: contract.id, note: why });
       contract.declined = true;
-      thanks('Noted.', 'Nothing has been signed. The office will get in touch.');
+      thanks('Noted.', 'Nothing has been accepted. The office will get in touch.');
     } catch (err) {
       toast(err.message, 'bad');
     }
@@ -545,33 +551,35 @@ function showContract(contract) {
     coverMasthead(contract.cover),
     h('div.card',
       h('h2', contract.title),
-      h('p.muted', 'Read all of it. Scroll to the bottom to sign.'),
+      h('p.muted', 'Read all of it. Scroll to the bottom to accept it.'),
     ),
     // Joined back into paragraphs for a phone. The words are the stored ones,
     // and the hash sent with the signature is of those, not of this layout.
     h('div.card', contractFlow(h, contract.body, { own: true })),
     h('div.card',
-      h('h3', 'Sign here'),
+      h('h3', contract.paper ? 'Accept the contract' : 'Accept'),
       h('label.tickline',
         h('input', { type: 'checkbox', onchange: (e) => { agreed = e.target.checked; } }),
-        h('span', 'I have read this document and I agree to sign it electronically. '
-          + 'I understand this has the same effect as signing on paper.'),
+        h('span', contract.paper
+          ? 'I have read this contract and I accept it. I understand that typing my full name is my '
+            + 'signature, and that I will also sign the paper copy when I come in.'
+          : 'I have read this document and I accept it. I understand that typing my full name is my signature.'),
       ),
       codeBox,
-      pad.element,
       h('label.field',
-        h('span', 'Or type your full name'),
+        h('span', 'Type your full name'),
         h('input', {
           type: 'text', maxlength: 120, autocomplete: 'name', placeholder: packet.name,
           oninput: (e) => { typed = e.target.value; },
         }),
+        h('small.muted', `Exactly as it is on the contract: ${packet.name}`),
       ),
-      h('button.btn.btn-primary.btn-wide', { onclick: (e) => sign(e.target) }, 'Sign this'),
+      h('button.btn.btn-primary.btn-wide', { onclick: (e) => sign(e.target) }, 'Accept'),
       h('button.btn-sm.btn-wide', { onclick: refuse, style: { marginTop: '.6rem' } },
-        'I do not want to sign this'),
+        'I do not accept this'),
       h('p.fineprint',
-        'When you sign, the time, your network address and a fingerprint of these exact words '
-        + 'are recorded, so both you and the property can show later what was agreed.'),
+        'When you accept, the name you typed, the time, your network address and a fingerprint of these '
+        + 'exact words are recorded, so both you and the property can show later what was agreed.'),
     ),
   ));
   window.scrollTo(0, 0);

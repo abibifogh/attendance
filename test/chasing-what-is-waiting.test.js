@@ -153,7 +153,7 @@ test('the office hears when a contract is signed from a link', async () => {
   const told = raw.prepare("SELECT * FROM app_notices WHERE kind = 'people.contract_signed'").get();
   assert.ok(told);
   assert.equal(told.audience, 'hr_manage');
-  assert.match(told.title, /New Starter signed Contract of employment/);
+  assert.match(told.title, /New Starter accepted Contract of employment/);
 });
 
 function aLetter(raw) {

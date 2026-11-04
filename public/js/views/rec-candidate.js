@@ -606,9 +606,10 @@ function handover(data, reload) {
 async function hire(data, reload, offer = null) {
   const person = data.candidate;
   const role = data.role;
-  // The property's side of the contract they signed, in the same press. Your
-  // own PIN or password, as for any countersignature.
-  const canSign = Boolean(offer) && data.canCountersign;
+  // The property's side of the contract is now signed on paper, in person,
+  // and recorded on their record once it is; it is no longer countersigned
+  // on screen at the moment of hiring.
+  const canSign = false;
   const me = canSign ? await api.hrSignCheck().catch(() => ({ method: 'pin' })) : null;
   const pad = canSign ? signaturePad({ height: 120 }) : null;
 
@@ -664,7 +665,7 @@ async function hire(data, reload, offer = null) {
               pad.element,
               confirmItIsYou(me))
             : h('p.muted', { style: { fontSize: '.82rem' } },
-              'The contract they signed is filed on their record. Somebody with the staff records permission countersigns it there.'))
+              'The contract they accepted online is filed on their record. Ask them in to sign the two paper copies, then record the paper signing there.'))
         : null,
 
       h('h3.hire-welcome-head', 'Welcome them'),

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  acceptSubmission, addDocument, countersignContract, createInvite,
+  acceptSubmission, addDocument, countersignContract, createInvite, recordPaperSigning,
   fileSignedContract, getContract, getDocument, getPerson, issueContract,
   listPeople, listSubmissions, listTemplates, loadStandardTemplates, previewTemplate, rejectSubmission,
   revokeInvite, saveList, savePerson, saveTemplate,
@@ -819,4 +819,58 @@ test('a template preview carries the cover it would have', async () => {
   assert.equal(out.cover.subtitle, 'Fixed term');
   assert.equal(out.cover.reference, '[Given when issued]');
   assert.match(out.cover.sentence, /and Ama Sample, who is employed as Front desk agent in the Front office department/);
+});
+
+test('a contract is accepted by typing the full name on it, then the paper signing is recorded', async () => {
+  const { raw, db } = await setup();
+  const contract = await issue(db);
+  raw.prepare("UPDATE hr_contract SET satisfies = 'contract' WHERE id = ?").run(contract.id);
+  const link = await makeLink(db, { wantsDetails: false, contractIds: [contract.id] });
+  const packet = await read(await inviteOpen(phone(db), link.token));
+  assert.equal(packet.contracts[0].paper, true, 'the page says a paper copy follows');
+
+  await assert.rejects(
+    () => inviteSign(phone(db, { contractId: contract.id, name: 'Augustina', agreed: true, hash: packet.contracts[0].hash }), link.token),
+    /full name exactly as it is on the contract: Augustina Adjei Abla/,
+  );
+  assert.equal(raw.prepare('SELECT status FROM hr_contract WHERE id = ?').get(contract.id).status, 'sent');
+  await assert.rejects(
+    () => recordPaperSigning(ctx(db, { body: { name: 'Ama Boateng', signedOn: '2026-11-03' } }), contract.id),
+    /once they have accepted it online/,
+  );
+
+  await inviteSign(phone(db, {
+    contractId: contract.id, name: 'augustina  adjei abla', agreed: true, ink: 'data:image/png;base64,AAAA',
+    hash: packet.contracts[0].hash,
+  }), link.token);
+  const accepted = raw.prepare('SELECT * FROM hr_contract WHERE id = ?').get(contract.id);
+  assert.equal(accepted.status, 'signed');
+  assert.equal(accepted.signature_ink, null, 'no drawn mark is kept');
+  const told = raw.prepare("SELECT * FROM app_notices WHERE kind = 'people.contract_signed'").get();
+  assert.match(told.body, /sign the paper copy/);
+
+  const { getPepper, hashPin } = await import('../src/lib/auth.js');
+  await db.prepare("INSERT OR REPLACE INTO users (id, name, role, active, pin_hash) VALUES (1, 'Ama', 'manager', 1, ?)")
+    .bind(await hashPin('482915', await getPepper(db))).run();
+  const today = new Date().toISOString().slice(0, 10);
+  await assert.rejects(
+    () => recordPaperSigning(ctx(db, { body: { name: 'Ama Boateng', signedOn: today } }), contract.id),
+    /PIN or password/,
+  );
+  await assert.rejects(
+    () => recordPaperSigning(ctx(db, { body: { name: 'Ama Boateng', signedOn: '2999-01-01', pin: '482915' } }), contract.id),
+    /still to come/,
+  );
+  await recordPaperSigning(ctx(db, { body: { name: 'Ama Boateng', signedOn: today, pin: '482915', content: SCAN, filename: 'signed.pdf', mime: 'application/pdf' } }), contract.id);
+
+  const { contract: done, events } = await read(await getContract(ctx(db), contract.id));
+  assert.equal(done.paper_signed_on, today);
+  assert.equal(done.employer_name, 'Ama Boateng');
+  assert.ok(done.employer_at, 'complete, as a countersignature would make it');
+  assert.ok(done.paper_document_id, 'the scan is kept');
+  assert.ok(events.some((e) => e.kind === 'paper_signed'));
+  await assert.rejects(
+    () => recordPaperSigning(ctx(db, { body: { name: 'Ama Boateng', signedOn: today, pin: '482915' } }), contract.id),
+    /already complete/,
+  );
 });

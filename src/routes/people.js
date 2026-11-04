@@ -241,7 +241,7 @@ export async function getPerson(ctx, id) {
     ctx.db.prepare(
       `SELECT id, title, status, origin, document_id, satisfies, issued_at, opened_at,
               signed_at, signer_name, body_hash, employer_name, employer_at, decline_note,
-              filed_by, filed_at, created_at
+              filed_by, filed_at, created_at, paper_signed_on
          FROM hr_contract WHERE staff_id = ? ORDER BY id DESC`,
     ).bind(staffId).all(),
     ctx.db.prepare(
@@ -1472,6 +1472,66 @@ export async function countersignContract(ctx, id) {
   // screen somebody walked away from.
   await reauthenticate(ctx, body);
   await countersignNow(ctx, contract, body);
+  return json({ ok: true });
+}
+
+/**
+ * The paper copy signed at the property.
+ *
+ * A contract of employment is accepted online by the employee typing their
+ * full name; both sides then sign two paper copies in person. This records
+ * that, against the contract they accepted: the date on the paper, who signed
+ * for the company, and a scan if there is one. It completes the contract in
+ * the same way a countersignature does, so the signed copy is made and every
+ * list that waits on a countersignature stops waiting.
+ */
+export async function recordPaperSigning(ctx, id) {
+  const body = await readJson(ctx.request);
+  const contract = await ctx.db.prepare('SELECT * FROM hr_contract WHERE id = ?').bind(Number(id)).first();
+  if (!contract) throw notFound('No such contract.');
+  if (contract.status !== 'signed') throw badRequest('Record the paper copy once they have accepted it online.');
+  if (contract.origin === 'paper') throw badRequest('That one was only ever on paper.');
+  if (contract.employer_at) throw badRequest('That one is already complete.');
+  const signedOn = str(body.signedOn, 'Date signed', { required: true, max: 10 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signedOn)) throw badRequest('Give the date the paper copy was signed.');
+  if (signedOn > new Date().toISOString().slice(0, 10)) throw badRequest('That date is still to come.');
+  if (signedOn < String(contract.signed_at ?? '').slice(0, 10)) {
+    throw badRequest('That is before they accepted it online. Give the date the paper copy was signed.');
+  }
+  const forCompany = str(body.name, 'Signed for the company by', { required: true, max: 120 });
+  await reauthenticate(ctx, body);
+
+  let documentId = null;
+  if (body.content) {
+    const bytes = fromBase64(body.content);
+    if (bytes.length > MAX_DOCUMENT) {
+      throw badRequest(`That scan is ${Math.round(bytes.length / 1_000_000)} MB and the limit is `
+        + `${Math.round(MAX_DOCUMENT / 1_000_000)} MB. Scan it again at a lower resolution.`);
+    }
+    if (bytes.length) {
+      documentId = await storeFile(ctx, contract.staff_id, {
+        kind: contract.satisfies || 'contract',
+        title: `${contract.title} — signed paper copy`,
+        filename: str(body.filename, 'File name', { max: 200 }),
+        mime: str(body.mime, 'Type', { max: 80, fallback: 'application/pdf' }),
+        bytes,
+        expiresOn: null,
+        by: ctx.session.user.name,
+      });
+    }
+  }
+  await ctx.db.prepare(
+    `UPDATE hr_contract SET employer_name = ?2, employer_ink = NULL, employer_at = datetime('now'),
+            paper_signed_on = ?3, paper_recorded_by = ?4, paper_document_id = ?5
+      WHERE id = ?1 AND employer_at IS NULL`,
+  ).bind(contract.id, forCompany, signedOn, ctx.session.user.name, documentId).run();
+  await logEvent(ctx, {
+    staffId: contract.staff_id, contractId: contract.id, kind: 'paper_signed',
+    detail: `${signedOn} · for the company: ${forCompany}${documentId ? ' · scan filed' : ''}`,
+  });
+  await audit(ctx, 'people.contract_paper', contract.id, { signedOn, forCompany, scan: Boolean(documentId) });
+  const { signedContract } = await import('./signed-copies.js');
+  await signedContract(ctx, contract.id).catch((err) => { console.error('Signed copy failed', err); return null; });
   return json({ ok: true });
 }
 

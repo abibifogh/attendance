@@ -5,7 +5,7 @@ import { card, emptyState, table } from './components.js';
 import { can, navigate, replaceParams } from '../app.js';
 import { field, formDialog } from './att-shared.js';
 import { control, listEditor } from '../fields.js';
-import { EVENTS, STATUS } from './contract.js';
+import { EVENTS, STATUS, statusLabel } from './contract.js';
 import { renderAttStaff } from './att-staff.js';
 import { openFirstWeek } from './onboarding.js';
 import { welcomeSummary } from './rec-candidate.js';
@@ -921,13 +921,17 @@ function contractsTab(data, model, reload) {
             key: 'status',
             label: 'Where it is up to',
             format: (v, r) => {
-              const [kind, label] = STATUS[v] ?? ['', v];
+              const [kind0] = STATUS[v] ?? ['', v];
+              const label = statusLabel(r);
+              const waitingPaper = v === 'signed' && r.satisfies === 'contract' && r.origin !== 'paper' && !r.employer_at;
+              const kind = waitingPaper ? 'warn' : kind0;
               return h('div',
                 h(`span.pill${kind ? `.${kind}` : ''}`, label),
                 // Which sort of signature is behind it. The two are not the
                 // same kind of evidence and the screen should never imply
                 // they are.
-                h('small.muted', r.origin === 'paper' ? 'signed on paper' : 'signed on screen'),
+                h('small.muted', r.origin === 'paper' ? 'signed on paper'
+                  : r.paper_signed_on ? 'accepted on screen, signed on paper' : 'on screen'),
               );
             },
           },
