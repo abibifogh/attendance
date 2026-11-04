@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card } from './components.js';
 import { field, formDialog } from './att-shared.js';
+import { contractFlow } from '../contract-flow.js';
 
 /**
  * Making an offer, from the candidate's page.
@@ -229,7 +230,7 @@ async function makeOffer(data, reload) {
             const formEl = form.closest('form');
             try {
               const out = await api.recOfferPreview(person.id, readBody(new FormData(formEl)));
-              mount(preview, h('pre.contract-text', out.body));
+              mount(preview, h('div.rec-offer-preview', contractFlow(h, out.body)));
             } catch (err) { toast(err.message, 'bad'); }
           },
         }, 'Read the contract as it will go')),
@@ -336,7 +337,7 @@ export async function readOffer(id) {
       offer.intact ? null : h('div.alert.high', h('span.alert-icon', '⛔'),
         h('div', h('div.alert-title', 'The words no longer match the fingerprint'),
           h('div.alert-detail', 'Do not rely on this text. Tell whoever looks after the system.'))),
-      h('pre.contract-text', offer.body),
+      h('div.rec-offer-preview', contractFlow(h, offer.body)),
       offer.signedAt
         ? h('div.rec-offer-sig',
           offer.ink ? h('img', { src: offer.ink, alt: `Signature of ${offer.signerName}` }) : null,
