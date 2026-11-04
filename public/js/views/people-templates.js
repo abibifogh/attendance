@@ -2,8 +2,8 @@ import { api } from '../api.js';
 import { h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
 import { field, formDialog } from './att-shared.js';
-import { signaturePad } from '../fields.js';
 import { contractFlow } from '../contract-flow.js';
+import { isRich, richEditor } from '../rich.js';
 import { contractCover, coverMasthead } from './contract-cover.js';
 
 /**
@@ -37,7 +37,13 @@ export async function renderPeopleTemplates() {
   const reload = async () => mount(host, await renderPeopleTemplates());
 
   const edit = async (existing) => {
+    // Contracts and policies are written formatted, as they will look; letter
+    // templates stay as plain words for the letter screens.
+    const formatted = ['contract', 'policy'].includes(existing?.kind ?? 'contract');
+    const editor = formatted ? richEditor({ html: existing?.body ?? STARTER, placeholders }) : null;
+    const wordsOf = (form) => (editor ? editor.read() : form.querySelector('[name="body"]').value);
     const done = await formDialog({
+      wide: 'xl',
       title: existing ? `Edit ${existing.name}` : 'New template',
       submitLabel: existing ? 'Save' : 'Create it',
       body: h('div',
@@ -61,7 +67,7 @@ export async function renderPeopleTemplates() {
 
         particularsPicker(details, detailGroups, existing?.particulars ?? []),
 
-        h('details', { open: !existing },
+        editor ? null : h('details', { open: !existing },
           h('summary', { style: { cursor: 'pointer', fontSize: '.88rem', margin: '.4rem 0' } },
             'What you can put in double braces'),
           h('div.chip-row', placeholders.map((p) => h('button.btn-sm', {
@@ -88,17 +94,21 @@ export async function renderPeopleTemplates() {
               previewTemplate({
                 name: form.querySelector('[name="name"]').value,
                 kind: form.querySelector('[name="kind"]').value,
-                body: form.querySelector('[name="body"]').value,
+                body: wordsOf(form),
                 companyId: form.querySelector('[name="companyId"]')?.value || null,
                 particulars: tickedParticulars(form),
               });
             },
           }, 'Preview as staff see it')),
-        field('The words', h('textarea', {
-          name: 'body', rows: 22, required: true, maxlength: 60000,
-          style: { fontFamily: 'var(--mono, ui-monospace, monospace)', fontSize: '.85rem' },
-          value: existing?.body ?? STARTER,
-        })),
+        editor
+          ? h('div.field', h('span', 'The words'), editor.element,
+            h('small.muted', 'Edited as it will look. Fields show as labels and are filled in when it is issued. '
+              + 'Saving makes a new version; contracts already issued keep the words and look they were issued with.'))
+          : field('The words', h('textarea', {
+            name: 'body', rows: 22, required: true, maxlength: 60000,
+            style: { fontFamily: 'var(--mono, ui-monospace, monospace)', fontSize: '.85rem' },
+            value: existing?.body ?? STARTER,
+          })),
 
         existing
           ? field('Status', h('select', { name: 'active' },
@@ -110,7 +120,7 @@ export async function renderPeopleTemplates() {
         const payload = {
           name: form.get('name'),
           kind: form.get('kind'),
-          body: form.get('body'),
+          body: editor ? editor.read() : form.get('body'),
           active: form.get('active') !== 'false',
           ...(companies.length > 1 ? { companyId: form.get('companyId') || null } : {}),
           particulars: [...form.keys()].filter((k) => k.startsWith('pt_')).map((k) => k.slice(3)),
@@ -209,7 +219,10 @@ export async function renderPeopleTemplates() {
         {
           key: 'body',
           label: 'Length',
-          format: (v) => h('small.muted', `${String(v).split(/\s+/).length} words`),
+          format: (v, r) => h('div',
+            h('small.muted', { style: { display: 'block' } }, `${r.words ?? String(v).split(/\s+/).length} words`),
+            h('small', { class: r.rich ? 'pill info' : 'pill', style: { marginTop: '.2rem', display: 'inline-flex' } },
+              `${r.rich ? 'Formatted' : 'Plain text'} · v${r.version ?? 1}`)),
         },
         {
           key: 'actions',
@@ -333,7 +346,6 @@ async function previewTemplate({ templateId = null, name = '', kind = 'contract'
 
 /** The page from the staff link, drawn with the same classes, doing nothing. */
 function staffView(out, kind) {
-  const pad = signaturePad({ height: 120 });
   const inert = { type: 'button', tabindex: -1, onclick: (e) => { e.preventDefault(); toast('This is only a preview.'); } };
   return h('main.invite',
     h('div.invite-inner',
@@ -345,19 +357,21 @@ function staffView(out, kind) {
         h('p.muted', kind === 'correspondence' ? 'A letter.' : 'Read all of it. Scroll to the bottom to sign.')),
       h('div.card', contractFlow(h, out.body)),
       kind === 'correspondence' ? null : h('div.card',
-        h('h3', 'Sign here'),
+        h('h3', kind === 'contract' ? 'Accept the contract' : 'Accept'),
         h('label.tickline',
           h('input', { type: 'checkbox', tabindex: -1 }),
-          h('span', 'I have read this document and I agree to sign it electronically. '
-            + 'I understand this has the same effect as signing on paper.')),
-        h('p.muted', 'Before you sign, we send a six-digit code to their email or phone to check it is them.'),
-        pad.element,
-        h('label.field', h('span', 'Or type your full name'),
-          h('input', { type: 'text', tabindex: -1, placeholder: out.person?.name ?? 'Ama Sample' })),
-        h('button.btn.btn-primary.btn-wide', inert, 'Sign this'),
-        h('button.btn-sm.btn-wide', { ...inert, style: { marginTop: '.6rem' } }, 'I do not want to sign this'),
-        h('p.fineprint', 'When you sign, the time, your network address and a fingerprint of these exact words '
-          + 'are recorded, so both you and the property can show later what was agreed.'))));
+          h('span', kind === 'contract'
+            ? 'I have read this contract and I accept it. I understand that typing my full name is my '
+              + 'signature, and that I will also sign the paper copy when I come in.'
+            : 'I have read this document and I accept it. I understand that typing my full name is my signature.')),
+        h('p.muted', 'Before they accept, a six-digit code goes to their email or phone to check it is them.'),
+        h('label.field', h('span', 'Type your full name'),
+          h('input', { type: 'text', tabindex: -1, placeholder: out.person?.name ?? 'Ama Sample' }),
+          h('small.muted', `Exactly as it is on the contract: ${out.person?.name ?? 'Ama Sample'}`)),
+        h('button.btn.btn-primary.btn-wide', inert, 'Accept'),
+        h('button.btn-sm.btn-wide', { ...inert, style: { marginTop: '.6rem' } }, 'I do not accept this'),
+        h('p.fineprint', 'When they accept, the name typed, the time, their network address and a fingerprint of these '
+          + 'exact words are recorded, so both sides can show later what was agreed.'))));
 }
 
 // ---------------------------------------------------------------------------

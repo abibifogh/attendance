@@ -96,7 +96,8 @@ test('a template keeps its ticks, and issuing writes the box into the signed wor
     'TIN: To be given',
     'Next of kin: Esi Example, Sister, 0200000000',
     '',
-    'Between the Company and Kojo Example.',
+    // Listing the templates laid this one out as formatted text, once.
+    '<!--rich--><p>Between the Company and Kojo Example.</p>',
   ].join('\n'));
   assert.equal(c.body_hash, await hashBody(c.body), 'the box is fingerprinted with the words');
   assert.deepEqual(JSON.parse(c.particulars).find((r) => r.key === 'tin_number'), { key: 'tin_number', label: 'TIN', given: false });

@@ -12,6 +12,8 @@
  * it, are the stored words exactly; this never sends anything back.
  */
 
+import { isRich, richView } from './rich.js';
+
 const CLAUSE = /^\s*(\d+(\.\d+)*\.?|\([a-z0-9]+\)|[a-z]\)|[-•*])\s/i;
 const RULE = /^[._\s-]{4,}$/;
 const standsAlone = (line) => /^[A-Z0-9 ,.'"&()\-]{3,}$/.test(line) || /:$/.test(line) || RULE.test(line);
@@ -62,5 +64,6 @@ export const contractFlow = (h, text, { own = false } = {}) => {
   const { rows, rest } = splitParticulars(text);
   return h('div.contract-flow',
     particularsBox(h, rows, { own }),
-    flowParagraphs(rest).map((p) => h('p', p)));
+    // Formatted words show as they were formatted; plain ones are reflowed.
+    isRich(rest) ? richView(rest) : flowParagraphs(rest).map((p) => h('p', p)));
 };

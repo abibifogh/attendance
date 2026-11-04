@@ -1,3 +1,4 @@
+import { escapeHtml, isRich } from './rich-text.js';
 // What a hotel holds about the people who work in it.
 //
 // Everything here is pure. The fields are declared once and five things read
@@ -515,13 +516,16 @@ export const ASKED_PLACEHOLDERS = PLACEHOLDERS.filter((p) => p.ask);
  * ⟨notice⟩" says which word is missing and who has to supply it.
  */
 export function renderTemplate(body, values) {
+  // Formatted words take their values as text, never as markup.
+  const rich = isRich(body);
+  const esc = (s) => (rich ? escapeHtml(s) : s);
   return String(body ?? '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (whole, key) => {
     const value = values?.[key.toLowerCase()];
     if (value == null || String(value).trim() === '') {
       const known = PLACEHOLDERS.find((p) => p.key === key.toLowerCase());
-      return known ? `⟨${known.label.toLowerCase()}⟩` : whole;
+      return known ? esc(`⟨${known.label.toLowerCase()}⟩`) : whole;
     }
-    return String(value);
+    return esc(String(value));
   });
 }
 

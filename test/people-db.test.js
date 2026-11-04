@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { richToPlain } from '../src/lib/rich-text.js';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -774,7 +775,7 @@ test('a template for one company is only issued to the people that company emplo
 
   const ok = await read(await issueContract(ctx(db, { body: { templateId: made.id } }), 2));
   const body = raw.prepare('SELECT body FROM hr_contract WHERE id = ?').get(ok.id).body;
-  assert.equal(body, 'Between Second Example Ltd and Kofi Mensah.');
+  assert.equal(richToPlain(body), 'Between Second Example Ltd and Kofi Mensah.');
 
   await assert.rejects(
     issueContract(ctx(db, { body: { templateId: made.id } }), 1),
@@ -782,7 +783,7 @@ test('a template for one company is only issued to the people that company emplo
   );
 
   const preview = await read(await previewTemplate(ctx(db, { body: { templateId: made.id } })));
-  assert.equal(preview.body, 'Between Second Example Ltd and Ama Sample.', 'a sample person works for the template’s company');
+  assert.equal(richToPlain(preview.body), 'Between Second Example Ltd and Ama Sample.', 'a sample person works for the template’s company');
 
   await assert.rejects(saveTemplate(ctx(db, { body: { name: 'x', body: 'y', companyId: 99 } })), /does not exist/);
   await saveTemplate(ctx(db, { body: { name: 'Second company contract', kind: 'contract', body: 'Words.', companyId: '' } }), made.id);

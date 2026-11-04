@@ -20,6 +20,7 @@ import {
 import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 import { reauthenticate } from './correspondence.js';
+import { RICH, isRich, plainToRich, richToPlain, sanitizeRich } from '../lib/rich-text.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -1004,12 +1005,27 @@ export async function rejectSubmission(ctx, id) {
 // ---------------------------------------------------------------------------
 
 export async function listTemplates(ctx) {
+  // Contracts and policies still in plain text are laid out as formatted
+  // text once, the first time somebody who may change them opens the list.
+  // The words do not change; contracts already issued keep their own copy.
+  const mayChange = ctx.session?.user?.role === 'admin' || (ctx.session?.permissions ?? []).includes('hr_manage');
+  if (mayChange) {
+    const plainOnes = ((await ctx.db.prepare(
+      "SELECT id, body FROM hr_template WHERE kind IN ('contract', 'policy') AND instr(body, ?1) = 0",
+    ).bind(RICH).all().catch(() => ({ results: [] }))).results ?? []);
+    for (const t of plainOnes) {
+      // eslint-disable-next-line no-await-in-loop
+      await ctx.db.prepare("UPDATE hr_template SET body = ?2, version = COALESCE(version, 1) + 1, updated_at = datetime('now') WHERE id = ?1 AND instr(body, ?3) = 0")
+        .bind(t.id, plainToRich(t.body), RICH).run();
+    }
+  }
   const rows = await ctx.db.prepare('SELECT * FROM hr_template ORDER BY active DESC, name').all();
   const held = new Set((rows.results ?? []).map((t) => t.code).filter(Boolean));
 
   return json({
     rows: (rows.results ?? []).map((t) => ({
       ...t, company_id: Number(t.company_id) || null, uses: placeholdersIn(t.body), particulars: readKeys(t.particulars),
+      rich: isRich(t.body), version: Number(t.version) || 1, words: richToPlain(t.body).split(/\s+/).filter(Boolean).length,
     })),
     placeholders: PLACEHOLDERS,
     // The employee details a template can show, for its tick list.
@@ -1028,9 +1044,14 @@ export async function listTemplates(ctx) {
 export async function saveTemplate(ctx, id) {
   const body = await readJson(ctx.request);
   const name = str(body.name, 'Name', { required: true, max: 120 });
-  const text = str(body.body, 'The words', { required: true, max: 60_000 });
+  let text = str(body.body, 'The words', { required: true, max: 200_000 });
   const kind = ['contract', 'letter', 'policy', 'correspondence'].includes(body.kind)
     ? body.kind : 'contract';
+  // Formatted words are cleaned to the few tags every page and the signed PDF
+  // can show. A letter template is used by the letter screens as plain text,
+  // so one given formatting is kept as its words.
+  if (isRich(text)) text = ['contract', 'policy'].includes(kind) ? sanitizeRich(text) : richToPlain(text);
+  if (text.length > 120_000) throw badRequest('That is too long for one template.');
   // Empty is every company. Anything else has to be one that exists.
   const companyId = body.companyId == null || body.companyId === '' ? null : Number(body.companyId);
   if (companyId != null && !(await companyNames(ctx.db)).some((c) => c.id === companyId)) {
@@ -1046,6 +1067,7 @@ export async function saveTemplate(ctx, id) {
   if (id) {
     await ctx.db.prepare(
       `UPDATE hr_template SET name = ?2, body = ?3, kind = ?4, active = ?5, company_id = ?6, particulars = ?7,
+              version = CASE WHEN body = ?3 THEN COALESCE(version, 1) ELSE COALESCE(version, 1) + 1 END,
               updated_at = datetime('now') WHERE id = ?1`,
     ).bind(Number(id), name, text, kind, bool(body.active, true) ? 1 : 0,
       body.companyId === undefined ? keep?.company_id ?? null : companyId,
@@ -1680,7 +1702,8 @@ export async function loadStandardTemplates(ctx) {
        VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
     ).bind(
       clash ? `${template.name} (standard)` : template.name,
-      template.kind, template.body, template.code, template.satisfies ?? null,
+      template.kind, ['contract', 'policy'].includes(template.kind) ? plainToRich(template.body) : template.body,
+      template.code, template.satisfies ?? null,
       actorOf(ctx),
     ).run();
     added += 1;

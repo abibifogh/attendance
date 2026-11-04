@@ -10,6 +10,7 @@ import { printButton } from '../print.js';
 import { contractCover } from './contract-cover.js';
 import { particularsBox, splitParticulars } from '../contract-flow.js';
 import { signaturePad } from '../fields.js';
+import { isRich, richView } from '../rich.js';
 
 /**
  * A contract, as it was signed, with the evidence under it.
@@ -244,9 +245,9 @@ export async function renderContract(params) {
         : (() => {
           // The employee's particulars as a box, then the words.
           const { rows, rest } = splitParticulars(contract.body);
-          return rows.length
-            ? h('div', particularsBox(h, rows), h('div.contract-body', rest))
-            : h('div.contract-body', contract.body);
+          const words = rows.length ? rest : contract.body;
+          const shown = isRich(words) ? richView(words, { className: 'rt-contract' }) : h('div.contract-body', words);
+          return rows.length ? h('div', particularsBox(h, rows), shown) : shown;
         })(),
 
       contract.origin === 'paper'

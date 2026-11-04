@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 import { PAGE, faceOf, textOf } from './paper.js';
 import { splitParticulars } from './particulars.js';
+import { isRich, richBlocks } from './rich-text.js';
 
 /**
  * The finished, signed copy of a document, as a PDF.
@@ -32,7 +33,7 @@ export function plain(text) {
   return String(text ?? '')
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
     .replace(/[–—]/g, '-').replace(/…/g, '...').replace(/•/g, '-')
-    .replace(/₵/g, 'GHS ').replace(/→/g, '->').replace(/ /g, ' ')
+    .replace(/[⟨]/g, '<').replace(/[⟩]/g, '>').replace(/₵/g, 'GHS ').replace(/→/g, '->').replace(/ /g, ' ')
     .replace(/\t/g, '    ')
     .replace(/[^\x0A\x20-\x7E\xA0-\xFF]/g, '?');
 }
@@ -88,6 +89,98 @@ function drawFitted(page, img, x, yTop, w, h) {
   const dw = img.width * scale;
   const dh = img.height * scale;
   page.drawImage(img, { x, y: A4[1] - yTop - dh, width: dw, height: dh });
+}
+
+/** A hex colour as pdf-lib wants it. */
+function hexInk(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex ?? ''));
+  if (!m) return INK;
+  const n = parseInt(m[1], 16);
+  return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+
+/**
+ * Formatted words onto pages. `y` is the baseline of the last line drawn,
+ * measured from the top; returns where it finished.
+ */
+export async function drawRich(doc, page, y, words) {
+  const e = (k) => doc.embedFont(StandardFonts[k]);
+  const faces = {
+    serif: [await e('TimesRoman'), await e('TimesRomanBold'), await e('TimesRomanItalic'), await e('TimesRomanBoldItalic')],
+    sans: [await e('Helvetica'), await e('HelveticaBold'), await e('HelveticaOblique'), await e('HelveticaBoldOblique')],
+    mono: [await e('Courier'), await e('CourierBold'), await e('CourierOblique'), await e('CourierBoldOblique')],
+  };
+  const faceOfRun = (r) => faces[r.font || 'serif'][(r.bold ? 1 : 0) + (r.italic ? 2 : 0)];
+  const BASE = { p: 10.5, li: 10.5, h1: 16, h2: 11.5, h3: 11 };
+  const W = A4[0] - 2 * M;
+  const bottom = A4[1] - 70;
+  const newPage = () => { page = doc.addPage(A4); y = 52; };
+
+  for (const block of richBlocks(words)) {
+    if (block.pageBreak) { newPage(); continue; }
+    const base = BASE[block.tag] ?? 10.5;
+    const heading = /^h/.test(block.tag);
+    // Words with their styles; a line break inside a block is kept.
+    const pieces = [];
+    for (const run of block.runs) {
+      const size = run.size || base;
+      const font = faceOfRun(run);
+      for (const bit of plain(run.text).split(/(\n| +)/)) {
+        if (!bit) continue;
+        if (bit === '\n') { pieces.push({ br: true }); continue; }
+        const space = /^ +$/.test(bit);
+        pieces.push({ text: space ? ' ' : bit, space, size, font, color: hexInk(run.color), underline: Boolean(run.underline), w: font.widthOfTextAtSize(space ? ' ' : bit, size) });
+      }
+    }
+    const indent = (block.indent || 0) * base;
+    const width = W - indent;
+    // Break into lines.
+    const lines = [];
+    let line = [];
+    let lw = 0;
+    const flush = (forced) => {
+      while (line.length && line[line.length - 1].space) { lw -= line.pop().w; }
+      lines.push({ pieces: line, w: lw, forced });
+      line = []; lw = 0;
+    };
+    for (const pc of pieces) {
+      if (pc.br) { flush(true); continue; }
+      if (pc.space && !line.length) continue;
+      if (!pc.space && line.length && lw + pc.w > width) flush(false);
+      if (pc.space && !line.length) continue;
+      line.push(pc); lw += pc.w;
+    }
+    flush(true);
+    if (!lines.some((l) => l.pieces.length)) { y += base * 0.9; continue; }
+
+    y += heading ? base * 0.9 : base * 0.45;
+    // A heading is never left alone at the foot of a page.
+    if (heading && y + base * 4 > bottom) newPage();
+    lines.forEach((ln, i) => {
+      const tall = Math.max(base, ...ln.pieces.map((p) => p.size));
+      if (y + tall * 1.35 > bottom) newPage();
+      y += tall * 1.32;
+      const last = i === lines.length - 1 || ln.forced;
+      const gaps = ln.pieces.filter((p) => p.space).length;
+      let x = M + indent;
+      let extra = 0;
+      if (block.align === 'center') x += (width - ln.w) / 2;
+      else if (block.align === 'right') x += width - ln.w;
+      else if (block.align === 'justify' && !last && gaps) extra = (width - ln.w) / gaps;
+      if (i === 0 && block.marker) {
+        const f0 = faces.serif[0];
+        page.drawText(plain(block.marker), { x: x - f0.widthOfTextAtSize(plain(block.marker), base) - 5, y: A4[1] - y, size: base, font: f0, color: INK });
+      }
+      for (const pc of ln.pieces) {
+        if (!pc.space) page.drawText(pc.text, { x, y: A4[1] - y, size: pc.size, font: pc.font, color: pc.color });
+        const w = pc.w + (pc.space ? extra : 0);
+        if (pc.underline) page.drawLine({ start: { x, y: A4[1] - y - 1.6 }, end: { x: x + w, y: A4[1] - y - 1.6 }, thickness: 0.6, color: pc.color });
+        x += w;
+      }
+    });
+    y += heading ? base * 0.25 : base * 0.2;
+  }
+  return { page, y };
 }
 
 const stamp = (value) => (value ? `${String(value).replace('T', ' ').slice(0, 16)} UTC` : '');
@@ -325,10 +418,17 @@ export async function contractPdf({ contract, events = [], property, reference, 
     page.drawRectangle({ x: M, y: A4[1] - ry, width: w, height: ry - y, borderColor: FRAME, borderWidth: 1 });
     y = ry + 22;
   }
-  for (const l of wrap(particulars.length ? rest : contract.body, f.serif, 10.5, A4[0] - 2 * M)) {
-    if (y > A4[1] - 70) { page = doc.addPage(A4); y = 64; }
-    if (l) page.drawText(l, { x: M, y: A4[1] - y, size: 10.5, font: f.serif, color: INK });
-    y += 14.5;
+  const words = particulars.length ? rest : contract.body;
+  if (isRich(words)) {
+    // Formatted words, drawn as they were formatted: the same fonts, sizes,
+    // colours, alignment and page breaks as on the screen.
+    ({ page, y } = await drawRich(doc, page, y, words));
+  } else {
+    for (const l of wrap(words, f.serif, 10.5, A4[0] - 2 * M)) {
+      if (y > A4[1] - 70) { page = doc.addPage(A4); y = 64; }
+      if (l) page.drawText(l, { x: M, y: A4[1] - y, size: 10.5, font: f.serif, color: INK });
+      y += 14.5;
+    }
   }
 
   if (y > A4[1] - 200) { page = doc.addPage(A4); y = 64; }
