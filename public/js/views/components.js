@@ -287,7 +287,50 @@ export function dropdownMenu({ label, title = null, items = [], extra = null } =
     button.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', away);
     document.removeEventListener('keydown', escape);
+    window.removeEventListener('scroll', onScroll, true);
+    window.removeEventListener('resize', place);
+    for (const k of ['position', 'top', 'left', 'right', 'maxHeight', 'overflowY']) menu.style[k] = '';
   }
+
+  // Placed against the screen rather than the card it sits in. A card that
+  // clips its corners (overflow: hidden) cut off a menu opened from its last
+  // row, and the page could not be scrolled to reach it. Below the button
+  // where there is room, above it where there is not, and never off either
+  // side of a phone.
+  function place() {
+    const gap = 6;
+    const edge = 8;
+    const at = button.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.right = 'auto';
+    menu.style.maxHeight = '';
+    const w = menu.offsetWidth;
+    const hgt = menu.offsetHeight;
+    // The phone's bottom bar and the top bar sit over the page; the menu
+    // keeps clear of both.
+    const shown = (el) => el && getComputedStyle(el).display !== 'none';
+    const bar = document.querySelector('nav.bottom-bar');
+    const head = document.querySelector('header.topbar');
+    const floor = shown(bar) ? Math.min(window.innerHeight, bar.getBoundingClientRect().top) : window.innerHeight;
+    const ceiling = shown(head) ? Math.max(0, head.getBoundingClientRect().bottom) : 0;
+    const below = floor - at.bottom - gap - edge;
+    const above = at.top - ceiling - gap - edge;
+    let top;
+    if (hgt <= below || below >= above) {
+      top = at.bottom + gap;
+      if (hgt > below) { menu.style.maxHeight = `${Math.max(120, below)}px`; menu.style.overflowY = 'auto'; }
+    } else {
+      const room = Math.min(hgt, above);
+      if (hgt > above) { menu.style.maxHeight = `${Math.max(120, above)}px`; menu.style.overflowY = 'auto'; }
+      top = at.top - gap - room;
+    }
+    const left = Math.min(Math.max(edge, at.right - w), window.innerWidth - w - edge);
+    menu.style.top = `${Math.round(top)}px`;
+    menu.style.left = `${Math.round(Math.max(edge, left))}px`;
+  }
+  // Scrolling the page moves the button away from a fixed menu: follow it,
+  // unless the scroll is inside the menu itself.
+  const onScroll = (e) => { if (!menu.contains(e.target)) place(); };
 
   // Anywhere else on the page closes it, and so does Escape. Without both, a
   // menu left open sits over whatever somebody moved on to look at.
@@ -298,8 +341,11 @@ export function dropdownMenu({ label, title = null, items = [], extra = null } =
     if (wrap.classList.contains('open')) { close(); return; }
     wrap.classList.add('open');
     button.setAttribute('aria-expanded', 'true');
+    place();
     document.addEventListener('click', away);
     document.addEventListener('keydown', escape);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', place);
   }
 
   return wrap;
