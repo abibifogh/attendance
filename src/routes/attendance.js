@@ -1,6 +1,7 @@
 import {
-  badRequest, csvResponse, int, json, notFound, num, readJson, str,
+  badRequest, csvResponse, forbidden, int, json, notFound, num, readJson, str,
 } from '../lib/http.js';
+import { publishGate } from '../lib/rota-draft.js';
 import {
   alwaysOff, colourFor, computeRange, hours, isOpen, labelFor, leaveBalance, leaveDaysFor,
   offDays, onRota, worksIn, worksShifts,
@@ -3132,6 +3133,16 @@ export async function publishRoster(ctx) {
     else fresh = Number(row.n);
   }
   const changes = fresh + again;
+
+  // A planner publishes only what an administrator has approved, unchanged.
+  if (changes) {
+    const gate = await publishGate(ctx.db, { from, to, role: ctx.session?.user?.role });
+    if (!gate.ok) {
+      throw forbidden(gate.changed.length && !gate.waiting.length
+        ? 'The rota has changed since it was approved. Send it for review again, then publish.'
+        : 'This rota needs approving first. Send it for review; Publish appears once an administrator approves it.');
+    }
+  }
 
   if (!changes) {
     return json({

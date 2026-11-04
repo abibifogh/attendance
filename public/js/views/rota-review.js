@@ -15,10 +15,15 @@ const when = (at) => {
   return Number.isNaN(d.getTime()) ? at : d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-export function rotaReviewParts({ from, to, label }) {
+export function rotaReviewParts({ from, to, label, publishButton = null }) {
   const button = h('span.rota-review-btn-wrap');
   const strip = h('div.rota-review');
   let data = null;
+  // A planner's Publish stays out of sight until an administrator approves
+  // what is shown; the server refuses it anyway. Hidden from the start so it
+  // never flashes up while the answer loads.
+  const showPublish = (yes) => { if (publishButton) publishButton.style.display = yes ? '' : 'none'; };
+  if (state.role !== 'admin') showPublish(false);
 
   const send = async () => {
     const names = (data?.reviewers ?? []).filter((r) => r.name !== state.name).map((r) => r.name);
@@ -57,25 +62,32 @@ export function rotaReviewParts({ from, to, label }) {
   const draw = () => {
     const r = data?.review;
     const d = data?.deadline;
+    const gate = data?.publish ?? { needed: false, ok: true, changed: [], waiting: [] };
+    showPublish(!gate.needed || gate.ok);
+    const changedSince = gate.needed && gate.changed.length > 0;
+    const gateLine = !gate.needed || gate.ok ? null
+      : changedSince ? h('small.rota-review-gate', 'Changed since it was approved. Send it for review again; Publish appears once it is approved.')
+        : h('small.rota-review-gate', 'Publish appears once an administrator approves it.');
     mount(button, h('button.btn-sm.rota-review-btn', {
       type: 'button',
       class: r?.status === 'sent' ? 'is-sent' : r?.status === 'approved' ? 'is-approved' : '',
       title: 'Send these weeks to the administrators to look over before you publish',
       onclick: send,
-    }, r?.status === 'sent' ? 'Sent for review ✓' : r?.status === 'approved' ? 'Approved ✓' : 'Send for review'));
+    }, changedSince ? 'Send for review again' : r?.status === 'sent' ? 'Sent for review ✓' : r?.status === 'approved' ? 'Approved ✓' : 'Send for review'));
 
     if (r) {
-      const tone = r.status === 'approved' ? 'is-good' : r.status === 'returned' ? 'is-warn' : 'is-info';
+      const tone = changedSince || r.status === 'returned' ? 'is-warn' : r.status === 'approved' ? 'is-good' : 'is-info';
       mount(strip, h('div', { class: `rota-review-strip ${tone}` },
         h('div.rota-review-text',
           r.status === 'sent'
             ? h('strong', `Sent for review by ${r.sentBy}, ${when(r.sentAt)}`)
             : r.status === 'approved'
-              ? h('strong', `Approved by ${r.decidedBy}, ${when(r.decidedAt)}. Ready to publish.`)
+              ? h('strong', `Approved by ${r.decidedBy}, ${when(r.decidedAt)}.${changedSince ? '' : ' Ready to publish.'}`)
               : h('strong', `Sent back by ${r.decidedBy}, ${when(r.decidedAt)}`),
           r.status === 'sent' && r.reviewers.length ? h('small', `Waiting on ${r.reviewers.join(' or ')}`) : null,
           r.note ? h('small', `${r.sentBy}: “${r.note}”`) : null,
-          r.decisionNote ? h('small', `${r.decidedBy}: “${r.decisionNote}”`) : null),
+          r.decisionNote ? h('small', `${r.decidedBy}: “${r.decisionNote}”`) : null,
+          gateLine),
         r.status === 'sent' && data.canReview
           ? h('div.btn-row',
             h('button.btn-sm', { type: 'button', onclick: () => decide('return') }, 'Send back…'),
@@ -85,7 +97,10 @@ export function rotaReviewParts({ from, to, label }) {
       mount(strip, h('div', { class: `rota-review-strip ${d.past ? 'is-warn' : 'is-quiet'}` },
         h('div.rota-review-text',
           h('strong', d.past ? `The draft for this week was due ${d.said}` : `Draft due ${d.said}`),
-          h('small', 'Not sent for review yet. Press Send for review when the draft is ready.'))));
+          h('small', 'Not sent for review yet. Press Send for review when the draft is ready.'),
+          gateLine)));
+    } else if (gateLine) {
+      mount(strip, h('div.rota-review-strip.is-quiet', h('div.rota-review-text', h('strong', 'Not sent for review yet'), gateLine)));
     } else {
       mount(strip);
     }
@@ -110,6 +125,7 @@ export async function renderRotaDraftSetup() {
   const dis = !edit;
   const on = h('input', { type: 'checkbox', checked: r.on, disabled: dis });
   const cc = h('input', { type: 'checkbox', checked: r.ccAdmins, disabled: dis });
+  const gateBox = h('input', { type: 'checkbox', checked: r.publishNeedsReview !== false, disabled: dis });
   const dueDow = h('select', { disabled: dis }, data.days.map((d, i) => h('option', { value: i, selected: i === r.dueDow }, d)));
   const dueTime = h('input', { type: 'time', value: r.dueTime, disabled: dis });
   const firstDays = h('select', { disabled: dis }, [0, 1, 2, 3, 4, 5, 6].map((n) => h('option', { value: n, selected: n === r.firstDays },
@@ -127,7 +143,7 @@ export async function renderRotaDraftSetup() {
   const save = async () => {
     try {
       await api.saveRotaDraftRule({
-        on: on.checked, ccAdmins: cc.checked, dueDow: Number(dueDow.value), dueTime: dueTime.value,
+        on: on.checked, ccAdmins: cc.checked, publishNeedsReview: gateBox.checked, dueDow: Number(dueDow.value), dueTime: dueTime.value,
         firstDays: Number(firstDays.value), firstTime: firstTime.value, lastHours: Number(lastHours.value),
         weeksAhead: Number(weeks.value), reviewers: [...picks],
       });
@@ -156,6 +172,9 @@ export async function renderRotaDraftSetup() {
     h('h3.late-setup-h', 'Who reviews the draft'),
     h('p.muted', { style: { margin: '0 0 .4rem' } }, 'When a planner presses Send for review, it goes to the administrators ticked here. With nobody ticked, it goes to every administrator.'),
     reviewers,
+    h('label.late-switch', gateBox, h('span', h('strong', 'Planners publish only after approval'),
+      h('small.muted', 'A planner who is not an administrator sees Publish only once the shown weeks are approved, '
+        + 'and again needs approval for anything changed after. Administrators can always publish.'))),
     edit ? h('div.btn-row', h('button.btn.btn-primary', { type: 'button', onclick: save }, 'Save')) : null,
   );
   return host;

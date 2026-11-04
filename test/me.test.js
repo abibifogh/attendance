@@ -46,6 +46,8 @@ function setup() {
   for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort()) {
     raw.exec(readFileSync(`migrations/${f}`, 'utf8'));
   }
+  // These are about publishing itself, not the approval a planner needs first.
+  raw.exec("UPDATE settings SET value = '0' WHERE key = 'rota_publish_needs_review'");
   raw.exec(`DELETE FROM att_days; DELETE FROM att_punches; DELETE FROM att_roster;
             DELETE FROM att_patterns; DELETE FROM att_shifts; DELETE FROM att_staff;
             DELETE FROM att_leave; DELETE FROM att_availability; DELETE FROM app_notices;

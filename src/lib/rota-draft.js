@@ -200,3 +200,34 @@ export async function watchRotaDraft(db, { ctx = null } = {}) {
   }
   return { sent };
 }
+
+/**
+ * May a planner publish these days? Only once every day with something
+ * waiting to go out is covered by an approved review, and nothing on that
+ * day has been changed since it was approved. Administrators always may, and
+ * so may everybody when the property has switched the rule off.
+ */
+export async function publishGate(db, { from, to, role }) {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'rota_publish_needs_review'").first().catch(() => null);
+  const needed = String(row?.value ?? '1') !== '0' && role !== 'admin';
+  if (!needed) return { needed: false, ok: true, waiting: [], changed: [] };
+  const days = ((await db.prepare(
+    'SELECT DISTINCT day FROM att_roster WHERE day BETWEEN ?1 AND ?2 AND published = 0 ORDER BY day',
+  ).bind(from, to).all().catch(() => ({ results: [] }))).results ?? []).map((r) => r.day);
+  if (!days.length) return { needed: true, ok: true, waiting: [], changed: [] };
+  const approved = ((await db.prepare(
+    `SELECT * FROM rota_review WHERE status = 'approved' AND day_from <= ?2 AND day_to >= ?1 ORDER BY decided_at DESC`,
+  ).bind(from, to).all().catch(() => ({ results: [] }))).results ?? []);
+  const waiting = [];
+  const changed = [];
+  for (const day of days) {
+    const r = approved.find((a) => a.day_from <= day && a.day_to >= day);
+    if (!r) { waiting.push(day); continue; }
+    // eslint-disable-next-line no-await-in-loop
+    const since = await db.prepare(
+      "SELECT 1 AS x FROM att_roster_log WHERE day = ?1 AND action != 'published' AND at > ?2 LIMIT 1",
+    ).bind(day, r.decided_at).first().catch(() => null);
+    if (since) changed.push(day);
+  }
+  return { needed: true, ok: !waiting.length && !changed.length, waiting, changed };
+}

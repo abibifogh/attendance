@@ -2480,7 +2480,7 @@ export async function renderAttRota(params) {
   });
   const sep = () => h('span.joined-sep', { 'aria-hidden': 'true' });
   // Sending the shown weeks to the administrators before they are published.
-  const review = mayEdit ? rotaReviewParts({ from, to, label: rangeShort }) : null;
+  const review = mayEdit ? rotaReviewParts({ from, to, label: rangeShort, publishButton }) : null;
   const headButtons = h('div.btn-row.rota-head-buttons', saveState, heardButton, review?.button, publishButton);
 
   mount(host,

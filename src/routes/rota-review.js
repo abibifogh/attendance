@@ -2,7 +2,7 @@ import { badRequest, forbidden, int, json, notFound, readJson, str } from '../li
 import { createNotice } from '../lib/notices.js';
 import { addDays, isDay, nowIn, startOfWeek } from '../util/dates.js';
 import {
-  DAY_NAMES, deadlineFor, draftPeople, readDraftRule, reviewersOf, sayDue, weekLabel,
+  DAY_NAMES, deadlineFor, draftPeople, publishGate, readDraftRule, reviewersOf, sayDue, weekLabel,
 } from '../lib/rota-draft.js';
 
 /**
@@ -64,6 +64,8 @@ export async function rotaReviewState(ctx) {
     deadline: rule.on ? { due: d.due, said: sayDue(d.due, now), past: now >= d.due, week } : null,
     reviewers: reviewers.map((a) => ({ id: a.id, name: a.name })),
     canReview: isAdmin(ctx) && (rule.reviewers.length === 0 || rule.reviewers.includes(Number(ctx.session.user.id))),
+    // Whether this login may publish what is shown: a planner only once it is approved.
+    publish: await publishGate(ctx.db, { from, to, role: ctx.session?.user?.role }),
     now,
   });
 }
@@ -147,7 +149,7 @@ export async function rotaDraftRule(ctx) {
   const next = deadlineFor(rule, addDays(startOfWeek(now.slice(0, 10)), 7 * rule.weeksAhead));
   const upcoming = next.due > now ? next : deadlineFor(rule, addDays(next.weekStart, 7));
   return json({
-    rule: { ...rule, timezone: undefined },
+    rule: { ...rule, timezone: undefined, publishNeedsReview: String((await ctx.db.prepare("SELECT value FROM settings WHERE key = 'rota_publish_needs_review'").first().catch(() => null))?.value ?? '1') !== '0' },
     admins: admins.map((a) => ({ id: a.id, name: a.name })),
     planners: planners.map((p) => ({ id: p.id, name: p.name })),
     days: DAY_NAMES,
@@ -173,6 +175,7 @@ export async function saveRotaDraftRule(ctx) {
     rota_draft_last_hours: String(int(b.lastHours, 'Last reminder', { required: true, min: 0, max: 48 })),
     rota_draft_weeks_ahead: String(int(b.weeksAhead, 'Which week', { required: true, min: 1, max: 3 })),
     rota_draft_cc_admins: b.ccAdmins === false ? '0' : '1',
+    rota_publish_needs_review: b.publishNeedsReview === false ? '0' : '1',
     rota_review_by: JSON.stringify((Array.isArray(b.reviewers) ? b.reviewers : []).map(Number).filter((n) => Number.isInteger(n) && n > 0)),
   };
   for (const [key, value] of Object.entries(vals)) {

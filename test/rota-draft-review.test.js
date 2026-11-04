@@ -4,8 +4,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  deadlineFor, draftRule, owedNow, shiftClock, watchRotaDraft, weekLabel,
+  deadlineFor, draftRule, owedNow, publishGate, shiftClock, watchRotaDraft, weekLabel,
 } from '../src/lib/rota-draft.js';
+import { publishRoster } from '../src/routes/attendance.js';
 import {
   decideRotaReview, rotaReviewState, saveRotaDraftRule, sendRotaForReview,
 } from '../src/routes/rota-review.js';
@@ -148,4 +149,34 @@ test('the four messages are notice kinds that can email', () => {
   for (const key of ['rota.draft_due', 'rota.draft_due_copy', 'rota.review_asked', 'rota.review_done']) {
     assert.ok(BY_KEY.get(key)?.ways.includes('email'), key);
   }
+});
+
+test('a planner publishes only what is approved and unchanged since; an administrator always may', async () => {
+  const { raw, db } = setup();
+  raw.exec("DELETE FROM att_roster; DELETE FROM att_staff; DELETE FROM att_shifts;");
+  raw.exec("INSERT INTO att_shifts (id, name, starts_at, ends_at) VALUES (1, 'Morning', '06:00', '14:00')");
+  raw.exec("INSERT INTO att_staff (id, employee_no, name, department, hired_on) VALUES (1, 'R1', 'Akosua Darko', 'Kitchen', '2024-01-01')");
+  raw.exec("INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (1, '2026-11-17', 1, 0)");
+  const range = { from: '2026-11-16', to: '2026-11-22' };
+
+  let gate = await publishGate(db, { ...range, role: 'supervisor' });
+  assert.deepEqual([gate.needed, gate.ok, gate.waiting], [true, false, ['2026-11-17']]);
+  assert.equal((await publishGate(db, { ...range, role: 'admin' })).ok, true);
+  await assert.rejects(publishRoster(ctxFor(db, { url: 'https://x/api/att/roster/publish', body: { ...range, notify: 'nobody' } })), /approving first/);
+
+  const sent = await read(await sendRotaForReview(ctxFor(db, { body: range })));
+  assert.equal((await publishGate(db, { ...range, role: 'supervisor' })).ok, false, 'sent is not approved');
+  await decideRotaReview(admin(db, { body: { action: 'approve' } }), String(sent.id));
+  // Approved a moment ago; push the approval back so a change can come after it.
+  raw.exec("UPDATE rota_review SET decided_at = datetime('now', '-1 hour')");
+  assert.equal((await publishGate(db, { ...range, role: 'supervisor' })).ok, true);
+
+  raw.exec(`INSERT INTO att_roster_log (day, staff_id, shift_id, action, source, actor)
+            VALUES ('2026-11-17', 1, 1, 'changed', 'hand', 'Kojo Antwi')`);
+  gate = await publishGate(db, { ...range, role: 'supervisor' });
+  assert.deepEqual([gate.ok, gate.changed], [false, ['2026-11-17']]);
+  await assert.rejects(publishRoster(ctxFor(db, { url: 'https://x/api/att/roster/publish', body: { ...range, notify: 'nobody' } })), /changed since it was approved/);
+
+  raw.exec("UPDATE settings SET value = '0' WHERE key = 'rota_publish_needs_review'");
+  assert.equal((await publishGate(db, { ...range, role: 'supervisor' })).ok, true, 'switched off');
 });
