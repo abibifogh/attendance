@@ -28,15 +28,30 @@ import { isReceptionShift } from './till-watch.js';
 
 export const isAdminShift = (name) => /\badmin\b/i.test(String(name ?? ''));
 
+/**
+ * And every Maintenance shift, for the artisans' week plans.
+ *
+ * "Can the system check hive and pull the maintenance shifts for these
+ * artisans and require that the entire shift period be filled before the
+ * plan is sent, allowing a break between 13:00 and 14:00?"
+ *
+ * A Maintenance shift is one whose name or the day's title says Maintenance
+ * ("Maintenance 1", "Maintenance 3"), or one filed under the Maintenance
+ * department. It goes to Maintenance named so it says Maintenance, which is
+ * how the plan check there tells it from an Admin shift.
+ */
+export const isMaintenanceShift = (name, department) =>
+  /\bmaintenance\b/i.test(String(name ?? '')) || /^\s*maintenance\s*$/i.test(String(department ?? ''));
+
 const hhmm = (v) => {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(v ?? '').trim());
   return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
 };
 
-/** Every Admin shift on the rota between two days, with an employee number to match by. */
+/** Every Admin and Maintenance shift on the rota between two days, with an employee number to match by. */
 export async function adminShiftsBetween(db, from, to) {
   const rows = (await db.prepare(
-    `SELECT r.day, r.published, r.title, s.name AS shift, s.starts_at, s.ends_at,
+    `SELECT r.day, r.published, r.title, s.name AS shift, s.department, s.starts_at, s.ends_at,
             st.employee_no, st.name AS staff_name
        FROM att_roster r
        JOIN att_shifts s ON s.id = r.shift_id
@@ -47,7 +62,9 @@ export async function adminShiftsBetween(db, from, to) {
   const out = [];
   const unnumbered = new Set();
   for (const r of rows) {
-    if (!isAdminShift(r.shift) && !isAdminShift(r.title)) continue;
+    const admin = isAdminShift(r.shift) || isAdminShift(r.title);
+    const maint = !admin && (isMaintenanceShift(r.shift, r.department) || isMaintenanceShift(r.title));
+    if (!admin && !maint) continue;
     const starts = hhmm(r.starts_at);
     const ends = hhmm(r.ends_at);
     if (!starts || !ends) continue;
@@ -56,7 +73,10 @@ export async function adminShiftsBetween(db, from, to) {
       employee_no: String(r.employee_no).trim(),
       name: r.staff_name,
       day: r.day,
-      shift: r.title && isAdminShift(r.title) ? r.title : r.shift,
+      shift: admin
+        ? (r.title && isAdminShift(r.title) ? r.title : r.shift)
+        : (r.title && isMaintenanceShift(r.title) ? r.title
+          : isMaintenanceShift(r.shift) ? r.shift : `Maintenance (${r.shift})`),
       starts_at: starts,
       ends_at: ends,
       published: Number(r.published) === 1,
