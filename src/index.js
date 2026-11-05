@@ -65,7 +65,7 @@ import { watchFeedback } from './lib/feedback.js';
 import * as approvals from './routes/approvals.js';
 import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
-import { sendAdminShifts, sendDeskShifts } from './lib/maintenance-shifts.js';
+import { maintenanceWantsShifts, sendAdminShifts, sendDeskShifts } from './lib/maintenance-shifts.js';
 import * as payAccess from './routes/payroll-access.js';
 import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
@@ -1329,10 +1329,13 @@ export default {
         await sendDeskShifts(env).catch((err) => console.error('Front desk rota to Maintenance failed', err));
       }
 
-      // And the other way, once a day with the nightly run: the Admin shifts
-      // for the next two weeks, so Team Tasks can ask for every Admin day of
-      // a week to be planned before the plan goes.
-      if (env.MAINTENANCE_LINK && nightly) {
+      // And the other way, once a day with the nightly run: the Admin and
+      // Maintenance shifts for the next two weeks, so a plan can be checked
+      // against them. Or at once, on the next five-minute tick, when an admin
+      // in Maintenance has pressed "Get shifts from HIVE now".
+      const askedNow = env.MAINTENANCE_LINK && !nightly
+        ? await maintenanceWantsShifts(env).catch(() => false) : false;
+      if (env.MAINTENANCE_LINK && (nightly || askedNow)) {
         const shifts = await sendAdminShifts(env).catch((err) => {
           console.error('Admin shifts to Maintenance failed', err);
           return { sent: 0, unmatched: [] };

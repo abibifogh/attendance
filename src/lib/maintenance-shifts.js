@@ -133,6 +133,37 @@ export async function sendAdminShifts(env, { fetchImpl = fetch, today = null } =
   return out;
 }
 
+/**
+ * Has an admin in Maintenance asked for the shifts now?
+ *
+ * "Give me a button to request it to be sent immediately." Maintenance cannot
+ * call HIVE -- the link runs one way -- so its button leaves a request there,
+ * and HIVE asks, every five minutes, whether one is waiting. Sending the
+ * shifts answers it. Quietly no until HIVE is linked, or while Maintenance's
+ * database update for the button has not been run.
+ */
+export async function maintenanceWantsShifts(env, { fetchImpl = fetch } = {}) {
+  if (!env?.MAINTENANCE_LINK) return false;
+  const link = readLink(env.MAINTENANCE_LINK);
+  if (!link) return false;
+  let response;
+  try {
+    response = await fetchImpl(`${link.url}/rest/v1/rpc/mx_hive_shifts_wanted`, {
+      method: 'POST',
+      headers: {
+        apikey: link.anon,
+        Authorization: `Bearer ${link.anon}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_key: link.key }),
+    });
+  } catch {
+    return false;
+  }
+  if (!response.ok) return false;
+  return (await response.json().catch(() => false)) === true;
+}
+
 /* ------------------------------------------------------------------------ *
  * Who is at the front desk.
  *
