@@ -1225,6 +1225,7 @@ async function contractValues(ctx, person, body = {}) {
     start_date: person.hired_on,
     address: [profile?.address_line, profile?.town, profile?.region].filter(Boolean).join(', '),
     id_type: profile?.id_type,
+    id_number: profile?.id_number,
     property: await setting(ctx.db, 'property_name', 'Somewhere Nice'),
     property_address: await setting(ctx.db, 'property_address', ''),
     // The party to the contract, which is the registered company that employs
@@ -1322,6 +1323,7 @@ const SAMPLE_PERSON = { id: 0, name: 'Ama Sample', employee_no: 'SAMPLE-01', job
 const sampleValues = () => ({
   address: '[their home address]',
   id_type: '[their ID document]',
+  id_number: '[their ID number]',
   start_date: new Date().toISOString().slice(0, 10),
 });
 

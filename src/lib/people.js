@@ -465,6 +465,8 @@ export const PLACEHOLDERS = [
   { key: 'start_date', label: 'Start date' },
   { key: 'address', label: 'Home address' },
   { key: 'id_type', label: 'ID document' },
+  // The number on it, so a contract says which card, not only which kind.
+  { key: 'id_number', label: 'ID number' },
   { key: 'property', label: 'Property name' },
   // The name on the certificate of incorporation, which is the party to a
   // contract. The trading name above is what everybody calls the place and is

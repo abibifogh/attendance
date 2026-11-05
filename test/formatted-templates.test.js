@@ -142,3 +142,13 @@ test('the signed PDF draws formatted words, page breaks and all', async () => {
   const pdf = await PDFDocument.load(bytes);
   assert.ok(pdf.getPageCount() >= 3, 'the words, then the page break onto a second page, then the certificate');
 });
+
+test('a contract names the ID document by its kind and its number', async () => {
+  const { raw, db } = setup();
+  raw.prepare(`INSERT INTO hr_profile (staff_id, id_type, id_number, address_line, town)
+               VALUES (1, 'Ghana Card', 'GHA-000000000-0', '1 Test Street', 'Accra')`).run();
+  raw.exec("INSERT INTO hr_template (id, name, kind, body) VALUES (1, 'Contract', 'contract', '{{name}} of {{address}}, holder of {{id_type}} number {{id_number}}.')");
+  const out = await read(await issueContract(ctx(db, { templateId: 1 }), 1));
+  const body = raw.prepare('SELECT body FROM hr_contract WHERE id = ?').get(out.id).body;
+  assert.equal(body, 'Kwame Asare of 1 Test Street, Accra, holder of Ghana Card number GHA-000000000-0.');
+});

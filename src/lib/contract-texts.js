@@ -54,7 +54,8 @@ assigns) of the one part;
 
 AND
 
-{{name}} of {{address}}, holder of {{id_type}}, employee number {{employee_no}}
+{{name}} of {{address}}, holder of {{id_type}} number {{id_number}}, employee
+number {{employee_no}}
 (hereinafter referred to as the "Employee") of the other part.
 
 The Employer and the Employee are hereinafter referred to individually as a

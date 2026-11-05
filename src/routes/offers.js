@@ -64,7 +64,8 @@ export const DECLINE_REASONS = [
 const NOT_YET = {
   employee_no: 'to be given on joining',
   address: 'the address given on joining',
-  id_type: 'the identity document given on joining',
+  id_type: 'an identity document',
+  id_number: 'to be given on joining',
 };
 
 async function settingsOf(db) {
@@ -183,6 +184,7 @@ async function renderFor(ctx, candidate, input) {
     start_date: readDay(input.startDate, 'Start date'),
     address: str(input.address, 'Home address', { max: 300 }) || NOT_YET.address,
     id_type: str(input.idType, 'ID document', { max: 120 }) || NOT_YET.id_type,
+    id_number: str(input.idNumber, 'ID number', { max: 60 }) || NOT_YET.id_number,
     property: settings.property_name || 'Somewhere Nice',
     property_address: settings.property_address || '',
     // The company the template is for makes the offer; one for every

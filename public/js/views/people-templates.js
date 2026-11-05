@@ -386,7 +386,7 @@ const tickedParticulars = (form) => [...form.querySelectorAll('input[name^="pt_"
  * and ID in the sentence. With a particulars box above it, that says them
  * twice; this is the same sentence pointing at the box instead.
  */
-const OPENING = /\{\{\s*name\s*\}\}\s+of\s+\{\{\s*address\s*\}\},\s+holder\s+of\s+\{\{\s*id_type\s*\}\},\s+employee\s+number\s+\{\{\s*employee_no\s*\}\}/;
+const OPENING = /\{\{\s*name\s*\}\}\s+of\s+\{\{\s*address\s*\}\},\s+holder\s+of\s+\{\{\s*id_type\s*\}\}(?:\s+number\s+\{\{\s*id_number\s*\}\})?,\s+employee\s+number\s+\{\{\s*employee_no\s*\}\}/;
 const POINTED = 'the person named in the Employee Particulars above';
 
 /**

@@ -127,7 +127,8 @@ const ALWAYS = ['salary', 'probation', 'notice'];
 const UNKNOWN = [
   ['employeeNo', 'employee_no', 'Employee number', 'If you know it already. Otherwise the contract says it is given on joining.'],
   ['address', 'address', 'Their home address', 'Otherwise the contract says “the address given on joining”.'],
-  ['idType', 'id_type', 'Their ID document', 'For example: Ghana Card GHA-000000000-0'],
+  ['idType', 'id_type', 'Their ID document', 'For example: Ghana Card'],
+  ['idNumber', 'id_number', 'Its number', 'For example: GHA-000000000-0. Otherwise the contract says it is given on joining.'],
 ];
 
 async function makeOffer(data, reload) {
@@ -182,6 +183,7 @@ async function makeOffer(data, reload) {
       employeeNo: form.get('employeeNo') || '',
       address: form.get('address') || '',
       idType: form.get('idType') || '',
+      idNumber: form.get('idNumber') || '',
       values,
       message: form.get('message'),
       days: form.get('days'),

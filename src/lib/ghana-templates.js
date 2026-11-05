@@ -83,7 +83,7 @@ the terms and conditions that govern the contractual agreement between
 {{company_legal_name}}, a company incorporated under the laws of the Republic of
 Ghana and having its principal place of business at {{property_address}}
 (hereinafter referred to as the "Company"), and {{name}} of {{address}}, holder
-of {{id_type}}, employee number {{employee_no}} (hereinafter referred to as the
+of {{id_type}} number {{id_number}}, employee number {{employee_no}} (hereinafter referred to as the
 "Employee"), who agrees to be bound by this Contract.
 
 WHEREAS, the Company is engaged in the operation of hotel and hostel facilities;
@@ -314,7 +314,7 @@ This Written Statement of Particulars of Employment (hereinafter referred to as
 the "Statement") is furnished by {{company_legal_name}}, a company incorporated
 under the laws of the Republic of Ghana and having its principal place of
 business at {{property_address}} (hereinafter referred to as the "Employer"), to
-{{name}} of {{address}}, holder of {{id_type}} (hereinafter referred to as the
+{{name}} of {{address}}, holder of {{id_type}} number {{id_number}} (hereinafter referred to as the
 "Worker").
 
 WHEREAS, section 13 of the Labour Act, 2003 (Act 651) requires an employer to
@@ -330,7 +330,7 @@ NOW, THEREFORE, the Employer hereby furnishes the following particulars:
 
 1.1 Employer: {{company_legal_name}}, trading as {{property}}, of
     {{property_address}}.
-1.2 Worker: {{name}} of {{address}}, holder of {{id_type}}, employee number
+1.2 Worker: {{name}} of {{address}}, holder of {{id_type}} number {{id_number}}, employee number
     {{employee_no}}.
 
 2. THE EMPLOYMENT
@@ -428,7 +428,7 @@ terms and conditions that govern the contractual agreement between
 {{company_legal_name}}, a company incorporated under the laws of the Republic of
 Ghana and having its principal place of business at {{property_address}}
 (hereinafter referred to as the "Employer"), and {{name}} of {{address}}, holder
-of {{id_type}}, employee number {{employee_no}} (hereinafter referred to as the
+of {{id_type}} number {{id_number}}, employee number {{employee_no}} (hereinafter referred to as the
 "Worker"), who agrees to be bound by these Terms.
 
 WHEREAS, the Employer from time to time requires casual or temporary labour in
