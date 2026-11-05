@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { adminShiftsBetween, isAdminShift, sendAdminShifts, sendDeskShifts } from '../src/lib/maintenance-shifts.js';
+import { adminShiftsBetween, isAdminShift, isMaintenanceShift, sendAdminShifts, sendDeskShifts } from '../src/lib/maintenance-shifts.js';
 
 /**
  * "For those required to send weekly plan, check their shift in hive, if they
@@ -168,4 +168,33 @@ test('the front desk rota goes every hour, not only at night', () => {
   // The Admin shifts stay once a day.
   const adm = src.indexOf('sendAdminShifts(env)');
   assert.match(src.slice(src.lastIndexOf('if (', src.lastIndexOf('if (env.MAINTENANCE_LINK', adm)), adm), /^if \(env\.MAINTENANCE_LINK && nightly\) \{/);
+});
+
+/**
+ * "Can the system check hive and pull the maintenance shifts for these
+ * artisans and require that the entire shift period be filled before the plan
+ * is sent, allowing a break between 13:00 and 14:00?"
+ *
+ * The Maintenance shifts go with the Admin ones, named so they say
+ * Maintenance: that is how Maintenance's plan check tells them apart.
+ */
+test('a Maintenance shift says Maintenance, by name or department', () => {
+  assert.equal(isMaintenanceShift('Maintenance 1'), true);
+  assert.equal(isMaintenanceShift('Plumbing day', 'Maintenance'), true);
+  assert.equal(isMaintenanceShift('Morning', 'Reception'), false);
+  assert.equal(isMaintenanceShift('Maintenance-free cover'), true);
+});
+
+test('Maintenance shifts go too, named so they say Maintenance', async () => {
+  const { raw, db } = setup();
+  raw.prepare(`INSERT INTO att_staff (id, employee_no, name, hired_on) VALUES (4, 'MA-04', 'Johnson Yakanu', '2020-01-01')`).run();
+  const m1 = Number(raw.prepare("INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, department) VALUES ('Maintenance 1 TEST', '08:00', '17:00', 60, 'Maintenance')").run().lastInsertRowid);
+  const odd = Number(raw.prepare("INSERT INTO att_shifts (name, starts_at, ends_at, break_minutes, department) VALUES ('Plumbing day TEST', '07:00', '16:00', 60, 'Maintenance')").run().lastInsertRowid);
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (4, ?, ?, 1)').run('2026-11-09', m1);
+  raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id, published) VALUES (4, ?, ?, 1)').run('2026-11-10', odd);
+  const { shifts } = await adminShiftsBetween(db, '2026-11-05', '2026-11-18');
+  const johnson = shifts.filter((s) => s.employee_no === 'MA-04').map((s) => `${s.day} ${s.shift} ${s.starts_at}-${s.ends_at}`);
+  assert.deepEqual(johnson, ['2026-11-09 Maintenance 1 TEST 08:00-17:00', '2026-11-10 Maintenance (Plumbing day TEST) 07:00-16:00']);
+  // The Admin shifts are as they were.
+  assert.equal(shifts.filter((s) => /admin/i.test(s.shift)).length, 3);
 });
