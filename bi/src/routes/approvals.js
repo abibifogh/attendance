@@ -152,13 +152,21 @@ async function posBase(env) {
   return source ? String(source.config.base).trim().replace(/\/+$/, '') : null;
 }
 
+/** What is still missing before Insight can talk to the POS, in plain words: the address, the shared secret, or both. */
+export function posMissing(hasBase, hasSecret) {
+  const need = [];
+  if (!hasBase) need.push('its address in Settings › Connections & files (the POS card)');
+  if (!hasSecret) need.push('the shared secret: the repository secret INSIGHT_SSO_SECRET_POS, the same value as INSIGHT_SSO_SECRET on the POS notify function, then run Actions › Set Insight\'s secrets');
+  return `The POS is not linked yet. It needs ${need.join(', and ')}.`;
+}
+
 /**
  * One signed call to the POS, the same signature HIVE's link uses, with the
  * POS's own shared secret: the POS checks it before reading anything.
  */
 export async function pos(env, path, body, { fetchImpl = fetch } = {}) {
   const base = await posBase(env);
-  if (!base || !env.SSO_SECRET_POS) throw new Error('The POS is not linked: it needs its reports address in Settings › Connections & files and SSO_SECRET_POS.');
+  if (!base || !env.SSO_SECRET_POS) throw new Error(posMissing(Boolean(base), Boolean(env.SSO_SECRET_POS)));
   const text = JSON.stringify(body ?? {});
   const headers = { 'Content-Type': 'application/json', ...(await signLink(env.SSO_SECRET_POS, path, text)) };
   let response;
