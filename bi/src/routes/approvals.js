@@ -161,6 +161,28 @@ export function posMissing(hasBase, hasSecret) {
 }
 
 /**
+ * A failed call that did not come from the POS itself, in plain words. A 52x
+ * or 530 is Cloudflare's page, not the POS's: the address on the POS card
+ * does not lead to the notify function. Cloudflare puts its own code (1016
+ * and so on) in the page, which says why.
+ */
+export function posTrouble(status, page, base) {
+  const host = String(base || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const code = String(page || '').match(/error(?:\s*code)?[\s:#]*(1\d{3})/i)?.[1];
+  const WHY = {
+    1001: 'that name is not set up on Cloudflare',
+    1014: 'it points at another Cloudflare account',
+    1016: 'its DNS record does not lead anywhere',
+    1033: 'its tunnel is not running',
+  };
+  if (status === 530 || (status >= 520 && status <= 527)) {
+    const why = WHY[code] || (code ? `Cloudflare error ${code}` : `Cloudflare answered ${status}`);
+    return `The POS could not be reached at ${host || 'its address'}: ${why}. Check the address on the POS card in Settings › Connections & files: it must be the domain on the Notify function's Domains tab in Appwrite.`;
+  }
+  return `The POS answered ${status}.`;
+}
+
+/**
  * One signed call to the POS, the same signature HIVE's link uses, with the
  * POS's own shared secret: the POS checks it before reading anything.
  */
@@ -171,10 +193,12 @@ export async function pos(env, path, body, { fetchImpl = fetch } = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await signLink(env.SSO_SECRET_POS, path, text)) };
   let response;
   try { response = await fetchImpl(`${base}${path}`, { method: 'POST', headers, body: text }); } catch (err) { throw new Error(`The POS could not be reached: ${err.message}`); }
-  const data = await response.json().catch(() => ({}));
+  const raw = await response.text().catch(() => '');
+  let data = {};
+  try { data = JSON.parse(raw); } catch { data = {}; }
   if (response.status === 404 && !data?.error) throw new Error(`The POS does not answer ${path} yet: its notify function needs updating.`);
   if (!response.ok || data?.ok === false) {
-    const error = new Error(data?.error || `The POS answered ${response.status}.`);
+    const error = new Error(data?.error || posTrouble(response.status, raw, base));
     error.status = response.status;
     throw error;
   }
