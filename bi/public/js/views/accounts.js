@@ -106,10 +106,11 @@ export async function renderAccounts(root) {
                     onchange: (event) => setInsight(account, event.target.value),
                   },
                   h('option', { value: '', selected: !account.access.some((a) => a.systemId === 'insight') }, 'No'),
-                  h('option', { value: 'full', selected: account.access.some((a) => a.systemId === 'insight' && !['supervisor', 'uploader', 'reports'].includes(a.role)) }, 'Everything'),
+                  h('option', { value: 'full', selected: account.access.some((a) => a.systemId === 'insight' && !['supervisor', 'uploader', 'reports', 'npcash'].includes(a.role)) }, 'Everything'),
                   h('option', { value: 'supervisor', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') }, 'Supervisor'),
                   h('option', { value: 'uploader', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'uploader') }, 'Uploads only'),
-                  h('option', { value: 'reports', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'reports') }, 'Reports only'))
+                  h('option', { value: 'reports', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'reports') }, 'Reports only'),
+                  h('option', { value: 'npcash', selected: account.access.some((a) => a.systemId === 'insight' && a.role === 'npcash') }, 'Nice Place cash'))
                   : h('input', {
                     type: 'checkbox',
                     checked: account.isOwner || account.access.some((a) => a.systemId === system.id),
@@ -201,6 +202,7 @@ export async function renderAccounts(root) {
       ['supervisor', 'Supervisor', 'Shifts only, as set in Settings › People & access › Supervisors'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, bank statement and card report. Sees nothing else'],
       ['reports', 'Reports only', 'The reports an admin ticks under Settings › People & access › Reports they see. Nothing else'],
+      ['npcash', 'Nice Place cash', 'Nice Place’s counters and money, and picking up its cash. Nothing else'],
       ['none', 'No reports', 'The hub only: a way into other systems'],
     ];
     const others = systems.filter((sys) => sys.id !== 'insight');
@@ -343,6 +345,7 @@ export async function renderAccounts(root) {
       : account.access.some((a) => a.systemId === 'insight' && a.role === 'supervisor') ? 'supervisor'
         : account.access.some((a) => a.systemId === 'insight' && a.role === 'uploader') ? 'uploader'
         : account.access.some((a) => a.systemId === 'insight' && a.role === 'reports') ? 'reports'
+        : account.access.some((a) => a.systemId === 'insight' && a.role === 'npcash') ? 'npcash'
         : account.access.some((a) => a.systemId === 'insight') ? 'admin' : 'none';
     try {
       const out = await api('/invitations', {
@@ -359,7 +362,7 @@ export async function renderAccounts(root) {
 
   async function setInsight(account, how) {
     const next = account.access.filter((a) => a.systemId !== 'insight');
-    if (how) next.push({ systemId: 'insight', role: ['supervisor', 'uploader', 'reports'].includes(how) ? how : '' });
+    if (how) next.push({ systemId: 'insight', role: ['supervisor', 'uploader', 'reports', 'npcash'].includes(how) ? how : '' });
     try {
       paint(await api(`/accounts/${account.id}/access`, { method: 'POST', body: { access: next } }));
     } catch (err) {
@@ -405,7 +408,7 @@ export async function renderAccounts(root) {
     // supervisor sees Shifts only, with the parts set under Shifts → Settings.
     const insightGrant = account?.access?.find((a) => a.systemId === 'insight');
     const current = account?.isOwner ? 'owner'
-      : insightGrant ? (['supervisor', 'uploader', 'reports'].includes(insightGrant.role) ? insightGrant.role : 'admin')
+      : insightGrant ? (['supervisor', 'uploader', 'reports', 'npcash'].includes(insightGrant.role) ? insightGrant.role : 'admin')
         : account ? 'none' : (noOwnerYet ? 'owner' : 'supervisor');
     const LEVELS = [
       ['owner', 'Owner', 'Everything, every system, and can manage these accounts.'],
@@ -413,6 +416,7 @@ export async function renderAccounts(root) {
       ['supervisor', 'Supervisor', 'Shifts, with the parts an admin chooses under Settings › People & access › Supervisors, and any reports shared under Admin › Who sees which reports.'],
       ['uploader', 'Uploads only', 'Loads the ASSD journal, the bank statement and the card terminal report. Sees none of the numbers, and nothing else in Insight.'],
       ['reports', 'Reports only', 'Reads the reports an admin ticks for them under Settings › People & access › Reports they see, and nothing else in Insight.'],
+      ['npcash', 'Nice Place cash', 'Sees Nice Place’s counters and money (Front desk › Nice Place), and picks up its cash from the safe: takes the envelopes, adds what was paid out with receipts, and counts what is left. Nothing else in Insight.'],
       ['none', 'No reports', 'Only the hub: a way into the other systems ticked below.'],
     ];
     const level = h('select', { required: true }, LEVELS.map(([value, label]) => h('option', { value, selected: value === current }, label)));
@@ -456,6 +460,7 @@ export async function renderAccounts(root) {
               if (level.value === 'supervisor') access.push({ systemId: 'insight', role: 'supervisor' });
               if (level.value === 'uploader') access.push({ systemId: 'insight', role: 'uploader' });
               if (level.value === 'reports') access.push({ systemId: 'insight', role: 'reports' });
+              if (level.value === 'npcash') access.push({ systemId: 'insight', role: 'npcash' });
               fresh = await api(`/accounts/${saved.id}/access`, { method: 'POST', body: { access } });
             }
             dialog.close();

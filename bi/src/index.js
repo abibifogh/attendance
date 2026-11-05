@@ -553,6 +553,9 @@ const HOURLY_CRON = '0 * * * *';
 const QUARTER_CRON = '*/15 * * * *';
 
 /** Everything an uploader may call, beyond signing in and the hub. */
+/** What Nice Place cash may reach under Shifts: the counters' pictures and the pickups. */
+const NPCASH_MAY = [/^GET \/api\/np\/photo\/\d+$/, /^GET \/api\/np\/pickups$/, /^POST \/api\/np\/pickups\/(start|expense|expense\/remove|record)$/];
+
 const UPLOADER_MAY = new Set([
   'GET /api/shifts/files', 'POST /api/shifts/journal', 'POST /api/shifts/bank', 'POST /api/shifts/terminal',
 ]);
@@ -610,17 +613,24 @@ export default {
         // bootstrap when an admin has shared a report with them.
         const role = till.roleOf(account);
         const asked = `${request.method} ${url.pathname}`;
-        const boot = asked === 'GET /api/bootstrap' && (role === 'uploader' || role === 'reports')
+        const boot = asked === 'GET /api/bootstrap' && (role === 'uploader' || role === 'reports' || role === 'npcash')
           && (await reportAccess.reportsOf(env, account)).length > 0;
         if (role === 'uploader' && !UPLOADER_MAY.has(asked) && !boot) {
           throw new HttpError(403, 'Your account uploads files and nothing else here.');
         }
         if (role === 'reports' && !boot) throw new HttpError(403, 'Your account opens the reports shared with you and nothing else.');
+        // Nice Place cash: its pictures and its pickups, nothing else of Shifts.
+        if (role === 'npcash' && !boot && !NPCASH_MAY.some((p) => p.test(asked))) {
+          throw new HttpError(403, 'Your account sees Nice Place and picks up its cash, and nothing else here.');
+        }
       } else if (permission === 'insight') {
         account = await requireInsight(request, env);
         // Anybody who is not an admin reads only the report pages an admin
         // shared with them (routes/reportaccess.js), and nothing else here.
-        if (till.roleOf(account) !== 'admin') await reportAccess.requireReport(env, account, request.method, url.pathname);
+        const who = till.roleOf(account);
+        // Nice Place cash reads the Nice Place page without it being shared; anything else as for anybody.
+        const npPage = who === 'npcash' && request.method === 'GET' && url.pathname === '/api/np';
+        if (who !== 'admin' && !npPage) await reportAccess.requireReport(env, account, request.method, url.pathname);
       } else if (permission === 'owner') account = await requireOwner(request, env);
       // Looking as somebody else is look only: nothing may change while it is on.
       // The few POSTs that only read (to-dos and notes on the cards, Ask) still answer, so the page looks as theirs does.

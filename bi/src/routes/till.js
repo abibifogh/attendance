@@ -85,12 +85,20 @@ export const PRESETS = [
  * `supervisor`, and sees only the Shifts screen. An uploader holds it with
  * `uploader`, and may load the three shift files and see nothing else.
  */
+/**
+ * The Insight roles that are not an admin. Anything else on a grant is an
+ * admin, so a new role must be added here (and wherever ROLES_NOT_ADMIN is used).
+ * `npcash` (Nice Place cash): sees Nice Place's counters and money, and picks
+ * up its envelopes; nothing else.
+ */
+export const ROLES_NOT_ADMIN = ['supervisor', 'uploader', 'reports', 'npcash'];
+
 export function roleOf(account) {
   if (!account) return null;
   if (account.isOwner || account.bootstrap) return 'admin';
   const grant = (account.access || []).find((a) => a.systemId === 'insight');
   if (!grant) return null;
-  if (grant.role === 'supervisor' || grant.role === 'uploader' || grant.role === 'reports') return grant.role;
+  if (ROLES_NOT_ADMIN.includes(grant.role)) return grant.role;
   return 'admin';
 }
 
@@ -103,8 +111,10 @@ export async function accessOf(env, account) {
     return out;
   }
   if (role !== 'supervisor') {
-    // An uploader loads files and nothing else; anybody else, nothing.
-    for (const a of AREAS) out[a.key] = role === 'uploader' && a.key === 'files' ? 2 : 0;
+    // An uploader loads files and nothing else; Nice Place cash sees Nice Place
+    // and makes its pickups; anybody else, nothing.
+    const fixed = { uploader: { files: 2 }, npcash: { niceplace: 1, pickups: 2 } }[role] || {};
+    for (const a of AREAS) out[a.key] = fixed[a.key] || 0;
     return out;
   }
   let rows = [];

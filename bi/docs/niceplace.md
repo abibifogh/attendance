@@ -66,10 +66,17 @@ for months before the desk sent its own.
 
 ## Pickups
 
-Front desk › Nice Place › **Pickups**: for admins, and supervisors given
+Front desk › Nice Place › **Pickups**: for admins; supervisors given
 **Nice Place pickups** (Settings › People & access › Supervisors; the preset
-of the same name gives it with Nice Place counters). See looks; Act makes
-pickups.
+of the same name gives it with Nice Place counters), where See looks and Act
+makes pickups; and anybody whose Insight access is **Nice Place cash**.
+
+**Nice Place cash** is an access level of its own (Settings › People & access ›
+People, or an invitation). It opens Counters & money to look at (no desk link,
+no answering or correcting shifts) and Pickups to make: take the envelopes, add
+what was paid out of them with receipts, and count what is left. An admin still
+reviews each pickup. Nothing else in Insight opens for it: no Shifts, no money
+reports, no settings. Its Today shows Nice Place shifts with no sales sent.
 
 1. **Start a pickup.** Every shift sent since the last pickup is listed with
    its money, all ticked; untick one not in the safe. Shifts with no sales
