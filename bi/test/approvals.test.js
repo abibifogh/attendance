@@ -129,3 +129,11 @@ test('Maintenance and Team Tasks: one signed call, two chips, each decision sent
   await approvals.decide(env, { system: 'tasks', kind: 'week_plan', id: '3', decision: 'approve' }, OWNER);
   assert.deepEqual([asked[1].action, asked[1].kind, asked[1].email], ['decide', 'week_plan', 'owner@example.test']);
 });
+
+test('a POS that is not linked says which half is missing', () => {
+  assert.match(approvals.posMissing(false, true), /Connections & files/);
+  assert.doesNotMatch(approvals.posMissing(false, true), /INSIGHT_SSO_SECRET_POS/);
+  assert.match(approvals.posMissing(true, false), /INSIGHT_SSO_SECRET_POS/);
+  assert.doesNotMatch(approvals.posMissing(true, false), /Connections & files/);
+  assert.match(approvals.posMissing(false, false), /Connections & files.*and.*INSIGHT_SSO_SECRET_POS/);
+});
