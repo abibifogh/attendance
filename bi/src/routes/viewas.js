@@ -26,6 +26,7 @@ function roleWords(row, access) {
   if (grant.role === 'supervisor') return 'Supervisor';
   if (grant.role === 'uploader') return 'Uploader: upload files only';
   if (grant.role === 'reports') return 'Reports only: the reports an admin chose';
+  if (grant.role === 'npcash') return 'Nice Place cash: its counters and money, and pickups';
   return 'Admin';
 }
 

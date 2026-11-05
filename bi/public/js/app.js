@@ -174,7 +174,9 @@ function allowed(route) {
   if (route.needs === 'admin') return me.till?.role === 'admin';
   // The safe book is the admins'; a supervisor given Envelopes received sees that tab.
   if (route.needs === 'safe') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.envelopes || 0) >= 1);
-  if (route.needs === 'pickups') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.pickups || 0) >= 1);
+  if (route.needs === 'pickups') return me.till?.role === 'admin' || me.till?.role === 'npcash' || (me.till?.role === 'supervisor' && (me.till?.access?.pickups || 0) >= 1);
+  // Nice Place cash opens the Nice Place page without it being shared as a report.
+  if (route.path === 'niceplace' && me.till?.role === 'npcash') return true;
   // A report page: every one for an admin, the ones shared with them for anybody else.
   return me.canSeeReports === true || (me.reports || []).includes(route.report || route.path);
 }
@@ -407,6 +409,8 @@ async function renderApp() {
     const raw = location.hash.replace(/^#\/?/, '').split('?')[0];
     const path = ALIASES[raw] || raw;
     if (shown.some((r) => r.path === path)) return path;
+    // Nice Place cash starts on Nice Place.
+    if (state.me?.account?.till?.role === 'npcash' && shown.some((r) => r.path === 'niceplace')) return 'niceplace';
     // Whatever needs this person first: the Assistant, the shifts, the files, the reports, or the systems.
     return shown.find((r) => r.section === 'assistant')?.path || shown.find((r) => r.section === 'desk')?.path
       || shown.find((r) => r.needs === 'insight')?.path || shown[0].path;
@@ -640,7 +644,7 @@ try {
 /** What somebody is, in a word, under their name. */
 function roleName(account) {
   if (account.isOwner) return 'Owner';
-  return ({ admin: 'Admin', supervisor: 'Supervisor', uploader: 'Uploader', reports: 'Reports only' })[account.till?.role] || '';
+  return ({ admin: 'Admin', supervisor: 'Supervisor', uploader: 'Uploader', reports: 'Reports only', npcash: 'Nice Place cash' })[account.till?.role] || '';
 }
 
 /** "Install Insight on this phone", in the account menu, while it can be. */

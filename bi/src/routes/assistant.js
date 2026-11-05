@@ -148,10 +148,10 @@ export async function sourcesFor(env, account) {
   }
   // Shifts with no sales sent, for whoever can open the Nice Place page; counters to read, for
   // whoever reads them (a supervisor does it in To sort out).
-  const npPage = reports.includes('niceplace');
+  const npPage = reports.includes('niceplace') || role === 'npcash';
   const npRead = role === 'supervisor' && (access.niceplace || 0) >= 2;
   if (npPage || npRead) {
-    out.push({ id: 'niceplace', label: 'Nice Place', area: 'niceplace', tag: 'Nice Place', read: (e, a, n) => readNicePlace(e, a, n, { pickups: false, missing: npPage, readings: npRead, href: '#/inbox' }) });
+    out.push({ id: 'niceplace', label: 'Nice Place', area: 'niceplace', tag: 'Nice Place', read: (e, a, n) => readNicePlace(e, a, n, { pickups: false, missing: npPage, readings: npRead, href: role === 'npcash' ? '#/niceplace' : '#/inbox' }) });
   }
   if ((access.files || 0) >= 2) out.push({ id: 'files', label: 'Shift files', area: 'shifts', tag: 'Files', read: (e, a, n) => readFiles(e, a, n, { href: role === 'uploader' ? '#/upload' : '#/files' }) });
   return out;

@@ -20,7 +20,9 @@ sort out**. Admins and supervisors work it all from Insight → **Shifts**.
    access to **Supervisor**. They then see the Shifts tab and nothing else.
    Somebody who only loads the files (the ASSD journal, the bank statement
    and the card terminal report) gets **Uploads only**: an Upload files page
-   and the hub, and none of the numbers.
+   and the hub, and none of the numbers. Somebody who only collects Nice
+   Place's cash gets **Nice Place cash**: Front desk › Nice Place (Counters &
+   money, and Pickups) and nothing else.
 4. **Choose what supervisors see.** Insight → Settings › Rules → Who sees
    what. Pick a preset for each supervisor: **Front desk supervisor** (shifts
    and closing reports without amounts; acts on staff answers and advances,

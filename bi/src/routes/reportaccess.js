@@ -62,7 +62,7 @@ const ENDPOINTS = {
 export const reportOfEndpoint = (method, path) => ENDPOINTS[`${method} ${path}`] || null;
 
 /** The roles that may be given reports one by one. */
-const GRANTABLE = new Set(['supervisor', 'uploader', 'reports']);
+const GRANTABLE = new Set(['supervisor', 'uploader', 'reports', 'npcash']);
 
 /** The report pages this account may open: every one for an admin. */
 export async function reportsOf(env, account) {
@@ -83,7 +83,7 @@ export async function requireReport(env, account, method, path) {
   }
 }
 
-const LEVEL_WORDS = { supervisor: 'Supervisor', uploader: 'Uploads only', reports: 'Reports only' };
+const LEVEL_WORDS = { supervisor: 'Supervisor', uploader: 'Uploads only', reports: 'Reports only', npcash: 'Nice Place cash' };
 
 /** Everybody an admin may share reports with, and what each has. */
 export async function list(env) {

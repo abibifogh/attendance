@@ -32,6 +32,7 @@ const LEVELS = {
   supervisor: { label: 'Supervisor', note: 'Shifts, with the parts chosen for supervisors.' },
   uploader: { label: 'Uploads only', note: 'Loading the ASSD journal, the bank statement and the card terminal report. Nothing else.' },
   reports: { label: 'Reports only', note: 'The reports an admin chooses for you, and nothing else.' },
+  npcash: { label: 'Nice Place cash', note: 'Nice Place’s counters and money, and picking up its cash. Nothing else.' },
   none: { label: 'No reports', note: 'The hub: a way into the other systems below.' },
 };
 
@@ -82,7 +83,7 @@ function levelOf(account, access) {
   if (account.is_owner === 1) return 'owner';
   const insight = access.find((a) => a.system_id === 'insight');
   if (!insight) return 'none';
-  return ['supervisor', 'uploader', 'reports'].includes(insight.role) ? insight.role : 'admin';
+  return ['supervisor', 'uploader', 'reports', 'npcash'].includes(insight.role) ? insight.role : 'admin';
 }
 
 // ---------------------------------------------------------------- owner --
@@ -155,6 +156,7 @@ export async function invite(env, body, actor, { origin, fetchImpl } = {}) {
   if (level === 'supervisor') grants.push({ systemId: 'insight', role: 'supervisor' });
   if (level === 'uploader') grants.push({ systemId: 'insight', role: 'uploader' });
   if (level === 'reports') grants.push({ systemId: 'insight', role: 'reports' });
+  if (level === 'npcash') grants.push({ systemId: 'insight', role: 'npcash' });
   if (level !== 'owner') await accounts.setAccess(env, accountId, { access: grants }, actor);
 
   return issue(env, accountId, { note, how, actor, origin, fetchImpl });
