@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { adminShiftsBetween, isAdminShift, isMaintenanceShift, sendAdminShifts, sendDeskShifts } from '../src/lib/maintenance-shifts.js';
+import { adminShiftsBetween, isAdminShift, isMaintenanceShift, maintenanceWantsShifts, sendAdminShifts, sendDeskShifts } from '../src/lib/maintenance-shifts.js';
 
 /**
  * "For those required to send weekly plan, check their shift in hive, if they
@@ -111,7 +111,10 @@ test('it goes once a day, with the nightly run, not every hour', () => {
   assert.ok(at > 0, 'the scheduler sends them');
   assert.equal(src.indexOf('sendAdminShifts(env)', at + 1), -1, 'from one place only');
   const guard = src.lastIndexOf('if (', at);
-  assert.match(src.slice(guard, at), /^if \(env\.MAINTENANCE_LINK && nightly\) \{/);
+  // Nightly, or when an admin in Maintenance has pressed "Get shifts from
+  // HIVE now" -- and that is asked of Maintenance, not assumed.
+  assert.match(src.slice(guard, at), /^if \(env\.MAINTENANCE_LINK && \(nightly \|\| askedNow\)\) \{/);
+  assert.match(src, /const askedNow = env\.MAINTENANCE_LINK && !nightly\s+\? await maintenanceWantsShifts\(env\)\.catch\(\(\) => false\) : false;/);
   assert.match(src, /const nightly = String\(event\?\.cron \?\? ''\)\.startsWith\('30 0'\)/);
   assert.match(readFileSync('wrangler.toml', 'utf8'), /crons = \["30 0 \* \* \*"/);
 });
@@ -165,9 +168,9 @@ test('the front desk rota goes every hour, not only at night', () => {
   assert.ok(at > 0 && src.indexOf('sendDeskShifts(env)', at + 1) === -1, 'from one place only');
   const guard = src.lastIndexOf('if (env.MAINTENANCE_LINK && (nightly || minute < 5)) {', at);
   assert.ok(guard > 0 && !src.slice(guard, at).includes('\n      }\n'), 'inside the hourly block');
-  // The Admin shifts stay once a day.
+  // The Admin and Maintenance shifts stay once a day, unless asked for now.
   const adm = src.indexOf('sendAdminShifts(env)');
-  assert.match(src.slice(src.lastIndexOf('if (', src.lastIndexOf('if (env.MAINTENANCE_LINK', adm)), adm), /^if \(env\.MAINTENANCE_LINK && nightly\) \{/);
+  assert.match(src.slice(src.lastIndexOf('if (', src.lastIndexOf('if (env.MAINTENANCE_LINK', adm)), adm), /^if \(env\.MAINTENANCE_LINK && \(nightly \|\| askedNow\)\) \{/);
 });
 
 /**
@@ -197,4 +200,29 @@ test('Maintenance shifts go too, named so they say Maintenance', async () => {
   assert.deepEqual(johnson, ['2026-11-09 Maintenance 1 TEST 08:00-17:00', '2026-11-10 Maintenance (Plumbing day TEST) 07:00-16:00']);
   // The Admin shifts are as they were.
   assert.equal(shifts.filter((s) => /admin/i.test(s.shift)).length, 3);
+});
+
+/**
+ * "Give me a button to request it to be sent immediately." The button in
+ * Maintenance leaves a request; HIVE asks every five minutes, with its link
+ * key, whether one is waiting.
+ */
+test('asks Maintenance, with the link key, whether shifts are wanted now', async () => {
+  const calls = [];
+  const yes = await maintenanceWantsShifts({ MAINTENANCE_LINK: LINK }, {
+    fetchImpl: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response('true', { status: 200 }); },
+  });
+  assert.equal(yes, true);
+  assert.equal(calls[0].url, 'https://abcdefgh.supabase.co/rest/v1/rpc/mx_hive_shifts_wanted');
+  assert.deepEqual(calls[0].body, { p_key: KEY });
+  const no = await maintenanceWantsShifts({ MAINTENANCE_LINK: LINK }, { fetchImpl: async () => new Response('false', { status: 200 }) });
+  assert.equal(no, false);
+});
+
+test('a quiet no when not linked, when Maintenance has no button yet, or cannot be reached', async () => {
+  assert.equal(await maintenanceWantsShifts({}), false);
+  assert.equal(await maintenanceWantsShifts({ MAINTENANCE_LINK: LINK }, {
+    fetchImpl: async () => new Response('{"message":"Could not find the function public.mx_hive_shifts_wanted"}', { status: 404 }),
+  }), false);
+  assert.equal(await maintenanceWantsShifts({ MAINTENANCE_LINK: LINK }, { fetchImpl: async () => { throw new Error('offline'); } }), false);
 });
