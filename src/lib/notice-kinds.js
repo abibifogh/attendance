@@ -669,6 +669,14 @@ export const KINDS = [
     ways: ['push', 'email'],
   },
   {
+    key: 'people.contract_sent',
+    group: 'people',
+    label: 'A contract to read and accept',
+    who: 'The member of staff it was issued to, where they have a login',
+    when: 'The office issues them a contract and sends it',
+    ways: ['push'],
+  },
+  {
     key: 'people.declined',
     group: 'people',
     label: 'Somebody declined to sign',

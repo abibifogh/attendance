@@ -21,6 +21,7 @@ import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 import { reauthenticate } from './correspondence.js';
 import { RICH, isRich, plainToRich, richToPlain, sanitizeRich } from '../lib/rich-text.js';
+import { createNotice } from '../lib/notices.js';
 
 /**
  * Employee records, from the property's side of the desk.
@@ -271,6 +272,9 @@ export async function getPerson(ctx, id) {
       companyId: Number(person.company_id) || MAIN,
     },
     profile: maskProfile(profile, { full }),
+    // Whether a contract sent to them also reaches them as a notice in HIVE.
+    login: Boolean(await ctx.db.prepare('SELECT 1 AS y FROM users WHERE staff_id = ? AND active = 1 LIMIT 1')
+      .bind(staffId).first().catch(() => null)),
     lists,
     missing: missingFor(profile, lists).map((g) => g.label),
     // Split three ways, because they are three different things. What is on
@@ -816,7 +820,7 @@ export async function deliverInvite(ctx, person, invite, { email = false, text =
   const first = String(person.name ?? '').trim().split(/\s+/)[0];
   const asks = [];
   if (invite.wantsDetails) asks.push('fill in your details');
-  if (invite.contracts) asks.push(invite.contracts === 1 ? 'read and sign your contract' : `read and sign ${invite.contracts} documents`);
+  if (invite.contracts) asks.push(invite.contracts === 1 ? 'read and accept your contract' : `read and accept ${invite.contracts} documents`);
   const what = asks.join(' and ') || 'finish what we need from you';
 
   if (email) {
@@ -835,14 +839,16 @@ export async function deliverInvite(ctx, person, invite, { email = false, text =
         mail: {
           status: reminder ? 'Reminder' : 'Welcome',
           tone: 'info',
-          eyebrow: 'Your details',
+          eyebrow: invite.wantsDetails ? 'Your details' : 'Your contract',
           subject: reminder ? `Reminder: please ${what}` : `${first}, please ${what}`,
           preheader: `It takes a few minutes on your phone.`,
-          headline: reminder ? `${first}, this is still waiting for you` : `Welcome, ${first}`,
+          headline: reminder ? `${first}, this is still waiting for you`
+            : (invite.wantsDetails ? `Welcome, ${first}` : `${first}, your contract is ready`),
           note: `Please open the link to ${what}. It works on your phone and is private to you.`
             + (invite.hasPin ? ' You will be asked for a four-digit code, which we give you separately.' : ''),
-          button: invite.contracts ? 'Open and sign' : 'Fill in my details',
-          why: 'You get this because you are joining the team.',
+          button: invite.contracts ? 'Open and accept' : 'Fill in my details',
+          why: invite.wantsDetails ? 'You get this because you are joining the team.'
+            : 'You get this because the office has issued you a contract.',
         },
       }).catch((err) => ({ sent: 0, reason: err.message }));
       out.emailed = Number(sent?.sent ?? 0) > 0;
@@ -884,7 +890,7 @@ export async function deliverInvite(ctx, person, invite, { email = false, text =
 function linkMessage(name, url, wantsDetails, contracts) {
   const asks = [];
   if (wantsDetails) asks.push('fill in your details');
-  if (contracts) asks.push(contracts === 1 ? 'read and sign your contract' : `read and sign ${contracts} documents`);
+  if (contracts) asks.push(contracts === 1 ? 'read and accept your contract' : `read and accept ${contracts} documents`);
 
   return `Hello ${name.split(' ')[0]}, please open this link on your phone to ${asks.join(' and ')}. `
     + `It is private to you.\n\n${url}`;
@@ -1108,7 +1114,42 @@ export async function issueContract(ctx, id) {
   if (!person) throw notFound('No such member of staff.');
   const body = await readJson(ctx.request);
   const out = await issueContractFor(ctx, person, body);
-  return json({ ok: true, ...out });
+  if (!bool(body.send, false)) return json({ ok: true, ...out, sent: false });
+
+  // Sent the moment it is issued: a link by email and text, and a notice on
+  // their phone when they have a login. Without this an issued contract sat
+  // as a draft that nobody was told about.
+  const invite = await makeInvite(ctx, person, {
+    wantsDetails: false, contractIds: [out.id], days: body.days,
+    message: str(body.message, 'Message', { max: 400 }),
+  });
+  const delivered = await deliverInvite(ctx, person, invite, {
+    email: bool(body.sendEmail, true), text: bool(body.sendText, true),
+  });
+  const login = await ctx.db.prepare('SELECT id FROM users WHERE staff_id = ? AND active = 1 ORDER BY id LIMIT 1')
+    .bind(staffId).first().catch(() => null);
+  let told = false;
+  if (login?.id) {
+    const row = await ctx.db.prepare('SELECT title FROM hr_contract WHERE id = ?').bind(out.id).first().catch(() => null);
+    const title = row?.title || 'Your contract';
+    await createNotice(ctx.db, {
+      kind: 'people.contract_sent', level: 'info',
+      title: `${title} is ready for you to read and accept`,
+      body: 'Read it through and accept it by typing your full name. You sign the paper copy at the office afterwards.',
+      link: invite.url, userId: login.id, actor: ctx.session?.user?.name ?? null,
+      push: true, email: false, cc: false,
+    }, ctx).then(() => { told = true; }).catch((err) => console.error('contract notice failed', err));
+  }
+  return json({
+    ok: true, ...out,
+    sent: delivered.emailed || delivered.texted || told,
+    notified: told,
+    delivered,
+    // The link once, as for any link, to pass on by hand as well.
+    message: invite.message,
+    pin: null,
+    expiresInDays: invite.days,
+  });
 }
 
 /**

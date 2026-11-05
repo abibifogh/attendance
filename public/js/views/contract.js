@@ -126,6 +126,8 @@ export async function renderContract(params) {
     if (done) { toast('Withdrawn.'); await reload(); }
   };
 
+  const coverEl = cover ? contractCover(cover) : null;
+
   mount(host,
     h('div.page-head.no-print',
       h('div',
@@ -140,8 +142,10 @@ export async function renderContract(params) {
         printButton({
           title: contract.title,
           subtitle: `${contract.staff_name} · employee ${contract.employee_no}`,
-          // The same cover the signed PDF opens with, made fresh for each print.
-          cover: cover ? () => contractCover(cover) : null,
+          // The same cover the signed PDF opens with. Made with the page, not
+          // at the tap: printing starts at once, and a logo only asked for
+          // then has not arrived by the time the page is drawn.
+          cover: coverEl,
           footer: 'Signed electronically. The certificate of signature at the foot of this '
             + 'document records what was presented, when it was signed and from where.',
         }),

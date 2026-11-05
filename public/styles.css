@@ -8075,8 +8075,8 @@ button.lp-row:disabled { cursor: default; }
   .bottom-bar { display: none !important; }
   /* A contract is longer than a page: let its card break rather than leave
      a blank sheet under the title block. */
-  .card:has(.contract-body) { break-inside: auto; page-break-inside: auto; }
-  .contract-body { max-height: none; overflow: visible; }
+  .card:has(.contract-body), .card:has(.rt-contract) { break-inside: auto; page-break-inside: auto; }
+  .contract-body, .rt-contract { max-height: none; overflow: visible; }
 }
 .tpl-frame.is-cover { background: var(--surface-2); padding: 1rem; }
 .tpl-cover { display: flex; justify-content: center; }

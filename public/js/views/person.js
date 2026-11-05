@@ -839,6 +839,20 @@ function contractsTab(data, model, reload) {
     };
     drawAsked(usable[0]);
 
+    let titleTyped = false;
+    const titleInput = h('input', {
+      type: 'text', name: 'title', maxlength: 160, value: usable[0].name,
+      oninput: () => { titleTyped = true; },
+    });
+    const ways = [
+      data.profile?.personal_email ? `email to ${data.profile.personal_email}` : null,
+      data.profile?.personal_phone ? `text to ${data.profile.personal_phone}` : null,
+      data.login ? 'a notice in HIVE' : null,
+    ].filter(Boolean);
+    const reachLine = ways.length
+      ? `By ${ways.join(', ').replace(/, ([^,]*)$/, ' and $1')}. They read it and accept by typing their full name.`
+      : 'No email, phone or login on their record, so you get a link to pass on yourself.';
+
     const done = await formDialog({
       title: `Issue a contract to ${data.person.name}`,
       submitLabel: 'Issue it',
@@ -851,16 +865,18 @@ function contractsTab(data, model, reload) {
             const chosen = usable.find((t) => String(t.id) === e.target.value);
             drawAsked(chosen);
             drawParticulars(chosen);
+            // The name follows the template, unless somebody typed their own.
+            if (!titleTyped && chosen) titleInput.value = chosen.name;
           },
         }, usable.map((t) => h('option', { value: t.id }, t.name)))),
-        field('Call it', h('input', {
-          type: 'text', name: 'title', maxlength: 160,
-          value: usable[0].name,
-        }), 'What they will see at the top'),
+        field('Call it', titleInput, 'What they will see at the top'),
         asked,
         particulars,
-        h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-          'Nothing is sent yet. Issue it, then send them a link carrying it.'),
+        h('div.field',
+          h('label.tickline',
+            h('input', { type: 'checkbox', name: 'send', checked: true }),
+            h('span', 'Send it to them now')),
+          h('small.muted', reachLine)),
       ),
       onSubmit: async (form) => {
         const values = {};
@@ -872,11 +888,18 @@ function contractsTab(data, model, reload) {
           title: form.get('title'),
           values,
           particulars: [...picked],
+          send: form.get('send') === 'on',
         });
       },
     });
 
-    if (done) { toast('Issued. Send them a link to sign it.', 'good'); await reload(); }
+    if (!done) return;
+    if (done.sent || done.message) {
+      await showLink(done);
+    } else {
+      toast('Issued. Send them a link when it is ready to go.', 'good');
+    }
+    await reload();
   };
 
   const scanPicker = h('input', {
@@ -1211,6 +1234,11 @@ async function showLink(result) {
         ? h('div.alert.good', h('span.alert-icon', '✓'), h('div',
           h('div.alert-title', `Sent to ${sentTo.join(' and ')}`),
           h('div.alert-detail', 'HIVE reminds them until it is done. You can still copy it below.')))
+        : null,
+      result.notified
+        ? h('div.alert.good', h('span.alert-icon', '✓'), h('div',
+          h('div.alert-title', 'They have a notice in HIVE'),
+          h('div.alert-detail', 'It opens the same link on their phone.')))
         : null,
       (d.whyNot ?? []).length
         ? h('div.alert.warn', h('span.alert-icon', '!'), h('div', h('div.alert-detail', d.whyNot.join('. '))))

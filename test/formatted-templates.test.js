@@ -152,3 +152,25 @@ test('a contract names the ID document by its kind and its number', async () => 
   const body = raw.prepare('SELECT body FROM hr_contract WHERE id = ?').get(out.id).body;
   assert.equal(body, 'Kwame Asare of 1 Test Street, Accra, holder of Ghana Card number GHA-000000000-0.');
 });
+
+test('issuing a contract can send it at once: a link, and a notice on their phone', async () => {
+  const { raw, db } = setup();
+  raw.exec("INSERT INTO hr_template (id, name, kind, body) VALUES (1, 'Contract of employment', 'contract', '{{name}} is employed.')");
+  raw.exec("INSERT INTO users (id, name, role, staff_id, active) VALUES (7, 'Kwame', 'staff', 1, 1)");
+
+  // Kept back: a draft, and nobody told.
+  const kept = await read(await issueContract(ctx(db, { templateId: 1, title: 'Contract of employment' }), 1));
+  assert.equal(kept.sent, false);
+  assert.equal(raw.prepare('SELECT status FROM hr_contract WHERE id = ?').get(kept.id).status, 'draft');
+
+  const out = await read(await issueContract(ctx(db, { templateId: 1, title: 'Contract of employment', send: true }), 1));
+  assert.equal(out.sent, true);
+  assert.equal(out.notified, true);
+  assert.match(out.message, /read and accept your contract/);
+  assert.match(out.message, /\/i\/[0-9a-f]+/);
+  assert.equal(raw.prepare('SELECT status FROM hr_contract WHERE id = ?').get(out.id).status, 'sent');
+  const notice = raw.prepare("SELECT title, link FROM app_notices WHERE kind = 'people.contract_sent'").get();
+  assert.equal(notice.title, 'Contract of employment is ready for you to read and accept');
+  assert.match(notice.link, /\/i\//);
+  assert.equal(raw.prepare("SELECT COUNT(*) AS n FROM app_notices WHERE kind = 'people.contract_sent'").get().n, 1, 'only the sent one');
+});
