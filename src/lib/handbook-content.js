@@ -57,7 +57,22 @@ record against the words you actually saw.
 
 IT IS NOT YOUR WHOLE CONTRACT
 Your contract of employment is a separate document and it comes first. This
-handbook sits underneath it and explains how we run the place day to day.
+handbook sits underneath it and explains how we run the place day to day. Where
+your contract points to the handbook, as it does for the late charge and the
+bonus deductions, the amounts are the ones written here.
+
+YOUR CONTRACT
+Your contract comes to you in HIVE. Read it on your phone and accept it by
+typing your full name exactly as it appears on the contract: that typed name is
+your signature. Then come in and sign two paper copies with the person signing
+for the company, and keep one. If anything in it looks wrong, tell the office
+before you accept it.
+
+YOUR SAY, EVERY QUARTER
+Four times a year HIVE asks you a few short questions about your work, your team
+and the place. It takes a few minutes. Answer honestly: what staff say is read
+by management, and what we decide to do about it is shared with you afterwards,
+under Your say.
 
 IF SOMETHING HERE IS WRONG
 Tell us. A handbook that nobody corrects stops being read.`,
@@ -112,6 +127,21 @@ USE YOUR JUDGEMENT
 No handbook covers everything. When something is not covered, ask: would I be
 comfortable if the owner, the guest and my colleagues all saw what I am about
 to do? If the answer is no, do not do it, and ask somebody.
+
+BONUS DEDUCTIONS
+Breaking one of these house rules costs a fixed amount, taken from that month's
+bonus, or from salary where there is no bonus to take it from:
+- Phone during working hours (outside a break): GHS 10, doubled for a second in the same month
+- Not in the uniform set out (wrong clothes, no name badge): GHS 10
+- Left before the shift ended (without a manager saying so): GHS 20, doubled for a second in the same month
+- Work things used for personal benefit (rooms, transport, stock, Wi-Fi codes): GHS 50
+- Ate a meal not meant for staff (guest or menu food): GHS 30
+- Late back from break (more than 10 minutes over): GHS 10
+Only an administrator can levy one. You are told at once, with the reason, and
+can reply under My pay, Deductions; it can be dropped if your reply shows it
+should not stand. It is not a substitute for the disciplinary procedure: a
+serious or repeated breach can still lead to it. Any increase to these amounts
+is written here at least a month before it applies.
 
 WHAT WE DO IF THIS IS BROKEN
 Anything here can lead to disciplinary action. Serious matters, including theft,
@@ -392,6 +422,8 @@ A normal shift is eight hours, and a normal week is forty, in line with sections
 33 and 34 of the Labour Act, 2003 (Act 651).
 You are entitled to a break of at least half an hour in a shift of more than
 five hours. Take it. Your supervisor will tell you when it fits the service.
+Coming back more than ten minutes late from a break is one of the house rules in
+the code of conduct.
 There should be at least twelve hours between the end of one shift and the start
 of the next, and at least forty-eight hours off in every seven days.
 
@@ -414,7 +446,8 @@ from your pay in the next payroll unless a manager waives it. It is charged
 once per shift, however late. Your phone tells you five minutes into the shift
 if nothing has been recorded, and again at fifteen. You can say why in My
 shifts, and a manager reads it before deciding. A clock-in corrected to on
-time, or a day excused, takes the charge away.
+time, or a day excused, takes the charge away. It never takes your pay for a
+month below nothing; a charge that does not fit waits for the next payroll.
 
 SWAPPING A SHIFT
 If swaps are turned on, you can offer a shift you cannot work to the colleagues
@@ -489,11 +522,30 @@ WHAT COMES OFF
 PAYE income tax, at the rates the Ghana Revenue Authority sets.
 Your SSNIT contribution of 5.5 per cent, with the property paying 13 per cent on
 top of your salary.
-Anything you have agreed to in writing: a salary advance being repaid, a loan,
-or the late charge (GHS 20 for clocking in fifteen minutes or more after your
-shift starts, unless a manager waives it; see Hours, the rota and clocking in).
+And the deductions you agreed to in writing in your contract:
+- a salary advance or loan being repaid, on the schedule agreed when you took it;
+- a till or cash shortage you are responsible for, or the cost of uniform,
+  keys or equipment not returned when you leave;
+- the late charge: GHS 20 for each shift you clock in fifteen minutes or more
+  after it starts, unless a manager waives it (see Hours, the rota and clocking
+  in);
+- a bonus deduction for breaking a house rule, at the amounts listed in the code
+  of conduct.
 Nothing else is deducted without your written agreement, except where the law
 requires it. Section 70 of the Labour Act, 2003 (Act 651) is the rule here.
+
+HOW A DEDUCTION REACHES YOU
+Before a shortage, a late charge or a bonus deduction is taken, you are told
+what it is for, and you can reply in HIVE. A manager reads your reply before it
+is decided, and it can be dropped or waived. Each one is named on your payslip.
+No deduction takes your pay for a month below nothing: what does not fit waits
+for the next payroll. Any increase to these amounts is written here at least a
+month before it applies.
+
+YOUR BONUS
+Where you have a bonus, it depends on how you and the business did that month,
+and it is shown separately on your payslip. Bonus deductions come off the bonus
+first; only where there is no bonus to take them from do they come off salary.
 
 ADVANCES
 There is a way to ask for an advance in HIVE under Pay. It is not a right and
