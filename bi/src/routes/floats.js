@@ -179,6 +179,8 @@ async function settleFromPos(env, rows, { fetchImpl } = {}) {
       const changes = {};
       if (o.status && o.status !== r.pos_status) changes.pos_status = o.status;
       if (o.poNo && o.poNo !== r.pos_no) changes.pos_no = o.poNo;
+      // The POS's own link wins: one stored before it pointed at /admin/ is put right here.
+      if (o.url && o.url !== r.pos_url) changes.pos_url = o.url;
       if (r.status === 'checking' && POS_DONE.has(o.status)) Object.assign(changes, { status: 'accepted', decided_by: 'POS', decided_at: now() });
       else if (r.status === 'checking' && POS_GONE.has(o.status)) {
         Object.assign(changes, { status: 'refused', reason: `${o.poNo || r.pos_no || 'Its order'} was ${o.status} in the POS.`, decided_by: 'POS', decided_at: now() });

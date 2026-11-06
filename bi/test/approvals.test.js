@@ -137,3 +137,18 @@ test('a POS that is not linked says which half is missing', () => {
   assert.doesNotMatch(approvals.posMissing(true, false), /Connections & files/);
   assert.match(approvals.posMissing(false, false), /Connections & files.*and.*INSIGHT_SSO_SECRET_POS/);
 });
+
+test('a Cloudflare page in front of the POS says the address is wrong, and why', () => {
+  const said = approvals.posTrouble(530, '<title>error code: 1016</title>', 'https://reports.example.test/');
+  assert.match(said, /reports\.example\.test/);
+  assert.match(said, /DNS record does not lead anywhere/);
+  assert.match(said, /Connections & files/);
+  assert.match(approvals.posTrouble(530, '', 'https://x.example.test'), /Cloudflare answered 530/);
+  assert.equal(approvals.posTrouble(500, 'oops', 'https://x.example.test'), 'The POS answered 500.');
+});
+
+test('a refusal from Appwrite itself is told apart from one from the POS', () => {
+  const said = approvals.posTrouble(401, '', 'https://x.example.test', { message: 'The current user is not authorized to perform the requested action.', code: 401, type: 'user_unauthorized' });
+  assert.match(said, /Appwrite refused it before the POS saw it \(401\)/);
+  assert.match(said, /Execute access must include Any/);
+});

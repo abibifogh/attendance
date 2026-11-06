@@ -338,7 +338,7 @@ function posFake(o) {
       orders.push(made);
       return Response.json({ ok: true, ...made });
     }
-    if (path === '/floats/po/status') return Response.json({ ok: true, orders: orders.filter((x) => body.ids.includes(x.id)).map(({ id, poNo, status, total, module }) => ({ id, poNo, status, total, module })) });
+    if (path === '/floats/po/status') return Response.json({ ok: true, orders: orders.filter((x) => body.ids.includes(x.id)).map(({ id, poNo, status, total, module, url }) => ({ id, poNo, status, total, module, url })) });
     if (path === '/floats/po/cancel') {
       const x = orders.find((y) => y.id === body.id);
       if (x.status !== 'draft') return Response.json({ ok: false, error: `${x.poNo} is already being received in the POS: cancel it there first.` }, { status: 409 });
@@ -512,4 +512,16 @@ test('the POS not answering, or a receipt that could not be read: said on the re
   const again = await floats.moveReceipt(env, { id: r.id, dest: 'kitchen' }, OWNER);
   assert.equal(again.pos.no, 'PO-0143');
   assert.equal((await floats.detail(env, yaw.personId)).receipts[0].posProblem, null);
+});
+
+test('a POS link stored before it pointed at the admin app is put right from the POS', async () => {
+  const { env, pos } = await withPos();
+  const yaw = await floats.give(env, { name: 'Yaw Test', amount: '800', source: 'safe' }, OWNER);
+  await floats.saveDests(env, { people: [{ id: yaw.personId, dests: ['kitchen'] }] });
+  await floats.linkSend(env, { t: yaw.token, file: jpg('tonic') });
+  const before = (await floats.detail(env, yaw.personId)).receipts[0].pos;
+  assert.equal(before.url, 'https://pos.example.test/#/purchase-orders');
+  pos.orders[0].url = `https://pos.example.test/admin/#/purchase-orders?show=${pos.orders[0].id}`;
+  const after = (await floats.detail(env, yaw.personId)).receipts[0].pos;
+  assert.equal(after.url, pos.orders[0].url);
 });
