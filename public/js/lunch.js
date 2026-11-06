@@ -40,6 +40,8 @@ async function start() {
   } catch (err) {
     return fail(err.message);
   }
+  // A link texted to one person opens on their own days.
+  if (list.only && list.people.length === 1) return openMine(list.people[0]);
   return pickName();
 }
 

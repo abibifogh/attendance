@@ -483,6 +483,11 @@ export const ROUTES = [
   // Telling everybody what they are down to eat. Sent on its own when the list
   // shuts; this is the button for sending it now, or again.
   ['POST', '/api/lunch/tell', 'lunch', lunch.tellLunch],
+  ['POST', '/api/lunch/remind', 'lunch', lunch.remindNow],
+  ['GET', '/api/lunch/asking', 'lunch', lunch.askSetup],
+  ['POST', '/api/lunch/asking', 'lunch', lunch.saveAskSetup],
+  ['GET', '/api/me/lunch/ask', 'att_me', lunch.myLunchAsk],
+  ['POST', '/api/me/lunch/week', 'att_me', lunch.saveMyLunchWeek],
 
   // Their own. What they are down for, and asking for it to be different.
   ['GET', '/api/me/lunch', 'att_me', lunch.myLunch],
@@ -1216,6 +1221,12 @@ export default {
       const dutiesTold = await tellDutiesTomorrow(env.DB, { ctx: { env, executionContext } })
         .catch((err) => { console.error('Duty notices failed', err); return {}; });
       if (dutiesTold.told) console.log(`Duties: ${dutiesTold.told} told for tomorrow`);
+
+      // The lunch list: everybody asked to order when it opens, and whoever
+      // has said nothing reminded before it shuts.
+      const lunchAsked = await lunch.askForLunch(env.DB, { env, ctx: { env, executionContext } })
+        .catch((err) => { console.error('Lunch asking failed', err); return {}; });
+      if (lunchAsked.asked || lunchAsked.reminded) console.log(`Lunch: ${lunchAsked.asked ?? 0} asked, ${lunchAsked.reminded ?? 0} reminded`);
 
       // And the closing report at the front desk: twenty minutes before a
       // reception shift ends, and again twenty minutes after if it is not in.

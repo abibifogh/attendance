@@ -7,6 +7,7 @@ import { countdownCard, onShiftCard } from './att-me.js';
 import { icon } from '../icons.js';
 import { mySickCards } from './absence.js';
 import { shrink } from './att-my-medical.js';
+import { lunchAskCard } from './lunch-ask.js';
 
 /**
  * Home, for somebody's own day.
@@ -19,13 +20,14 @@ import { shrink } from './att-my-medical.js';
 export async function renderMyDay() {
   const host = h('div.my-day');
 
-  const [week, till, issues, handbook, sick, leavePlan] = await Promise.all([
+  const [week, till, issues, handbook, sick, leavePlan, lunchAsk] = await Promise.all([
     api.myWeek().catch((err) => ({ error: err.message })),
     can('till') ? api.myTill().catch(() => null) : Promise.resolve(null),
     can('till') ? api.tillIssues().catch(() => null) : Promise.resolve(null),
     api.handbook().catch(() => null),
     api.mySick().catch(() => null),
     api.myLeavePlan().catch(() => null),
+    api.myLunchPrompt().catch(() => null),
   ]);
   const reload = async () => mount(host, ...(await renderMyDay()).childNodes);
 
@@ -103,6 +105,8 @@ export async function renderMyDay() {
     head,
     week.onShift ? onShiftCard(week) : offToday && week.next?.day === week.today ? null : countdownCard(week),
     mySickCards(sick, { reload, shrink }),
+    // The lunch list, while it is open: the order itself, or what they said.
+    lunchAskCard(lunchAsk, reload),
 
     todo.length
       ? h('section.my-todo', { 'aria-labelledby': 'my-todo' },

@@ -1,4 +1,5 @@
-import { badRequest, forbidden, json, notFound, readJson, str } from '../lib/http.js';
+import { badRequest, bool, forbidden, json, notFound, readJson, str } from '../lib/http.js';
+import { firstUsableNumber, sendTexts } from '../lib/sms.js';
 import { createNotice } from '../lib/notices.js';
 import { emailPersonally, firstUsableEmail } from '../lib/notify.js';
 import { getPepper, hashPin } from '../lib/auth.js';
@@ -61,6 +62,22 @@ async function settingsOf(db) {
     on: map.lunch_on === '1',
     tokenHash: map.lunch_token_hash || '',
     schedule: scheduleFrom(map),
+    ask: askRule(map),
+  };
+}
+
+/** How staff are asked to order: when, the reminder, and who never is. */
+function askRule(map = {}) {
+  let skip = [];
+  try { skip = JSON.parse(map.lunch_ask_skip || '[]').map(Number).filter((n) => Number.isInteger(n) && n > 0); } catch { skip = []; }
+  const hours = Number(map.lunch_remind_hours);
+  return {
+    on: map.lunch_ask_on !== '0',
+    at: /^([01]\d|2[0-3]):[0-5]\d$/.test(map.lunch_ask_at ?? '') ? map.lunch_ask_at : '08:00',
+    remindHours: Number.isFinite(hours) && hours >= 0 && hours <= 72 ? hours : 6,
+    text: map.lunch_ask_text !== '0',
+    cc: map.lunch_ask_cc === '1',
+    skip,
   };
 }
 
@@ -196,7 +213,12 @@ export async function lunchWeek(ctx) {
     ).bind(week[0], week[6]).all().catch(() => ({ results: [] }))).results ?? [])
       .reduce((acc, r) => { (acc[r.day] = acc[r.day] ?? []).push(r.name); return acc; }, {}),
     // Who is down to work and has said nothing. The only list worth chasing.
-    waiting: unanswered({ week, rosteredBy: byStaff, orders: rows, staff }),
+    waiting: unanswered({ week, rosteredBy: byStaff, orders: rows, staff: staff.filter((s) => !settings.ask.skip.includes(Number(s.id))) }),
+    // Asking for the week being ordered: who was asked, who has answered,
+    // and how each of the rest would be reached.
+    asking: settings.on && window.open
+      ? await askingFor(ctx.db, { settings, window, ...(monday === window.monday ? { byStaff, ds } : {}) })
+      : null,
     // And who answered no. Not a list to chase, a list to check: without it
     // an answer of "no" is indistinguishable from never having answered, and
     // somebody who filled the form in appears nowhere on the page.
@@ -414,10 +436,19 @@ async function guard(ctx, token) {
 
   const pepper = await getPepper(ctx.db);
   const offered = await hashLunchToken(String(token ?? ''), pepper);
-  if (offered !== settings.tokenHash) throw notFound('This link does not open anything.');
-
   const today = todayIn(settings.timezone);
   const window = windowFor(nowIn(settings.timezone), settings.schedule);
+
+  // A personal link, texted to somebody without the app when the list
+  // opened: it opens on their own name, for the week being ordered, and
+  // nobody else's.
+  let only = null;
+  if (offered !== settings.tokenHash) {
+    const mine = await ctx.db.prepare('SELECT staff_id FROM lunch_ask WHERE token_hash = ?1 AND monday = ?2')
+      .bind(offered, window.monday).first().catch(() => null);
+    if (!mine) throw notFound('This link does not open anything.');
+    only = Number(mine.staff_id);
+  }
 
   // The address always opens. Whether it is taking answers is the clock's
   // business and the switch's, and a page that says "it opens on Thursday at
@@ -425,13 +456,14 @@ async function guard(ctx, token) {
   return {
     settings,
     today,
+    only,
     window: { ...window, open: settings.on && window.open },
   };
 }
 
 /** The names to choose from, and whether the list is taking answers. */
 export async function lunchOpen(ctx, token) {
-  const { settings, window } = await guard(ctx, token);
+  const { settings, window, only } = await guard(ctx, token);
   const week = window.days;
 
   const [{ byStaff, ds }, menu] = await Promise.all([
@@ -443,13 +475,15 @@ export async function lunchOpen(ctx, token) {
   // yourself in, thirty of which cannot order anything, is a list nobody
   // finishes reading.
   const people = ds.staff
-    .filter((s) => s.active && (byStaff.get(Number(s.id)) ?? []).length)
+    .filter((s) => s.active && (only ? Number(s.id) === only : (byStaff.get(Number(s.id)) ?? []).length))
     .map((s) => ({ id: s.id, name: s.name, first: first(s.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return json({
     property: settings.property,
     open: window.open,
+    // A personal link: the page goes straight to their own days.
+    only,
     // Off at the switch is a different thing from too early, and somebody
     // standing in a corridor deserves to be told which.
     off: !settings.on,
@@ -472,10 +506,11 @@ export async function lunchOpen(ctx, token) {
 
 /** One person's days, once they have found their name. */
 export async function lunchMine(ctx, token, staffParam) {
-  const { window } = await guard(ctx, token);
+  const { window, only } = await guard(ctx, token);
   const week = window.days;
   const staffId = Number(staffParam);
   if (!Number.isInteger(staffId) || staffId < 1) throw badRequest('Who are you?');
+  if (only && staffId !== only) throw forbidden('This link is for somebody else.');
 
   const [{ byStaff, ds }, menu, mine] = await Promise.all([
     rosteredIn(ctx.db, week),
@@ -516,7 +551,8 @@ export async function lunchMine(ctx, token, staffParam) {
  * than an unsaved one.
  */
 export async function lunchSay(ctx, token, staffParam) {
-  const { window } = await guard(ctx, token);
+  const { window, only } = await guard(ctx, token);
+  if (only && Number(staffParam) !== only) throw forbidden('This link is for somebody else.');
   if (!window.open) {
     throw forbidden(window.opensOn
       ? `The list is shut. It opens again on ${dayName(window.opensOn.slice(0, 10))} `
@@ -1154,4 +1190,309 @@ export async function tellLunchOnClosing(db, env, { now = null } = {}) {
   const out = await tellThemWhatTheyOrdered(db, env, { monday });
   await put(db, 'lunch_told_for', monday);
   return { monday, ...out };
+}
+
+// ---------------------------------------------------------------------------
+// Asking everybody to order when the list opens
+// ---------------------------------------------------------------------------
+
+const stampMs = (stamp) => Date.parse(`${String(stamp).replace(' ', 'T')}:00Z`);
+const msStamp = (ms) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+
+/**
+ * When this week's asking and reminding are due, while the list is open.
+ *
+ * Asked on the day the list opens at the property's chosen time rather than
+ * at the minute it opens, which is usually midnight; reminded so many hours
+ * before it shuts. Null when the list is shut, switched off, or open all week
+ * with no edges to hang either on.
+ */
+export function askTimes(settings, now) {
+  const window = windowFor(now, settings.schedule);
+  if (!settings.on || !settings.ask.on || !window.open || !window.closesOn) return { window, askAt: null, remindAt: null };
+  const { opensDow, opensAt, closesDow, closesAt } = settings.schedule;
+  const span = ((((closesDow - 1) * 1440 + closesAt) - ((opensDow - 1) * 1440 + opensAt)) % 10080 + 10080) % 10080 || 10080;
+  const closes = stampMs(window.closesOn);
+  const opened = closes - span * 60000;
+  const atOnDay = stampMs(`${msStamp(opened).slice(0, 10)} ${settings.ask.at}`);
+  const askAt = msStamp(Math.max(opened, atOnDay));
+  const remindAt = settings.ask.remindHours > 0 ? msStamp(closes - settings.ask.remindHours * 3600000) : null;
+  return { window, askAt, remindAt: remindAt && remindAt > askAt ? remindAt : null };
+}
+
+/**
+ * Everybody to be asked about a week: on the rota for it and not marked as
+ * somebody who does not take lunch, with what they have said and how they
+ * can be reached.
+ */
+async function askList(db, { settings, window, byStaff = null, ds = null }) {
+  if (!byStaff || !ds) ({ byStaff, ds } = await rosteredIn(db, window.days));
+  const week = window.days;
+  const [orders, logins, phones, asked] = await Promise.all([
+    db.prepare('SELECT staff_id, day, taking FROM lunch_order WHERE day BETWEEN ?1 AND ?2').bind(week[0], week[6]).all()
+      .catch(() => ({ results: [] })),
+    db.prepare('SELECT id, staff_id FROM users WHERE active = 1 AND staff_id IS NOT NULL').all().catch(() => ({ results: [] })),
+    db.prepare('SELECT staff_id, personal_phone, alt_phone FROM hr_profile').all().catch(() => ({ results: [] })),
+    db.prepare('SELECT * FROM lunch_ask WHERE monday = ?').bind(window.monday).all().catch(() => ({ results: [] })),
+  ]);
+  const said = new Map();
+  for (const o of orders.results ?? []) {
+    const mine = said.get(Number(o.staff_id)) ?? { yes: 0, no: 0 };
+    if (o.taking) mine.yes += 1; else mine.no += 1;
+    said.set(Number(o.staff_id), mine);
+  }
+  const loginOf = new Map((logins.results ?? []).map((u) => [Number(u.staff_id), Number(u.id)]));
+  const phoneOf = new Map((phones.results ?? []).map((p) => [Number(p.staff_id), firstUsableNumber(p.personal_phone, p.alt_phone)]));
+  const askedOf = new Map((asked.results ?? []).map((a) => [Number(a.staff_id), a]));
+  return ds.staff
+    .filter((p) => p.active && (byStaff.get(Number(p.id)) ?? []).length && !settings.ask.skip.includes(Number(p.id)))
+    .map((p) => {
+      const id = Number(p.id);
+      const answer = said.get(id);
+      const userId = loginOf.get(id) ?? null;
+      const phone = phoneOf.get(id) ?? null;
+      return {
+        id, name: p.name, first: first(p.name),
+        days: (byStaff.get(id) ?? []).length,
+        state: !answer ? 'waiting' : (answer.yes ? 'ordered' : 'none'),
+        lunches: answer?.yes ?? 0,
+        userId, phone,
+        reach: userId ? 'app' : (phone && settings.ask.text ? 'text' : 'none'),
+        askedAt: askedOf.get(id)?.asked_at ?? null,
+        remindedAt: askedOf.get(id)?.reminded_at ?? null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The Lunch page's panel for the week being ordered. */
+async function askingFor(db, { settings, window, byStaff = null, ds = null }) {
+  const list = await askList(db, { settings, window, byStaff, ds });
+  const { askAt, remindAt } = askTimes(settings, nowIn(settings.timezone));
+  return {
+    on: settings.ask.on,
+    monday: window.monday,
+    askAt,
+    remindAt,
+    asked: list.length,
+    ordered: list.filter((p) => p.state === 'ordered').length,
+    lunches: list.reduce((n, p) => n + p.lunches, 0),
+    none: list.filter((p) => p.state === 'none').length,
+    waiting: list.filter((p) => p.state === 'waiting')
+      .map((p) => ({ id: p.id, name: p.name, days: p.days, reach: p.reach, askedAt: p.askedAt, remindedAt: p.remindedAt })),
+    skipped: settings.ask.skip.length,
+  };
+}
+
+/**
+ * Reach one person: a notice on their phone where they have the app, or a
+ * text with a link of their own where they do not. The link opens on their
+ * name for this week only; a new one replaces it.
+ */
+async function reachOne(db, env, person, { kind, window, settings, ctx = null, origin = '' }) {
+  const span = `${sayTheDate(window.days[0])} to ${sayTheDate(window.days[6])}`;
+  const shuts = window.closesOn ? `${dayName(window.closesOn.slice(0, 10))} at ${window.closesOn.slice(11)}` : 'when it shuts';
+  const remind = kind === 'remind';
+  if (person.userId) {
+    await createNotice(db, {
+      kind: remind ? 'lunch.remind' : 'lunch.ask',
+      level: remind ? 'warn' : 'info',
+      title: remind ? 'The lunch list shuts soon' : 'Lunch for next week is open',
+      body: remind
+        ? `You have not ordered for ${span}. It shuts ${shuts}; after that the kitchen has to agree to any change.`
+        : `${span}. Tick the days you will eat by ${shuts}. Your shift days are ticked for you.`,
+      link: '#/my-day', userId: person.userId, push: true, email: false, cc: false,
+    }, ctx).catch((err) => console.error('lunch ask notice failed', err));
+    return 'app';
+  }
+  if (!settings.ask.text || !person.phone || !env) return null;
+  const token = newToken();
+  const pepper = await getPepper(db);
+  await db.prepare(
+    `INSERT INTO lunch_ask (monday, staff_id, token_hash) VALUES (?1, ?2, ?3)
+     ON CONFLICT (monday, staff_id) DO UPDATE SET token_hash = ?3`,
+  ).bind(window.monday, person.id, await hashLunchToken(token, pepper)).run();
+  const link = `${origin}/lunch/${token}`;
+  const text = remind
+    ? `Reminder: the lunch list shuts ${shuts} and you have not ordered for ${span}. ${link}`
+    : `Hello ${person.first}, lunch for next week (${span}) is open. Tick your days by ${shuts}: ${link}`;
+  const sent = await sendTexts(db, env, { messages: [{ to: person.phone, text }], kind: remind ? 'lunch.remind' : 'lunch.ask' })
+    .catch(() => ({ sent: 0 }));
+  return Number(sent?.sent ?? 0) > 0 ? 'text' : null;
+}
+
+/**
+ * From the cron, every few minutes: ask everybody once when the list opens
+ * (and anybody put on the rota for that week afterwards), and remind once
+ * whoever has still said nothing before it shuts.
+ */
+export async function askForLunch(db, { env = null, ctx = null, now = null } = {}) {
+  const settings = await settingsOf(db);
+  const clock = now ?? nowIn(settings.timezone);
+  const { window, askAt, remindAt } = askTimes(settings, clock);
+  if (!askAt || clock < askAt || clock >= window.closesOn) return { asked: 0, reminded: 0 };
+  const origin = await siteOrigin(db, '');
+  const list = await askList(db, { settings, window });
+  let asked = 0;
+  let reminded = 0;
+  for (const person of list) {
+    if (person.askedAt) continue;
+    // Claimed first, so a cron that fires twice asks nobody twice.
+    // eslint-disable-next-line no-await-in-loop
+    const claim = await db.prepare(
+      `INSERT INTO lunch_ask (monday, staff_id, asked_at) VALUES (?1, ?2, datetime('now'))
+       ON CONFLICT (monday, staff_id) DO UPDATE SET asked_at = datetime('now') WHERE asked_at IS NULL`,
+    ).bind(window.monday, person.id).run();
+    if (!Number(claim?.meta?.changes ?? 0)) continue;
+    if (person.state !== 'waiting') continue; // answered before being asked
+    // eslint-disable-next-line no-await-in-loop
+    const how = await reachOne(db, env, person, { kind: 'ask', window, settings, ctx, origin });
+    // eslint-disable-next-line no-await-in-loop
+    await db.prepare('UPDATE lunch_ask SET asked_how = ?3 WHERE monday = ?1 AND staff_id = ?2')
+      .bind(window.monday, person.id, how ?? 'none').run();
+    if (how) asked += 1;
+  }
+  if (remindAt && clock >= remindAt) {
+    const still = [];
+    for (const person of list) {
+      if (person.state !== 'waiting' || person.remindedAt) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const claim = await db.prepare(
+        `INSERT INTO lunch_ask (monday, staff_id, asked_at, reminded_at) VALUES (?1, ?2, datetime('now'), datetime('now'))
+         ON CONFLICT (monday, staff_id) DO UPDATE SET reminded_at = datetime('now') WHERE reminded_at IS NULL`,
+      ).bind(window.monday, person.id).run();
+      if (!Number(claim?.meta?.changes ?? 0)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const how = await reachOne(db, env, person, { kind: 'remind', window, settings, ctx, origin });
+      if (how) reminded += 1;
+      still.push(person.name);
+    }
+    if (still.length && settings.ask.cc) {
+      await createNotice(db, {
+        kind: 'lunch.waiting', level: 'info',
+        title: `${still.length} still to order lunch for next week`,
+        body: `${still.join(', ')}. Each has been reminded.`,
+        link: '#/att-lunch', audience: 'lunch', push: true, email: false,
+      }, ctx).catch(() => {});
+    }
+  }
+  return { asked, reminded };
+}
+
+/** POST /api/lunch/remind — remind whoever has not answered, now. */
+export async function remindNow(ctx) {
+  const settings = await settingsOf(ctx.db);
+  const window = windowFor(nowIn(settings.timezone), settings.schedule);
+  if (!settings.on || !window.open) throw badRequest('The list is shut, so there is nothing to remind anybody about.');
+  const origin = await siteOrigin(ctx.db, ctx.url.origin);
+  const list = (await askList(ctx.db, { settings, window })).filter((p) => p.state === 'waiting');
+  let reached = 0;
+  const notReached = [];
+  for (const person of list) {
+    // eslint-disable-next-line no-await-in-loop
+    const how = await reachOne(ctx.db, ctx.env, person, { kind: 'remind', window, settings, ctx, origin });
+    // eslint-disable-next-line no-await-in-loop
+    await ctx.db.prepare(
+      `INSERT INTO lunch_ask (monday, staff_id, asked_at, reminded_at) VALUES (?1, ?2, datetime('now'), datetime('now'))
+       ON CONFLICT (monday, staff_id) DO UPDATE SET reminded_at = datetime('now'), asked_at = COALESCE(asked_at, datetime('now'))`,
+    ).bind(window.monday, person.id).run();
+    if (how) reached += 1; else notReached.push(person.name);
+  }
+  await audit(ctx, 'lunch.remind', window.monday, { reached, notReached: notReached.length });
+  return json({ ok: true, reached, notReached });
+}
+
+/** GET /api/lunch/asking — the settings, with everybody to tick. */
+export async function askSetup(ctx) {
+  const settings = await settingsOf(ctx.db);
+  const staff = await ctx.db.prepare(
+    "SELECT id, name, department FROM att_staff WHERE active = 1 AND COALESCE(on_clock, 1) != 0 ORDER BY department, name",
+  ).all().catch(() => ({ results: [] }));
+  return json({
+    ...settings.ask,
+    staff: (staff.results ?? []).map((s) => ({ id: s.id, name: s.name, department: s.department || null, takes: !settings.ask.skip.includes(Number(s.id)) })),
+  });
+}
+
+/** POST /api/lunch/asking */
+export async function saveAskSetup(ctx) {
+  const body = await readJson(ctx.request);
+  const at = String(body.at ?? '');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(at)) throw badRequest('The time to ask is a time like 08:00.');
+  const hours = Number(body.remindHours);
+  if (!Number.isFinite(hours) || hours < 0 || hours > 72) throw badRequest('The reminder is between 0 and 72 hours before it shuts.');
+  const skip = (Array.isArray(body.skip) ? body.skip : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  await put(ctx.db, 'lunch_ask_on', bool(body.on, true) ? '1' : '0');
+  await put(ctx.db, 'lunch_ask_at', at);
+  await put(ctx.db, 'lunch_remind_hours', String(hours));
+  await put(ctx.db, 'lunch_ask_text', bool(body.text, true) ? '1' : '0');
+  await put(ctx.db, 'lunch_ask_cc', bool(body.cc, false) ? '1' : '0');
+  await put(ctx.db, 'lunch_ask_skip', JSON.stringify([...new Set(skip)]));
+  await audit(ctx, 'lunch.asking', null, { on: bool(body.on, true), at, hours, skip: skip.length });
+  return json({ ok: true });
+}
+
+/**
+ * GET /api/me/lunch/ask — the order card on My day, while the list is open
+ * and they are on the rota that week and take lunch.
+ */
+export async function myLunchAsk(ctx) {
+  const staff = await meOf(ctx);
+  const settings = await settingsOf(ctx.db);
+  const window = windowFor(nowIn(settings.timezone), settings.schedule);
+  if (!settings.on || !settings.ask.on || !window.open || settings.ask.skip.includes(Number(staff.id))) {
+    return json({ show: false });
+  }
+  const week = window.days;
+  const [{ byStaff }, menu, orders] = await Promise.all([
+    rosteredIn(ctx.db, week),
+    menuMap(ctx.db),
+    ctx.db.prepare('SELECT day, taking FROM lunch_order WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3')
+      .bind(staff.id, week[0], week[6]).all().catch(() => ({ results: [] })),
+  ]);
+  const rostered = byStaff.get(Number(staff.id)) ?? [];
+  const answers = new Map((orders.results ?? []).map((r) => [r.day, Boolean(r.taking)]));
+  const mine = new Set([...rostered, ...answers.keys()]);
+  if (!mine.size) return json({ show: false });
+  return json({
+    show: true,
+    monday: window.monday,
+    closesOn: window.closesOn,
+    answered: answers.size > 0,
+    days: week.map((day) => ({
+      day,
+      name: DAY_NAMES[dow(day)],
+      meal: menu.get(dayOfWeek(day))?.meal ?? null,
+      on: mine.has(day),
+      taking: answers.has(day) ? answers.get(day) : null,
+    })),
+  });
+}
+
+/** POST /api/me/lunch/week { days: [{ day, taking }] } or { none: true } */
+export async function saveMyLunchWeek(ctx) {
+  const staff = await meOf(ctx);
+  const settings = await settingsOf(ctx.db);
+  const window = windowFor(nowIn(settings.timezone), settings.schedule);
+  if (!settings.on || !window.open) throw forbidden('The lunch list is shut. Ask the kitchen from My lunch instead.');
+  const body = await readJson(ctx.request);
+  const week = window.days;
+  const [{ byStaff }, already] = await Promise.all([
+    rosteredIn(ctx.db, week),
+    ctx.db.prepare('SELECT day FROM lunch_order WHERE staff_id = ?1 AND day BETWEEN ?2 AND ?3')
+      .bind(staff.id, week[0], week[6]).all().catch(() => ({ results: [] })),
+  ]);
+  const allowed = new Set([...(byStaff.get(Number(staff.id)) ?? []), ...(already.results ?? []).map((r) => r.day)]);
+  const said = bool(body.none, false)
+    ? [...allowed].map((day) => ({ day, taking: false }))
+    : (Array.isArray(body.days) ? body.days.slice(0, 7) : []);
+  const statements = said
+    .filter((d) => allowed.has(String(d.day ?? '')))
+    .map((d) => ctx.db.prepare(
+      `INSERT INTO lunch_order (staff_id, day, taking, at) VALUES (?1, ?2, ?3, datetime('now'))
+       ON CONFLICT (staff_id, day) DO UPDATE SET taking = ?3, at = datetime('now')`,
+    ).bind(staff.id, String(d.day), d.taking ? 1 : 0));
+  if (!statements.length) throw badRequest('None of those days could be saved: the rota for that week has changed. Open My day again.');
+  await ctx.db.batch(statements);
+  return json({ ok: true, saved: statements.length, taking: said.filter((d) => d.taking && allowed.has(d.day)).length });
 }

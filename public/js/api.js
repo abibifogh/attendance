@@ -292,6 +292,11 @@ export const api = {
   // Names, numbers and addresses. Everybody signed in, and nothing else on it.
   directory: () => request('/api/directory'),
   myWeek: (from) => request(`/api/me/week${from ? `?from=${from}` : ''}`),
+  lunchRemind: () => request('/api/lunch/remind', { method: 'POST', body: {} }),
+  lunchAsking: () => request('/api/lunch/asking'),
+  saveLunchAsking: (body) => request('/api/lunch/asking', { method: 'POST', body }),
+  myLunchPrompt: () => request('/api/me/lunch/ask'),
+  saveMyLunchWeek: (body) => request('/api/me/lunch/week', { method: 'POST', body }),
   myDutyTick: (body) => request('/api/me/duties/tick', { method: 'PUT', body }),
   attDuties: (from, to) => request(`/api/att/duties?from=${from}&to=${to}`),
   attAssignDuty: (body) => request('/api/att/duties/assign', { method: 'PUT', body }),

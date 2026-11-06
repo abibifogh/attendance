@@ -63,6 +63,7 @@ export async function renderAttLunch(params = {}) {
     ),
 
     windowLine(data, window, thisIsTheWeek, reload),
+    askingCard(data.asking, reload),
 
     // ABOVE EVERYTHING THAT IS ONLY READING. The rest of this screen is a
     // count and three lists; this is the one part somebody has to decide
@@ -203,7 +204,113 @@ export async function renderLunchSetup() {
   const host = h('div');
   const data = await api.lunch().catch((err) => ({ error: err.message }));
   const reload = async () => mount(host, ...(await renderLunchSetup()).childNodes);
-  mount(host, data.error ? emptyState('Lunch is not set up', data.error) : linkCard(data, reload));
+  mount(host, data.error ? emptyState('Lunch is not set up', data.error) : linkCard(data, reload),
+    data.error ? null : await askingSetup());
+  return host;
+}
+
+const REACH = {
+  app: ['HIVE app', 'good'],
+  text: ['Text, with their own link', 'info'],
+  none: ['No app, no phone number', 'bad'],
+};
+
+/**
+ * Asking for the week being ordered: how many were asked, ordered, said no
+ * and have not answered, who those are and how each is reached, and a
+ * button to remind them now rather than wait.
+ */
+function askingCard(asking, reload) {
+  if (!asking) return null;
+  const sayAt = (stamp) => (stamp ? whenShort(stamp) : null);
+  const tile = (label, value, sub, warn = false) => h('div.lunch-ask-tile', { class: warn ? 'is-warn' : '' },
+    h('small', label), h('b', String(value)), h('span', sub));
+  return card(`Asking for the week of ${fmtDayShort(asking.monday)}`, {
+    wide: true,
+    cls: 'no-print',
+    note: asking.on
+      ? [asking.askAt ? `Asked ${sayAt(asking.askAt)}` : null, asking.remindAt ? `reminder ${sayAt(asking.remindAt)}` : null].filter(Boolean).join(' · ')
+      : 'Asking is switched off in Settings',
+  },
+  h('div.lunch-ask-tiles',
+    tile('Asked', asking.asked, asking.skipped ? `${asking.skipped} do not take lunch` : 'On the rota that week'),
+    tile('Ordered', asking.ordered, `${asking.lunches} lunches so far`),
+    tile('Not eating', asking.none, 'Said no for the week'),
+    tile('Not answered', asking.waiting.length, asking.remindAt ? 'Reminded before it shuts' : 'Not reminded', asking.waiting.length > 0)),
+  asking.waiting.length
+    ? h('div',
+      h('div.btn-row', { style: { justifyContent: 'flex-end', margin: '.6rem 0' } },
+        h('button.btn.btn-primary.btn-sm', {
+          type: 'button',
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try {
+              const out = await api.lunchRemind();
+              toast(`${out.reached} reminded.${out.notReached.length ? ` Could not reach ${out.notReached.join(', ')}.` : ''}`, out.notReached.length ? 'warn' : 'good');
+              await reload();
+            } catch (err) {
+              toast(err.message, 'bad');
+              e.target.disabled = false;
+            }
+          },
+        }, `Remind the ${asking.waiting.length} now`)),
+      h('div.lunch-waiting', asking.waiting.map((p) => h('div.lunch-waiting-row',
+        h('div', h('strong', p.name), h('div', h('small.muted',
+          `${p.days} day${p.days === 1 ? '' : 's'} on the rota${p.remindedAt ? ' · reminded' : ''}`))),
+        h('span.pill', { class: REACH[p.reach]?.[1] ?? '' }, REACH[p.reach]?.[0] ?? p.reach)))))
+    : h('p.muted', { style: { marginBottom: 0 } }, 'Everybody asked has answered.'));
+}
+
+/** Settings › Rota & clocking › Lunch: when to ask, when to remind, and who. */
+async function askingSetup() {
+  const host = h('div');
+  const data = await api.lunchAsking().catch((err) => ({ error: err.message }));
+  if (data.error) { mount(host, h('p.muted', data.error)); return host; }
+  const on = h('input', { type: 'checkbox', checked: data.on });
+  const at = h('input', { type: 'time', value: data.at });
+  const hours = h('select', [0, 2, 3, 4, 6, 8, 12, 24].map((n) => h('option', { value: n, selected: n === data.remindHours },
+    n ? `${n} hours before it shuts` : 'No reminder')));
+  const text = h('input', { type: 'checkbox', checked: data.text });
+  const cc = h('input', { type: 'checkbox', checked: data.cc });
+  const takes = new Set(data.staff.filter((s) => s.takes).map((s) => s.id));
+  const groups = new Map();
+  for (const s of data.staff) {
+    const g = s.department || 'No department';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(s);
+  }
+  const counter = h('small.muted');
+  const count = () => { counter.textContent = `${takes.size} of ${data.staff.length} take lunch`; };
+  count();
+  const save = async () => {
+    try {
+      await api.saveLunchAsking({
+        on: on.checked, at: at.value, remindHours: Number(hours.value), text: text.checked, cc: cc.checked,
+        skip: data.staff.filter((s) => !takes.has(s.id)).map((s) => s.id),
+      });
+      toast('Saved.', 'good');
+    } catch (err) { toast(err.message, 'bad'); }
+  };
+  mount(host, card('Asking staff to order', { wide: true, cls: 'late-setup' },
+    h('label.late-switch', on, h('span', h('strong', 'Ask everybody when the list opens'),
+      h('small.muted', 'A notice on their phone and the order card on My day until they answer. By text, with a link of their own, for staff without the app.'))),
+    h('div.field-row',
+      h('label.field', h('span', 'Send at'), at, h('small.muted', 'On the day the list opens, not at midnight')),
+      h('label.field', h('span', 'Remind whoever has not answered'), hours)),
+    h('label.late-switch', text, h('span', h('strong', 'Text staff without the app'),
+      h('small.muted', 'The same two messages, each with their own lunch link. Costs a text each.'))),
+    h('label.late-switch', cc, h('span', h('strong', 'Copy the kitchen on the reminder'),
+      h('small.muted', 'Whoever runs Lunch is told who is still to answer.'))),
+    h('h3.late-setup-h', 'Who takes lunch'),
+    h('p.muted', { style: { margin: '0 0 .4rem' } },
+      'Untick anybody who does not take lunch. They are never asked or reminded, and the kitchen is not told they have not answered. They can still order if they want to.'),
+    counter,
+    h('div.lunch-takers', [...groups.entries()].map(([g, people]) => h('div.lunch-takers-group',
+      h('strong', g),
+      people.map((s) => h('label.tickline',
+        h('input', { type: 'checkbox', checked: takes.has(s.id), onchange: (e) => { if (e.target.checked) takes.add(s.id); else takes.delete(s.id); count(); } }),
+        h('span', s.name)))))),
+    h('div.btn-row', h('button.btn.btn-primary', { type: 'button', onclick: save }, 'Save'))));
   return host;
 }
 

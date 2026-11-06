@@ -158,7 +158,7 @@ test('every notification kind now emails by default', () => {
   // travels with the emailed link.
   // And a contract sent to a member of staff: the email goes with the link
   // itself, so the notice on their phone is a push and nothing more.
-  const notEmail = new Set([...pushOnly, 'handbook.reminder', 'corr.sign_code', 'people.sign_code', 'people.contract_sent', 'rota.duty_tomorrow']);
+  const notEmail = new Set([...pushOnly, 'handbook.reminder', 'corr.sign_code', 'people.sign_code', 'people.contract_sent', 'rota.duty_tomorrow', 'lunch.ask', 'lunch.remind', 'lunch.waiting']);
   for (const k of KINDS.filter((x) => !notEmail.has(x.key))) assert.ok(goesOut({}, k.key, 'email'), `${k.key} emails`);
   assert.equal(goesOut({}, 'corr.sign_code', 'email'), false);
   assert.equal(goesOut({}, 'corr.sign_code', 'text'), true);

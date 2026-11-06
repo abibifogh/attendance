@@ -8755,3 +8755,28 @@ button.lp-row:disabled { cursor: default; }
 @media print {
   .cover-pair .cover-mast { display: none; }
 }
+
+/* The lunch list: the order card on My day, and asking on the Lunch page. */
+.lunch-ask { background: var(--surface); border: 2px solid var(--warn); border-radius: var(--radius); padding: .9rem 1rem; display: flex; flex-direction: column; gap: .6rem; margin-bottom: 1rem; }
+.lunch-ask.is-done { border-width: 1px; border-color: var(--border); }
+.lunch-ask-head { display: flex; gap: .6rem; align-items: flex-start; }
+.lunch-ask-head strong { display: block; font-size: 1rem; }
+.lunch-ask-head small { color: var(--text-dim); font-size: .8rem; }
+.lunch-ask-icon { color: var(--warn); display: inline-flex; flex: none; margin-top: 2px; }
+.lunch-ask-days { display: flex; flex-direction: column; gap: .35rem; }
+.lunch-ask-day { display: flex; align-items: center; gap: .6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .45rem .6rem; min-height: 40px; }
+.lunch-ask-day input { width: 18px; height: 18px; flex: none; }
+.lunch-ask-day strong { width: 4.5rem; flex: none; font-size: .9rem; }
+.lunch-ask-meal { flex: 1; font-size: .8rem; color: var(--text-dim); }
+.lunch-ask-day.is-off { opacity: .55; }
+.lunch-ask-go { width: 100%; min-height: 44px; }
+.lunch-ask-none { border: 0; background: none; color: var(--text-dim); font-weight: 600; text-decoration: underline; padding: .3rem 0; align-self: center; cursor: pointer; font: inherit; }
+.lunch-ask-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; }
+.lunch-ask-tile { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .55rem .7rem; }
+.lunch-ask-tile small { display: block; font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.lunch-ask-tile b { display: block; font-size: 1.5rem; }
+.lunch-ask-tile span { font-size: .75rem; color: var(--text-dim); }
+.lunch-ask-tile.is-warn { border-color: var(--warn); background: var(--warn-soft); }
+.lunch-takers { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .8rem; margin: .5rem 0 .8rem; }
+.lunch-takers-group { display: flex; flex-direction: column; }
+@media (max-width: 640px) { .lunch-ask-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
