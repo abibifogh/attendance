@@ -449,7 +449,7 @@ async function startFrom(month, reload) {
  * lock that is opened once in the morning is a lock that is open all day to
  * whoever walks past the desk.
  */
-function lockScreen(access, reload) {
+export function lockScreen(access, reload) {
   if (access.state === 'setup') return choosePin(access, reload);
   return askPin(access, reload);
 }

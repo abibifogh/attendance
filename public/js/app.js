@@ -45,6 +45,7 @@ import { renderAttLunch } from './views/att-lunch.js';
 import { renderAttMedical } from './views/att-medical.js';
 import { renderTillReports } from './views/till-reports.js';
 import { renderAttPayrollTab } from './views/att-payroll.js';
+import { renderPayCalculator } from './views/pay-calculator.js';
 import { renderAttLeave } from './views/att-leave.js';
 import { renderAttSignoff } from './views/att-signoff.js';
 import { renderPeople } from './views/people.js';
@@ -225,7 +226,8 @@ const ROUTES = [
   { group: 'me', tab: 'Handbook', seg: 'FAQ', part: 'handbook', mgroup: 'people', path: 'hr-faq', label: 'Handbook', permission: null, render: renderHrFaq, live: ['people'] },
   { group: 'me', tab: 'Guide', mgroup: 'mine', mtab: 'Guide', path: 'guide', label: 'Guide', permission: null, render: renderGuide },
 
-  { group: 'money', tab: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
+  { group: 'money', tab: 'Payroll', seg: 'Payroll', path: 'att-payroll', label: 'Payroll', permission: 'hr_pay', render: renderAttPayrollTab, live: ['pay', 'attendance'] },
+  { group: 'money', tab: 'Payroll', seg: 'Calculator', part: 'att-payroll', path: 'pay-calculator', label: 'Payroll', permission: 'hr_pay', render: renderPayCalculator },
   { group: 'money', tab: 'Advances', seg: 'Advances', path: 'att-advances', label: 'Advances', permission: 'hr_pay', render: renderAttAdvances, live: ['pay'] },
   { group: 'money', tab: 'Advances', seg: 'Till shortages', part: 'att-advances', path: 'till-shortages', label: 'Advances', permission: 'hr_pay', render: renderTillShortages, live: ['pay'] },
   { group: 'money', tab: 'Advances', seg: 'Late charges', part: 'att-advances', path: 'late-charges', label: 'Advances', permission: 'hr_pay', render: renderLateCharges, live: ['pay', 'attendance'] },

@@ -449,6 +449,7 @@ export const api = {
   payrollRemoveSeverance: (id) => request(`/api/payroll/severance/${id}`, { method: 'DELETE' }),
   payrollReturns: (month) => request(`/api/payroll/returns?month=${encodeURIComponent(month)}${companyQuery('&')}`),
   payrollAccess: () => request('/api/payroll/access'),
+  payCalculate: (body) => request('/api/payroll/calculator', { method: 'POST', body }),
   payrollUnlock: (body) => request('/api/payroll/unlock', { method: 'POST', body }),
   payrollSetPin: (body) => request('/api/payroll/pin', { method: 'POST', body }),
   payrollResetPin: (id) => request(`/api/payroll/pin/${id}`, { method: 'DELETE' }),

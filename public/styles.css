@@ -8741,3 +8741,12 @@ button.lp-row:disabled { cursor: default; }
 .today-duty { display: inline-block; margin-left: .35rem; font-size: .68rem; font-weight: 700; padding: 0 .4rem; border-radius: 999px; border: 1px solid var(--warn); vertical-align: middle; }
 .lunch-cook { font-size: .75rem; color: var(--text-dim); margin-top: .15rem; }
 .duty-shift-list { max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .3rem .6rem; }
+
+/* Money › Payroll › Calculator */
+.calc-form { display: flex; flex-direction: column; gap: .8rem; max-width: 46rem; }
+.calc-headline { display: flex; flex-wrap: wrap; gap: 2rem; margin: 1rem 0 .6rem; }
+.calc-headline small { display: block; color: var(--text-dim); font-size: .78rem; }
+.calc-headline b { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.calc-table { max-width: 34rem; }
+.calc-table td.num, .calc-steps td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calc-steps { margin-top: .6rem; max-width: 34rem; }

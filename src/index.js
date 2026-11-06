@@ -69,6 +69,7 @@ import * as medical from './routes/medical.js';
 import * as payroll from './routes/payroll.js';
 import { maintenanceWantsShifts, sendAdminShifts, sendDeskShifts } from './lib/maintenance-shifts.js';
 import * as payAccess from './routes/payroll-access.js';
+import * as payCalc from './routes/pay-calculator.js';
 import * as lunch from './routes/lunch.js';
 import * as sign from './routes/sign.js';
 import * as prep from './routes/sign-prep.js';
@@ -511,6 +512,7 @@ export const ROUTES = [
   // Where somebody stands with the lock, and the code that opens it. Outside
   // the lock by necessity: a screen that cannot ask for the code is a screen
   // nobody can get into.
+  ['POST', '/api/payroll/calculator', 'hr_pay', payCalc.calculate],
   ['GET', '/api/payroll/access', 'hr_pay', payAccess.myAccess],
   ['POST', '/api/payroll/unlock', 'hr_pay', payAccess.unlock],
   ['POST', '/api/payroll/pin', 'hr_pay', payAccess.setPin],
