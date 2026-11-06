@@ -321,6 +321,53 @@ function balanceLine(data) {
   );
 }
 
+const POT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 11h16v3a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z"></path><path d="M2 11h20M9 4c0 1.5 1 1.5 1 3M13 4c0 1.5 1 1.5 1 3"></path></svg>';
+const PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>';
+
+/**
+ * A duty on their shift: staff lunch, the common areas. In full on the day
+ * itself, with what to do ticked off as it gets done; a tag on the days
+ * ahead, so the week shows when it is coming.
+ */
+function dutyBand(duty, entry, data) {
+  const lunch = duty.kind === 'lunch';
+  if (entry.day !== data.today) {
+    if (entry.day < data.today) return null;
+    return h('span.duty-tag', { class: lunch ? 'is-lunch' : '' }, `+ ${duty.name}`);
+  }
+  const icon = h('span.duty-icon');
+  icon.innerHTML = lunch ? POT : PLUS;
+  const done = new Set(duty.done ?? []);
+  return h('div.duty-band', { class: lunch ? 'is-lunch' : '' },
+    h('div.duty-head', icon,
+      h('strong', lunch ? `You make ${duty.name.toLowerCase()} today` : `${duty.name} too, today`)),
+    lunch || duty.readyBy
+      ? h('div.duty-facts',
+        lunch && duty.plates != null
+          ? h('div', h('b', String(duty.plates)), h('small', 'eating, from the Lunch list'))
+          : null,
+        duty.readyBy ? h('div', h('b', duty.readyBy), h('small', 'ready by')) : null)
+      : null,
+    duty.by ? h('small.duty-by', `Added by ${duty.by}`) : null,
+    duty.steps?.length
+      ? h('div.duty-steps', duty.steps.map((step, i) => h('label.duty-step',
+        h('input', {
+          type: 'checkbox',
+          checked: done.has(i),
+          onchange: async (e) => {
+            try {
+              const out = await api.myDutyTick({ dutyId: duty.dutyId, day: entry.day, step: i, on: e.target.checked });
+              duty.done = out.done;
+            } catch (err) {
+              e.target.checked = !e.target.checked;
+              toast(err.message, 'bad');
+            }
+          },
+        }),
+        h('span', step))))
+      : null);
+}
+
 /** One day, as somebody reads their own week. */
 function dayRow(entry, data) {
   const when = new Date(`${entry.day}T12:00:00Z`)
@@ -366,6 +413,7 @@ function dayRow(entry, data) {
               : null)
         : null,
       what,
+      entry.shift ? (entry.duties ?? []).map((d) => dutyBand(d, entry, data)) : null,
       entry.availability
         ? h('small.muted', entry.availability.status === 'preferred'
           ? `★ you asked for this day${entry.availability.from ? ` ${entry.availability.from}–${entry.availability.to}` : ''}`

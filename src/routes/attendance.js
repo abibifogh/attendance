@@ -684,6 +684,22 @@ export async function day(ctx) {
   }
 
   const order = { red: 0, amber: 1, green: 2, grey: 3 };
+  // Duties added to somebody's shift that day: who makes staff lunch, who
+  // has the common areas as well.
+  const dutyRows = await ctx.db.prepare(
+    `SELECT dd.staff_id, d.name FROM rota_duty_day dd JOIN rota_duty d ON d.id = dd.duty_id AND d.active = 1
+      WHERE dd.day = ? ORDER BY d.sort`,
+  ).bind(target).all().catch(() => ({ results: [] }));
+  const dutiesOf = new Map();
+  for (const r of dutyRows.results ?? []) {
+    if (!dutiesOf.has(Number(r.staff_id))) dutiesOf.set(Number(r.staff_id), []);
+    dutiesOf.get(Number(r.staff_id)).push(r.name);
+  }
+  for (const r of rows) {
+    const mine = dutiesOf.get(Number(r.staff?.id));
+    if (mine && r.shift) r.duties = mine;
+  }
+
   rows.sort((a, b) => (a.open === b.open ? 0 : a.open ? -1 : 1)
     || (order[a.colour] ?? 9) - (order[b.colour] ?? 9)
     || a.staff.name.localeCompare(b.staff.name));

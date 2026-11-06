@@ -50,6 +50,14 @@ export const KINDS = [
       + 'somebody finds out about Saturday on Saturday.',
   },
   {
+    key: 'rota.duty_tomorrow',
+    group: 'rota',
+    label: 'A duty on your shift tomorrow',
+    who: 'Whoever has been given one, such as staff lunch',
+    when: 'The evening before, at 18:00',
+    ways: ['push'],
+  },
+  {
     key: 'rota.draft_due',
     group: 'rota',
     label: 'The draft rota is due',

@@ -13,6 +13,8 @@ import {
 import * as att from './routes/attendance.js';
 import * as suggest from './routes/suggest.js';
 import * as mine from './routes/me.js';
+import * as duties from './routes/duties.js';
+import { tellDutiesTomorrow } from './lib/duties.js';
 import * as onboarding from './routes/onboarding.js';
 import * as directory from './routes/directory.js';
 import * as swaps from './routes/swaps.js';
@@ -188,6 +190,14 @@ export const ROUTES = [
   ['POST', '/api/att/punches', 'att_manage', att.addPunch],
 
   ['GET', '/api/att/roster', ['att_rota', 'att_rota_view', 'att_reports'], att.getRoster],
+  ['GET', '/api/att/duties', ['att_rota', 'att_rota_view', 'att_reports', 'lunch'], duties.dutyRows],
+  ['PUT', '/api/att/duties/assign', 'att_rota', duties.assignDuty],
+  ['POST', '/api/att/duties/fill', 'att_rota', duties.fillDuties],
+  ['GET', '/api/att/duties/setup', 'att_setup', duties.dutySetup],
+  ['POST', '/api/att/duties/setup', 'att_setup', duties.createDuty],
+  ['PUT', '/api/att/duties/setup/:id', 'att_setup', duties.updateDuty],
+  ['DELETE', '/api/att/duties/setup/:id', 'att_setup', duties.deleteDuty],
+  ['PUT', '/api/me/duties/tick', 'att_me', duties.tickMyDuty],
 
   // How the rota is treating people. Whoever builds it needs this most,
   // which is why it is not behind the reports permission.
@@ -1197,6 +1207,11 @@ export default {
       const drafted = await watchRotaDraft(env.DB, { ctx: { env, executionContext } })
         .catch((err) => { console.error('Draft rota watch failed', err); return {}; });
       if (drafted.sent) console.log(`Draft rota: ${drafted.sent} reminders`);
+
+      // Whoever has a duty on tomorrow's shift is told the evening before.
+      const dutiesTold = await tellDutiesTomorrow(env.DB, { ctx: { env, executionContext } })
+        .catch((err) => { console.error('Duty notices failed', err); return {}; });
+      if (dutiesTold.told) console.log(`Duties: ${dutiesTold.told} told for tomorrow`);
 
       // And the closing report at the front desk: twenty minutes before a
       // reception shift ends, and again twenty minutes after if it is not in.

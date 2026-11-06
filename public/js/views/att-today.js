@@ -479,7 +479,8 @@ export async function renderAttToday(params) {
         href: `#/att-staff?id=${r.staff.id}&day=${day}`,
         onclick: (e) => { e.preventDefault(); navigate('att-staff', { id: r.staff.id, day }); },
       }, r.staff.name),
-      h('small.tday-sub', shiftLine(r)),
+      h('small.tday-sub', shiftLine(r),
+        (r.duties ?? []).map((name) => h('span.today-duty', `+ ${name}`))),
       pill(r)),
     track(r),
     h('div.tday-act', rowActions(r) ?? levyButton(r.staff, { cls: 'tday-mini.is-link', label: '− Bonus' })));

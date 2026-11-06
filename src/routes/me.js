@@ -6,6 +6,7 @@ import {
   summarise, toMinutes,
 } from '../lib/attendance.js';
 import { createNotice } from '../lib/notices.js';
+import { myDuties } from '../lib/duties.js';
 import {
   firstName, sayHours, sayRange, sayShortDate, sayTime,
 } from '../lib/email-design.js';
@@ -390,6 +391,14 @@ export async function myWeek(ctx) {
         }
         : null,
     });
+  }
+
+  // Duties added to their shifts: staff lunch, the common areas. Only on a
+  // shift they can see, so a duty on a draft rota stays as unpublished as the
+  // shift it is on.
+  const duties = await myDuties(ctx.db, staff.id, from, to).catch(() => new Map());
+  for (const d of days) {
+    if (d.shift && duties.has(d.day)) d.duties = duties.get(d.day);
   }
 
   // Whether the property shows people their own balance. Worked out here and

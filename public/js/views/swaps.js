@@ -111,6 +111,7 @@ function offerCard(swap, { onTake, onDrop, mine = false }) {
     back,
     mine ? null : taken,
     swap.reason ? h('div.swap-note', `“${swap.reason}”`) : null,
+    swap.duties?.length ? h('div.swap-note', `Comes with: ${swap.duties.join(', ')}`) : null,
     foot,
   ].filter(Boolean);
   box.append(...parts);

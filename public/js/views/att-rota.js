@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   fmtDayShort, fmtSince, fmtStamp, h, keepScroll, mount, shiftDay, toast, todayISO,
 } from '../util.js';
-import { bulkUpload, card, emptyState, moreActions, table } from './components.js';
+import { bulkUpload, card, dropdownMenu, emptyState, moreActions, table } from './components.js';
 import { showPublishHistory, showWhoHeard } from './rota-heard.js';
 import { rotaReviewParts } from './rota-review.js';
 import { printButton } from '../print.js';
@@ -1579,6 +1579,7 @@ export async function renderAttRota(params) {
 
     // The row above the names is about the same window, so it moves with it.
     redrawUnfilled();
+    drawDuties();
   };
 
   /** Queue a change to one card and redraw whichever grid is on screen. */
@@ -2026,6 +2027,147 @@ export async function renderAttRota(params) {
     );
   };
 
+  // -------------------------------------------------------------------------
+  // Duties on a shift.
+  //
+  // Staff lunch, the common areas, the laundry: a job somebody does on top of
+  // the shift they already have. A row per duty above the people says who has
+  // it each day and turns red on a day nobody does; the shift card of whoever
+  // has it carries a tag; and the card's own menu offers it ("+ Also: Laundry")
+  // so it can be given without a second card on the day.
+  // -------------------------------------------------------------------------
+  let duties = null;
+  let dutyTicket = 0;
+  const dutyFor = (duty) => !duty.department
+    || visible.some((r) => (r.staff.department || '') === duty.department);
+  const firstName = (name) => String(name ?? '').split(/\s+/)[0];
+
+  const giveDuty = async (dutyId, day, staffId, on) => {
+    try {
+      await api.attAssignDuty({ dutyId, day, staffId, on });
+      await drawDuties();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  const dutyCell = (duty, day, c) => {
+    if (!c) return null;
+    const lines = [
+      ...c.byShift.map((p) => h('span.rota-duty-own', `${firstName(p.name)} · own shift`)),
+      ...c.added.map((p) => h('span.rota-duty-added', `+ ${firstName(p.name)}`)),
+    ];
+    // A day gone by is history, not something to fix: no red on it.
+    const gap = c.gap && day >= data.today;
+    const face = h('span.rota-duty-face', { class: gap ? 'is-gap' : (lines.length ? '' : 'is-none') },
+      lines.length ? lines : (gap ? 'Nobody' : '—'));
+    if (!mayEdit || day < data.today) return h('div.rota-duty-cell', face);
+    const items = c.eligible.map((e) => ({
+      label: `${e.has ? '✓ ' : ''}${e.name} · ${e.shift}`
+        + `${duty.fair ? ` · ${e.count} this month` : ''}`
+        + `${e.ok ? '' : ` · starts ${e.startsAt}`}`,
+      title: e.has ? 'Take it off them' : (e.ok ? null : `Starts after ${duty.readyBy}`),
+      onClick: () => (e.ok || e.has
+        ? giveDuty(duty.id, day, e.staffId, !e.has)
+        : toast(`${firstName(e.name)} starts at ${e.startsAt}, after ${duty.name.toLowerCase()} is due at ${duty.readyBy}.`, 'warn')),
+    }));
+    if (!items.length) items.push({ label: duty.department ? `Nobody in ${duty.department} is on this day` : 'Nobody is on this day' });
+    const menu = dropdownMenu({ label: face, title: `Who has ${duty.name.toLowerCase()} on ${fmtDayShort(day)}`, items });
+    menu.classList.add('rota-duty-pick');
+    return menu;
+  };
+
+  const dutyRow = (duty) => {
+    const days = duties.days.map((d) => ({ day: d.day, c: d.duties.find((x) => x.dutyId === duty.id) }));
+    const gaps = days.filter((x) => x.c?.gap && x.day >= data.today).length;
+    return h('tr.rota-duty-row', { 'data-duty': duty.id },
+      h('td.rota-who',
+        h('div.rota-who-in',
+          h('div.rota-who-text',
+            h('div.rota-who-name', h('span.rota-who-label', duty.name)),
+            h('small.muted', [duty.department, duty.readyBy ? `ready by ${duty.readyBy}` : null].filter(Boolean).join(' · ')),
+            mayEdit && gaps
+              ? h('button.btn-sm.rota-duty-fill', {
+                type: 'button',
+                title: duty.fair ? 'Each empty day to whoever has had it least this month' : 'Each empty day to the likeliest person on',
+                onclick: async (e) => {
+                  e.target.disabled = true;
+                  try {
+                    const out = await api.attFillDuty({ dutyId: duty.id, from: [data.today, data.days[0]].sort().pop(), to: data.days[data.days.length - 1] });
+                    toast(out.filled ? `${out.filled} day${out.filled === 1 ? '' : 's'} filled.` : 'Nobody could take the empty days.', out.filled ? 'good' : 'warn');
+                    await drawDuties();
+                  } catch (err) {
+                    toast(err.message, 'bad');
+                  } finally {
+                    if (e.target.isConnected) e.target.disabled = false;
+                  }
+                },
+              }, duty.fair ? 'Fill the week fairly' : 'Fill the empty days')
+              : null,
+          ))),
+      mayEdit ? h('td') : null,
+      ...days.map(({ day, c }) => h('td', { class: dayClass(day) }, dutyCell(duty, day, c))),
+    );
+  };
+
+  /** The tags on the shift cards, and "+ Also" in each card's own list. */
+  const paintDutyTags = () => {
+    for (const [key, drawn] of cells) {
+      const wrap = drawn.node?.querySelector('.rota-cellwrap');
+      if (!wrap) continue;
+      wrap.querySelectorAll('.rota-duty-tag').forEach((n) => n.remove());
+      const titleButton = wrap.querySelector('.rota-title');
+      for (const d of duties?.cells?.[key] ?? []) {
+        const tag = h('span.rota-duty-tag', `+ ${d.name}`);
+        if (titleButton) titleButton.before(tag); else wrap.append(tag);
+      }
+      drawn.select.querySelectorAll('option[data-duty]').forEach((o) => o.remove());
+      drawn.select.dataset.prev = drawn.select.value;
+      if (!mayEdit || !duties || drawn.select.value === '') continue;
+      const [staffId, day] = key.split('|');
+      if (day < data.today) continue;
+      const row = staffById.get(staffId);
+      const onDay = duties.days.find((d) => d.day === day);
+      if (!row || !onDay) continue;
+      for (const duty of duties.duties) {
+        const e = onDay.duties.find((x) => x.dutyId === duty.id)?.eligible
+          .find((x) => String(x.staffId) === staffId);
+        if (!e || !(e.ok || e.has)) continue;
+        drawn.select.append(h('option', { value: `duty:${duty.id}`, 'data-duty': '1' },
+          e.has ? `✓ Also: ${duty.name} (take it off)` : `＋ Also: ${duty.name}`));
+      }
+      if (drawn.dutyHooked) continue;
+      drawn.dutyHooked = true;
+      // Caught on the way down, before the cell's own handler reads "duty:3"
+      // as a shift and stages it.
+      drawn.node.addEventListener('change', (ev) => {
+        const sel = ev.target;
+        if (sel !== drawn.select || !String(sel.value).startsWith('duty:')) return;
+        ev.stopPropagation();
+        const dutyId = Number(sel.value.slice(5));
+        sel.value = sel.dataset.prev ?? '';
+        const has = (duties?.cells?.[key] ?? []).some((d) => d.dutyId === dutyId);
+        giveDuty(dutyId, day, Number(staffId), !has);
+      }, true);
+      drawn.node.addEventListener('change', (ev) => {
+        if (ev.target === drawn.select) drawn.select.dataset.prev = drawn.select.value;
+      });
+    }
+  };
+
+  async function drawDuties() {
+    if (view !== 'people' || !peopleBody || !data.days.length) return;
+    const ticket = ++dutyTicket;
+    const got = await api.attDuties(data.days[0], data.days[data.days.length - 1]).catch(() => null);
+    if (ticket !== dutyTicket || !got) return;
+    duties = got;
+    peopleBody.querySelectorAll('tr.rota-duty-row').forEach((tr) => tr.remove());
+    const rows = (duties.duties ?? []).filter(dutyFor).map(dutyRow);
+    const after = peopleBody.querySelector('tr.rota-unfilled');
+    if (after) after.after(...rows); else peopleBody.prepend(...rows);
+    paintDutyTags();
+  }
+
   /**
    * Put the unfilled row in front of the people, or take it away.
    *
@@ -2235,6 +2377,7 @@ export async function renderAttRota(params) {
   // and the card is defined further down than the grid is.
   redrawUnfilled();
   if (view === 'positions') drawPositions();
+  drawDuties();
 
   // What pressing Publish would do, counted by the server over the whole
   // window rather than over the filtered rows. A count that moved when

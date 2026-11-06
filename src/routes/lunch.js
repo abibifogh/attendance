@@ -187,6 +187,14 @@ export async function lunchWeek(ctx) {
       note: menu.get(dayOfWeek(day))?.note ?? null,
     })),
     summary: summarise({ week, menu, orders: rows, staff: everybody }),
+    // Who makes it, each day: the Staff lunch duty on the rota.
+    cooks: ((await ctx.db.prepare(
+      `SELECT dd.day, s.name FROM rota_duty_day dd
+         JOIN rota_duty d ON d.id = dd.duty_id AND d.kind = 'lunch' AND d.active = 1
+         JOIN att_staff s ON s.id = dd.staff_id
+        WHERE dd.day BETWEEN ?1 AND ?2 ORDER BY dd.day, s.name`,
+    ).bind(week[0], week[6]).all().catch(() => ({ results: [] }))).results ?? [])
+      .reduce((acc, r) => { (acc[r.day] = acc[r.day] ?? []).push(r.name); return acc; }, {}),
     // Who is down to work and has said nothing. The only list worth chasing.
     waiting: unanswered({ week, rosteredBy: byStaff, orders: rows, staff }),
     // And who answered no. Not a list to chase, a list to check: without it

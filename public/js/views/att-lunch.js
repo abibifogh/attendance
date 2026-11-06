@@ -99,7 +99,10 @@ export async function renderAttLunch(params = {}) {
         h('tbody',
           h('tr.lunch-heads', summary.columns.map((c) => h('td',
             h('div.lunch-count', String(c.heads)),
-            h('div.lunch-of', ofWhat(data, c))))),
+            h('div.lunch-of', ofWhat(data, c)),
+            (data.cooks?.[c.day] ?? []).length
+              ? h('div.lunch-cook', `Cooking: ${data.cooks[c.day].join(', ')}`)
+              : null))),
           h('tr.lunch-meals', summary.columns.map((c) => h('td',
             c.meal
               ? h('div.lunch-meal', c.meal, c.note ? h('small.muted', c.note) : null)

@@ -160,6 +160,14 @@ export async function swapBoard(ctx) {
   if (!rules.on) return json({ on: false, offers: [], aimed: [], trades: [], mine: [] });
 
   const swaps = await liveSwaps(ctx.db, { from: today, to });
+  // Duties riding on the shifts on offer: whoever takes one takes those too,
+  // and is told so before they do.
+  const dutyRows = await ctx.db.prepare(
+    `SELECT dd.day, dd.staff_id, d.name FROM rota_duty_day dd JOIN rota_duty d ON d.id = dd.duty_id AND d.active = 1
+      WHERE dd.day BETWEEN ?1 AND ?2`,
+  ).bind(today, to).all().catch(() => ({ results: [] }));
+  const dutiesOf = (day, staffId) => (dutyRows.results ?? [])
+    .filter((r) => r.day === day && Number(r.staff_id) === Number(staffId)).map((r) => r.name);
 
   const offers = [];
   const aimed = [];
@@ -192,6 +200,7 @@ export async function swapBoard(ctx) {
         : null);
 
     const card = asCard(ds, swap, { canTake: !why, why });
+    card.duties = dutiesOf(swap.day, swap.from_staff);
 
     if (swap.kind === 'trade' && forMe) trades.push(card);
     else if (forMe) aimed.push(card);
@@ -834,6 +843,20 @@ async function settle(ctx, { swap, ds, by }) {
         WHERE id = ?1`,
     ).bind(swap.back_roster_id, swap.from_staff, `${by} · ${note}`).run();
   }
+
+  // A duty rides on its shift: whoever works it now does what was on it.
+  // Picked out before anything moves, so a swap both ways on one day does not
+  // carry each duty there and back again.
+  const dutiesOn = async (day, staffId) => ((await ctx.db.prepare(
+    'SELECT id FROM rota_duty_day WHERE day = ?1 AND staff_id = ?2',
+  ).bind(day, staffId).all().catch(() => ({ results: [] }))).results ?? []).map((r) => r.id);
+  const going = await dutiesOn(swap.day, swap.from_staff);
+  const coming = swap.back_roster_id && swap.back_day ? await dutiesOn(swap.back_day, swap.taken_by) : [];
+  const hand = (rowIds, to) => Promise.all(rowIds.map((id) => ctx.db.prepare(
+    "UPDATE OR IGNORE rota_duty_day SET staff_id = ?2, told_at = NULL, done = '[]' WHERE id = ?1",
+  ).bind(id, to).run().catch(() => null)));
+  await hand(going, swap.taken_by);
+  await hand(coming, swap.from_staff);
 
   await ctx.db.prepare(
     `UPDATE att_swap
