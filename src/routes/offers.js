@@ -11,6 +11,7 @@ import { firstUsableNumber, sendTexts, smsSetup } from '../lib/sms.js';
 import { firstName, renderMail, sayDate } from '../lib/email-design.js';
 import { ASKED_PLACEHOLDERS, hashBody, placeholdersIn, renderTemplate, sameFullName } from '../lib/people.js';
 import { siteOrigin } from '../lib/site.js';
+import { escapeHtml } from '../lib/rich-text.js';
 import { seal, unseal } from '../lib/seal.js';
 import {
   blockText, detailValues, readKeys, rowsFor,
@@ -163,8 +164,8 @@ export async function acceptedOffer(db, candidateId) {
  *
  * The same placeholders as a contract issued from a record, filled from what
  * the offer says and what the settings say. What nobody knows yet (their
- * staff number unless one is given, their address, their ID) is said in words
- * rather than left as a gap.
+ * staff number unless one is given, their address, their ID) is left out of
+ * the contract, phrase and all; see dropMissing.
  */
 async function renderFor(ctx, candidate, input) {
   const template = await ctx.db.prepare('SELECT * FROM hr_template WHERE id = ? AND active = 1')
@@ -351,6 +352,112 @@ function copyText(candidate, offer, url, settings) {
     + `Please reply by ${sayDate(String(offer.expires_at).slice(0, 10))}. The link is private to you.`;
 }
 
+const longDate = (day) => {
+  const d = new Date(`${String(day).slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(day ?? '');
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+    .replace(/^(\w+) /, '$1, ');
+};
+const plainDate = (day) => {
+  const d = new Date(`${String(day).slice(0, 10)}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+};
+const capital = (text) => { const t = String(text ?? '').trim(); return t ? t[0].toUpperCase() + t.slice(1) : t; };
+
+/**
+ * An offer of employment as a letter from the company: its letterhead, a
+ * reference and date, "Dear …", the terms in a table, how to accept, one
+ * button, and the signature of whoever made the offer.
+ */
+async function offerLetter(ctx, { offer, candidate, url, fields, reminder }) {
+  const settings = await settingsOf(ctx.db);
+  const companyId = Number(offer.company_id) || null;
+  const company = await employerName(ctx.db, { company_id: companyId });
+  const address = await employerAddress(ctx.db, { company_id: companyId });
+  const own = companyId ? await ctx.db.prepare('SELECT main, phone, email, website FROM company WHERE id = ?').bind(companyId).first().catch(() => null) : null;
+  const main = !own || own.main;
+  const phone = (main ? settings.company_phone : own?.phone) || settings.company_phone || '';
+  const website = (main ? settings.company_website : own?.website) || '';
+  const property = settings.property_name || '';
+  const trading = main && property && property.trim().toLowerCase() !== String(company).trim().toLowerCase() ? property : null;
+  const cover = await coverOf(ctx.db, { companyId, title: offer.title, name: candidate.name }).catch(() => null);
+  const logoUrl = cover?.hasLogo ? `${String(url).replace('/o/', '/api/o/')}/logo` : null;
+
+  const signer = plainName(offer.created_by);
+  const role = signer
+    ? (await ctx.db.prepare(
+      `SELECT s.job_title FROM users u JOIN att_staff s ON s.id = u.staff_id
+        WHERE u.name = ? AND u.active = 1 AND s.job_title IS NOT NULL LIMIT 1`,
+    ).bind(signer).first().catch(() => null))?.job_title ?? null
+    : null;
+
+  const first = firstName(candidate.name);
+  const until = String(offer.expires_at).slice(0, 10);
+  const where = [offer.department ? `in our ${offer.department} department` : null, property ? `at ${property}` : null].filter(Boolean).join(' ');
+  const workplace = fields.workplace && !/^at the property\.?$/i.test(fields.workplace) ? fields.workplace : null;
+  const ask = phone ? `please reply to this email or call us on ${phone}` : 'please reply to this email';
+
+  const base = {
+    company,
+    until: new Date(`${until}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' }),
+    untilLong: longDate(until),
+    logoUrl,
+    under: [trading ? `trading as ${trading}` : null, address].filter(Boolean).join(' · '),
+    reference: `Offer ${String(offer.id).padStart(5, '0')}`,
+    date: plainDate(new Date().toISOString()),
+    salutation: `Dear ${first},`,
+    signoff: reminder ? 'Kind regards,' : 'Yours sincerely,',
+    signer: signer ? { name: signer, role, onBehalf: `For and on behalf of ${company}` } : { name: company },
+    footer: [
+      [company, address, website].filter(Boolean).join(' · '),
+      `This email and its link are intended for ${candidate.name} only. If you have received it in error, please delete it and let us know.`,
+    ],
+  };
+
+  if (reminder) {
+    return {
+      ...base,
+      title: 'Your offer remains open',
+      paragraphs: [
+        { html: `This is a courteous reminder that our offer of the position of <b>${escapeHtml(offer.job_title)}</b>, `
+          + `starting on ${escapeHtml(longDate(offer.start_date))}, remains open until <b>${escapeHtml(longDate(until))}</b>. After that date the offer will lapse.` },
+        'You can read the contract and accept or decline the offer at the link below. It takes a few minutes.',
+      ],
+      closing: [`If you have any questions, or need a little more time, ${ask}.`],
+    };
+  }
+
+  return {
+    ...base,
+    confidential: true,
+    title: 'Offer of Employment',
+    paragraphs: [
+      { html: `Further to your recent interview, we are pleased to offer you the position of <b>${escapeHtml(offer.job_title)}</b>`
+        + `${where ? ` ${escapeHtml(where)}` : ''}, on the terms summarised below and set out in full in the contract of employment that accompanies this letter.` },
+    ],
+    termsLabel: 'Summary of terms',
+    terms: [
+      ['Position', offer.job_title],
+      ['Department', offer.department],
+      ['Start date', longDate(offer.start_date)],
+      ['Gross monthly salary', fields.salary],
+      ['Probation', capital(fields.probation)],
+      ['Hours', fields.hours ? capital(fields.hours) : null],
+      ['Place of work', workplace],
+      ['This offer is open until', longDate(until), { alert: true }],
+    ],
+    note: offer.message ? { label: signer ? `A note from ${signer}` : 'A note', text: offer.message } : null,
+    stepsLabel: 'How to accept',
+    steps: [
+      'Read the contract of employment in full, using the button below. You can print it or save it as a PDF.',
+      'Accept the offer by typing your full name where asked. This is your signature under the Electronic Transactions Act, 2008 (Act 772).',
+      'On your first day, bring your Ghana Card or other identity document and your SSNIT number. You will sign two paper copies of the contract, one of which is yours to keep.',
+    ],
+    belowButton: 'If you are unable to accept, you can decline on the same page.',
+    closing: [`Should you have any questions about the offer, ${ask}.`, 'We look forward to welcoming you to the team.'],
+  };
+}
+
 /**
  * Send the offer, or a reminder of it, the way the office chose: by email,
  * by text, or not at all where they will pass the link on themselves.
@@ -369,41 +476,27 @@ async function deliver(ctx, { offer, candidate, url, how, reminder = false }) {
 
   const email = String(candidate.email ?? '').trim();
   if (how === 'email' && isEmail(email)) {
+    const letter = await offerLetter(ctx, { offer, candidate, url, fields, reminder });
     const subject = reminder
-      ? `Your job offer from ${property} is open until ${replyBy}`
-      : `A job offer from ${property}: ${offer.job_title}`;
+      ? `Reminder: Offer of Employment, ${offer.job_title} (open until ${letter.until})`
+      : `Offer of Employment: ${offer.job_title}, ${letter.company}`;
     const out = await emailPersonally(ctx.db, ctx.env, {
       kind: 'recruitment.offer',
       level: 'info',
       title: subject,
-      body: reminder ? 'A reminder of your job offer.' : `We would like to offer you the job, ${first}.`,
+      body: reminder ? 'A reminder of your offer of employment.' : `An offer of employment from ${letter.company}.`,
       link: url,
       to: email,
       wanted: true,
+      // From the company, in its own name, as a letter on its letterhead.
+      senderName: letter.company,
       mail: {
         subject,
-        preheader: `${offer.job_title}, starting ${sayDate(offer.start_date)}. Please reply by ${replyBy}.`,
-        status: reminder ? 'Reminder' : 'Job offer',
-        tone: reminder ? 'warn' : 'good',
-        eyebrow: 'Hiring',
-        headline: reminder ? `Your offer is open until ${replyBy}` : `We would like to offer you the job, ${first}`,
-        intro: reminder
-          ? `${property} is waiting to hear from you about the job of ${offer.job_title}.`
-          : null,
-        panel: !reminder && offer.message
-          ? { label: plainName(offer.created_by) ? `From ${plainName(offer.created_by)}` : 'A note', text: offer.message }
-          : null,
-        facts: [
-          ['Job', offer.job_title],
-          ['Starts', sayDate(offer.start_date)],
-          fields.salary ? ['Pay', fields.salary] : null,
-          fields.probation ? ['Probation', fields.probation] : null,
-          ['Please reply by', replyBy, { strong: true }],
-        ].filter(Boolean),
-        button: 'Read the offer and contract',
-        after: 'The contract is there to read in full before you decide. You accept by signing it on your phone; '
-          + 'a six-digit code is sent to you first, so only you can sign. If it is not for you, you can say so on the same page.',
-        why: `You get this because you interviewed with ${property}. This link is yours alone. There is no attachment to open.`,
+        preheader: reminder
+          ? `Our offer of the position of ${offer.job_title} remains open until ${letter.untilLong}.`
+          : `We are pleased to offer you the position of ${offer.job_title}. Please respond by ${letter.untilLong}.`,
+        button: 'Review and accept the offer',
+        letter,
         settingsLink: false,
       },
     }).catch((err) => ({ sent: 0, reason: err.message }));

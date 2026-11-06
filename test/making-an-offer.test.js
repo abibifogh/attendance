@@ -98,7 +98,7 @@ async function offered(t, extra = {}) {
   const person = await aCandidate(t.db, extra.who);
   const out = await body(await makeOffer(ctx(t.db, { ...TERMS, ...extra.terms }), person.id));
   const offer = t.raw.prepare('SELECT * FROM rec_offer WHERE id = ?').get(out.id);
-  const mail = t.mails.find((m) => /job offer/i.test(m.subject));
+  const mail = t.mails.find((m) => /^Offer of Employment/.test(m.subject));
   const token = (mail?.html.match(/\/o\/([0-9a-f]{48})/) ?? [])[1] ?? (out.url ?? '').split('/o/')[1];
   return { person, out, offer, token };
 }
@@ -145,12 +145,16 @@ test('making an offer fixes the words, moves them to Offered and emails them the
     assert.ok(token, 'the email carries the link');
     assert.equal(t.raw.prepare('SELECT stage FROM rec_candidate WHERE id = ?').get(person.id).stage, 'offer');
 
-    const mail = t.mails.find((m) => /job offer/i.test(m.subject));
+    const mail = t.mails.find((m) => /^Offer of Employment/.test(m.subject));
     assert.deepEqual(mail.to, ['ama@example.com']);
-    assert.match(mail.subject, /A job offer from Somewhere Nice: Front desk agent/);
-    assert.match(mail.html, /We would like to offer you the job, Ama/);
-    assert.match(mail.html, /We would love you to join the front office team/);
-    assert.match(mail.html, /Read the offer and contract/);
+    // A letter from the company, in its own name.
+    assert.match(mail.subject, /^Offer of Employment: Front desk agent, /);
+    assert.match(mail.html, /Offer of Employment/);
+    assert.match(mail.html, /Dear Ama,/);
+    assert.match(mail.html, /Summary of terms/i);
+    assert.match(mail.html, /Review and accept the offer/);
+    assert.doesNotMatch(mail.html, /six-digit code/);
+    assert.match(mail.html, /We would love you to join the front office team/, 'the note from whoever made it');
     assert.doesNotMatch(mail.html, /\b(he|she|his|her)\b/i);
 
     const page = await body(await candidate(ctx(t.db), person.id));
@@ -280,7 +284,7 @@ test('an offer past its date cannot be accepted, and sending it again opens it f
 
     const again = await body(await resendOffer(ctx(t.db, { days: 3, sendBy: 'email' }), offer.id));
     assert.equal(again.delivered.sent, true);
-    assert.match(t.mails.at(-1).subject, /is open until/);
+    assert.match(t.mails.at(-1).subject, /\(open until /);
     assert.equal((await body(await offerHead(pub(t.db), token))).state, 'sent');
   } finally { t.restore(); }
 });
@@ -297,7 +301,7 @@ test('two days before it runs out, the candidate is reminded once', async () => 
     const first = await watchOffers(t.db, { timezone: zone, ctx: { env: ENV } });
     assert.equal(first.reminded, 1);
     assert.equal(t.mails.length, sent + 1);
-    assert.match(t.mails.at(-1).subject, /Your job offer from Somewhere Nice is open until/);
+    assert.match(t.mails.at(-1).subject, /^Reminder: Offer of Employment, Front desk agent \(open until /);
     const second = await watchOffers(t.db, { timezone: zone, ctx: { env: ENV } });
     assert.equal(second.reminded, 0);
   } finally { t.restore(); }

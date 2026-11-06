@@ -975,6 +975,9 @@ export async function emailPersonally(db, env, {
   // Given, it is who is copied instead of the property's standing copy: a
   // payslip goes to its person and to nobody else unless the sender asks.
   copyTo = undefined,
+  // The name the email comes from, where it goes out in the company's own
+  // name: an offer of employment is from the company, not from HIVE.
+  senderName = null,
 }) {
   const clean = [...new Set((Array.isArray(to) ? to : [to]).filter((a) => isEmail(a)))];
   if (!clean.length) return { sent: 0, tried: 0, reason: 'no address' };
@@ -1000,7 +1003,9 @@ export async function emailPersonally(db, env, {
 
     await sendEmail({
       apiKey,
-      from: senderWithName(from, senderNameOf(settings)),
+      from: senderName
+        ? senderWithName(from.replace(/^[^<]*<([^>]+)>.*$/, '$1'), senderName)
+        : senderWithName(from, senderNameOf(settings)),
       to: clean,
       cc: copyTo === undefined ? ccFor(settings) : copyTo,
       subject,

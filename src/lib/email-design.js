@@ -97,9 +97,92 @@ export function renderMail({ notice, propertyName, companyName = null, siteUrl =
     html: mailDocument({
       title: subject,
       preheader,
-      body: mailBody({ mail, href, settingsHref, site, propertyName, companyName }),
+      body: mail.letter
+        ? letterBody({ letter: mail.letter, button: mail.button, href })
+        : mailBody({ mail, href, settingsHref, site, propertyName, companyName }),
     }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// A letter, for the few emails that go out in the company's own name rather
+// than HIVE's: an offer of employment, its reminder. A letterhead with the
+// company's logo, name and address, a reference and a date, "Dear …", the
+// terms as a table, numbered steps, one button, and a signature.
+// ---------------------------------------------------------------------------
+
+const NAVY = '#1f3a5f';
+const SERIF = "Georgia,'Times New Roman',Times,serif";
+const SANS = 'Arial,Helvetica,sans-serif';
+
+function letterBody({ letter: L, button, href }) {
+  const p = (html, extra = '') => `<p class="m-ink" style="margin:0 0 14px;font:15px/1.7 ${SANS};color:${C.ink};${extra}">${html}</p>`;
+  const small = (text) => `<div style="margin:24px 0 8px;font:700 11px/1 ${SANS};letter-spacing:.1em;text-transform:uppercase;color:${NAVY}">${esc(text)}</div>`;
+  const out = [];
+
+  // The letterhead.
+  const logo = L.logoUrl
+    ? `<td style="width:60px;vertical-align:middle;padding-right:14px"><img src="${esc(L.logoUrl)}" width="56" height="56" alt="${esc(L.company)}" style="display:block;border:0;border-radius:50%"></td>`
+    : '';
+  out.push(`<div class="m-card m-pad" style="background:${C.card};border-top:4px solid ${NAVY};padding:24px 36px 18px;border-bottom:1px solid ${C.rule}">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>${logo}
+<td style="vertical-align:middle">
+<div style="font:600 15px/1.3 ${SERIF};letter-spacing:.14em;text-transform:uppercase;color:${NAVY}">${esc(L.company)}</div>
+${L.under ? `<div class="m-dim" style="margin-top:3px;font:12px/1.5 ${SANS};color:${C.dim}">${esc(L.under)}</div>` : ''}
+</td>
+${L.reference || L.date ? `<td class="m-dim" style="vertical-align:middle;text-align:right;font:12px/1.6 ${SANS};color:${C.dim};white-space:nowrap">${L.reference ? `Ref: ${esc(L.reference)}` : ''}${L.reference && L.date ? '<br>' : ''}${L.date ? esc(L.date) : ''}</td>` : ''}
+</tr></table></div>`);
+
+  const body = [];
+  if (L.confidential) body.push(`<div style="font:700 11px/1 ${SANS};letter-spacing:.12em;color:#8a1c1c">PRIVATE AND CONFIDENTIAL</div>`);
+  body.push(`<h1 class="m-ink" style="margin:${L.confidential ? 14 : 0}px 0 20px;font:400 28px/1.25 ${SERIF};color:${C.ink}">${esc(L.title)}</h1>`);
+  if (L.salutation) body.push(p(esc(L.salutation)));
+  for (const para of L.paragraphs ?? []) body.push(p(para.html ?? esc(para)));
+
+  const terms = (L.terms ?? []).filter((t) => Array.isArray(t) && t[1] != null && String(t[1]).trim() !== '');
+  if (terms.length) {
+    body.push(small(L.termsLabel || 'Summary of terms'));
+    body.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="m-rule" style="border-bottom:1px solid ${C.rule}">${terms.map(([k, v, opt = {}]) => `<tr>
+<td class="m-dim m-rule" style="width:38%;padding:11px 12px 11px 0;border-top:1px solid ${C.rule};font:14px/1.45 ${SANS};color:${C.dim};vertical-align:top">${esc(k)}</td>
+<td class="m-ink m-rule" style="padding:11px 0;border-top:1px solid ${C.rule};font:600 14.5px/1.45 ${SANS};color:${opt.alert ? '#8a1c1c' : C.ink};vertical-align:top">${esc(v)}</td></tr>`).join('')}</table>`);
+  }
+
+  if (L.note?.text) {
+    body.push(`<div class="m-soft" style="margin-top:18px;background:${C.soft};border:1px solid ${C.rule};padding:14px 16px">
+${L.note.label ? `<div class="m-faint" style="margin-bottom:4px;font:700 11px/1 ${SANS};letter-spacing:.1em;text-transform:uppercase;color:${C.dim}">${esc(L.note.label)}</div>` : ''}
+<div class="m-ink" style="font:14px/1.65 ${SANS};color:${C.ink}">${lines(L.note.text)}</div></div>`);
+  }
+
+  if (L.steps?.length) {
+    body.push(small(L.stepsLabel || 'Next steps'));
+    body.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${L.steps.map((step, i) => `<tr>
+<td style="width:34px;vertical-align:top;padding:2px 0 10px"><div style="width:22px;height:22px;border:1.5px solid ${NAVY};border-radius:50%;text-align:center;font:700 12px/22px ${SANS};color:${NAVY}">${i + 1}</div></td>
+<td class="m-ink" style="vertical-align:top;padding:0 0 10px;font:14.5px/1.6 ${SANS};color:${C.ink}">${esc(step)}</td></tr>`).join('')}</table>`);
+  }
+
+  if (button && href) {
+    body.push(`<table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:22px auto 8px"><tr>
+<td style="background:${NAVY};border-radius:4px;text-align:center"><a href="${esc(href)}" style="display:inline-block;padding:15px 32px;font:700 15px/1 ${SANS};color:#ffffff;text-decoration:none">${esc(button)}</a></td></tr></table>`);
+    if (L.belowButton) body.push(`<p class="m-dim" style="margin:0 0 22px;text-align:center;font:12.5px/1.5 ${SANS};color:${C.dim}">${esc(L.belowButton)}</p>`);
+  }
+
+  for (const para of L.closing ?? []) body.push(p(esc(para)));
+  if (L.signoff) body.push(p(esc(L.signoff), 'margin-bottom:0'));
+  if (L.signer?.name) {
+    body.push(`<p style="margin:12px 0 2px;font:400 21px/1.3 ${SERIF};color:${NAVY}">${esc(L.signer.name)}</p>`);
+    const under = [L.signer.role, L.signer.onBehalf].filter(Boolean).map(esc).join('<br>');
+    if (under) body.push(`<p class="m-dim" style="margin:0;font:13.5px/1.6 ${SANS};color:${C.dim}">${under}</p>`);
+  }
+  out.push(`<div class="m-card m-pad" style="background:${C.card};padding:26px 36px 28px">${body.join('\n')}</div>`);
+
+  const foot = (L.footer ?? []).filter(Boolean);
+  const fallback = href ? `Button not working? Copy this address into your browser: <a href="${esc(href)}" style="color:${C.dim};word-break:break-all">${esc(href)}</a>` : '';
+  out.push(`<div class="m-soft m-rule m-pad" style="background:#fafbfc;border-top:1px solid ${C.rule};padding:16px 36px 20px">
+<p class="m-faint" style="margin:0;font:11.5px/1.6 ${SANS};color:${C.faint}">${[...foot.map(esc), fallback].filter(Boolean).join('<br>')}</p></div>`);
+
+  return `<div class="m-bg" style="background:${C.bg};padding:20px 12px">
+<div style="max-width:620px;margin:0 auto;border:1px solid ${C.rule}">${out.join('\n')}</div>
+<p class="m-faint" style="max-width:620px;margin:10px auto 0;text-align:center;font:11px/1.4 ${SANS};color:${C.faint}">Sent with HIVE</p></div>`;
 }
 
 function clip(text, n) {
