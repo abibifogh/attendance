@@ -517,11 +517,70 @@ export const ASKED_PLACEHOLDERS = PLACEHOLDERS.filter((p) => p.ask);
  * followed by nothing is obviously wrong; one that reads "a notice period of
  * ⟨notice⟩" says which word is missing and who has to supply it.
  */
+/**
+ * The phrases about the person that are left out, whole, when the detail in
+ * them is not known yet: "of {{address}}", ", holder of {{id_type}} number
+ * {{id_number}}", ", employee number {{employee_no}}". Wrapped as optional
+ * wherever a template has them and has not said so itself, so a contract for
+ * somebody whose Ghana Card is not in yet reads "Kwame Asare of 1 Test
+ * Street (hereinafter...)" rather than "holder of an identity document
+ * number to be given on joining".
+ */
+const OPTIONAL_PHRASES = [
+  /(\s+of\s+\{\{\s*address\s*\}\})/gi,
+  /(,?\s*holder of\s+(?:an?\s+)?\{\{\s*id_type\s*\}\}(?:\s+(?:number|no\.?)\s+\{\{\s*id_number\s*\}\})?)/gi,
+  /(,?\s*(?:with\s+|bearing\s+)?(?:ID|identity) (?:card )?(?:number|no\.?)\s+\{\{\s*id_number\s*\}\})/gi,
+  /(,?\s*employee (?:number|no\.?)\s+\{\{\s*employee_no\s*\}\})/gi,
+];
+
+/** Mark the usual optional phrases, outside any [[ ]] the template already has. */
+export function optionalise(body) {
+  return String(body ?? '').split(/(\[\[[\s\S]*?\]\])/).map((part) => {
+    if (part.startsWith('[[')) return part;
+    let out = part;
+    for (const re of OPTIONAL_PHRASES) out = out.replace(re, '[[$1]]');
+    return out;
+  }).join('');
+}
+
+const has = (values, key) => {
+  const v = values?.[String(key).toLowerCase()];
+  return v != null && String(v).trim() !== '';
+};
+
+/**
+ * Optional parts: words between [[ and ]] are kept, without the brackets,
+ * when every field in them has a value, and left out whole when any is
+ * blank. Where something was left out, the punctuation either side is
+ * tidied so the sentence still reads: never ", ," or a comma before a full
+ * stop.
+ */
+export function dropMissing(body, values) {
+  const GAP = '\u0000';
+  let out = optionalise(body).replace(/\[\[([\s\S]*?)\]\]/g, (whole, inner) => {
+    // Never across a paragraph: a [[ left open by mistake must not eat the
+    // rest of the contract.
+    if (/<\/?(p|h\d|li|div)\b/i.test(inner)) return inner;
+    const keys = [...inner.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map((m) => m[1]);
+    return keys.every((k) => has(values, k)) ? inner : GAP;
+  });
+  if (!out.includes(GAP)) return out;
+  out = out
+    .replace(new RegExp(`${GAP}+`, 'g'), GAP)
+    .replace(new RegExp(`,\\s*${GAP}\\s*,`, 'g'), ',')
+    // "Kwame Asare, (hereinafter..." once what stood before the comma went.
+    .replace(new RegExp(`\\s*${GAP}\\s*,\\s*(?=\\()`, 'g'), ' ')
+    .replace(new RegExp(`\\s*${GAP}\\s*(?=[,.;:)])`, 'g'), '')
+    .replace(new RegExp(`(\\S)\\s*${GAP}\\s*(?=\\S)`, 'g'), '$1 ')
+    .replace(new RegExp(GAP, 'g'), '');
+  return out;
+}
+
 export function renderTemplate(body, values) {
   // Formatted words take their values as text, never as markup.
   const rich = isRich(body);
   const esc = (s) => (rich ? escapeHtml(s) : s);
-  return String(body ?? '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (whole, key) => {
+  return dropMissing(String(body ?? ''), values).replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (whole, key) => {
     const value = values?.[key.toLowerCase()];
     if (value == null || String(value).trim() === '') {
       const known = PLACEHOLDERS.find((p) => p.key === key.toLowerCase());

@@ -124,8 +124,9 @@ test('the offer form knows the templates, what each asks for, and how the candid
     assert.equal(setupOut.reach.email, true);
 
     const preview = await body(await previewOffer(ctx(t.db, TERMS), person.id));
-    assert.match(preview.body, /Between Example Hotels Ltd and Ama Owusu of the address given on joining/);
-    assert.match(preview.body, /employee number to be given on joining/);
+    // What the candidate has not given yet is left out whole, not filled in.
+    assert.match(preview.body, /Between Example Hotels Ltd and Ama Owusu\./);
+    assert.doesNotMatch(preview.body, /to be given on joining|employee number/);
     assert.match(preview.body, /employed as Front desk agent in Front office/);
     assert.match(preview.body, /Probation: three months/);
     assert.equal(t.raw.prepare('SELECT COUNT(*) n FROM rec_offer').get().n, 0, 'a preview sends nothing');

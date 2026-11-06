@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, mount, toast } from '../util.js';
+import { confirmAction, h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
 import { field, formDialog } from './att-shared.js';
 import { contractFlow } from '../contract-flow.js';
@@ -111,6 +111,14 @@ export async function renderPeopleTemplates() {
           })),
 
         existing
+          ? h('div.btn-row', { style: { margin: '.2rem 0 .6rem' } },
+            h('button.btn-sm', {
+              type: 'button',
+              title: 'Every saved version of this template, to read or put back',
+              onclick: () => templateHistory(existing, reload),
+            }, `Earlier versions (now v${existing.version ?? 1})`))
+          : null,
+        existing
           ? field('Status', h('select', { name: 'active' },
             h('option', { value: 'true', selected: !!existing.active }, 'In use'),
             h('option', { value: 'false', selected: !existing.active }, 'Retired')))
@@ -124,6 +132,8 @@ export async function renderPeopleTemplates() {
           active: form.get('active') !== 'false',
           ...(companies.length > 1 ? { companyId: form.get('companyId') || null } : {}),
           particulars: [...form.keys()].filter((k) => k.startsWith('pt_')).map((k) => k.slice(3)),
+          // The version this was opened at, so a save over a newer one is refused.
+          ...(existing ? { version: existing.version ?? 1 } : {}),
         };
         return existing ? api.hrUpdateTemplate(existing.id, payload) : api.hrCreateTemplate(payload);
       },
@@ -486,3 +496,41 @@ const STARTER = `TITLE OF THIS DOCUMENT
 The person signing confirms that they have read and understood this document.
 
 Dated {{today}}.`;
+
+/**
+ * Every saved version of a template, newest first: who saved it and when,
+ * the words, and "Put this back", which saves that version as the newest
+ * one. Contracts already issued are never touched.
+ */
+async function templateHistory(template, reload) {
+  const { rows = [] } = await api.hrTemplateVersions(template.id).catch((err) => { toast(err.message, 'bad'); return {}; });
+  if (!rows.length) { toast('No earlier versions kept yet.', 'warn'); return; }
+  const viewer = h('div.tpl-history-view');
+  const show = (r) => mount(viewer,
+    h('div.muted', { style: { fontSize: '.82rem', margin: '.4rem 0' } }, `Version ${r.version} · ${r.savedBy || 'unknown'} · ${String(r.savedAt).slice(0, 16)} · ${r.words} words`),
+    h('div.tpl-history-words', contractFlow(h, r.body)));
+  await formDialog({
+    wide: 'xl',
+    title: `Earlier versions of ${template.name}`,
+    submitLabel: 'Close',
+    body: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } }, 'Putting one back saves it as the newest version. Contracts and offers already sent keep their own words.'),
+      h('div.tpl-history', rows.map((r, i) => h('div.tpl-history-row',
+        h('button.btn-sm', { type: 'button', onclick: () => show(r) }, `v${r.version}`),
+        h('span', `${r.savedBy || 'unknown'} · ${String(r.savedAt).slice(0, 16)} · ${r.words} words${i === 0 ? ' · current' : ''}`),
+        i === 0 ? null : h('button.btn-sm', {
+          type: 'button',
+          onclick: async () => {
+            if (!confirmAction(`Put version ${r.version} back as the newest version of ${template.name}?`)) return;
+            try {
+              const out = await api.hrRestoreTemplateVersion(template.id, r.id);
+              toast(`Version ${r.version} is back, saved as version ${out.version}.`, 'good');
+              document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+              await reload();
+            } catch (err) { toast(err.message, 'bad'); }
+          },
+        }, 'Put this back')))),
+      viewer),
+    onSubmit: async () => true,
+  });
+}

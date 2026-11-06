@@ -76,7 +76,8 @@ test('issued to their cook it names Abibifo crafts and More and its address; the
   const t = raw.prepare("SELECT id FROM hr_template WHERE code = 'contract_cook_abibifo'").get();
   const out = await (await issueContract(ctx(db, { templateId: t.id, values: { salary: 'GH₵ [test amount] a month' } }), 1)).json();
   const body = raw.prepare('SELECT body FROM hr_contract WHERE id = ?').get(out.id).body;
-  assert.match(body, /employment of Kojo Example of .*employee number AB01/s);
+  // No address on file yet: the phrase goes, and the sentence still reads.
+  assert.match(body, /employment of Kojo Example,\s+employee number AB01 \(the "Employee"\)/);
   assert.match(body, /by Abibifo crafts and More, a\s+company/);
   assert.match(body, /place of business at 2 Example Lane, Accra/);
   assert.match(body, /as a cook, with the job title\s+Cook, in the Kitchen department/);

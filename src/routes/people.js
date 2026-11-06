@@ -1,6 +1,6 @@
 import { siteOrigin } from '../lib/site.js';
 import {
-  badRequest, bool, int, json, notFound, readJson, str,
+  HttpError, badRequest, bool, int, json, notFound, readJson, str,
 } from '../lib/http.js';
 import { getPepper, hashPin } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
@@ -1071,6 +1071,19 @@ export async function saveTemplate(ctx, id) {
     : null;
 
   if (id) {
+    // Saved over a newer version? Another tab or another phone saved this
+    // template after this one was opened. Saving now would quietly undo
+    // their changes, so it is refused and said so.
+    const now = await ctx.db.prepare('SELECT version, body, updated_at FROM hr_template WHERE id = ?').bind(Number(id)).first();
+    if (!now) throw notFound('No such template.');
+    const opened = Number(body.version);
+    if (Number.isInteger(opened) && opened > 0 && Number(now.version ?? 1) !== opened && now.body !== text) {
+      const last = await ctx.db.prepare('SELECT saved_by, saved_at FROM hr_template_rev WHERE template_id = ? ORDER BY id DESC LIMIT 1')
+        .bind(Number(id)).first().catch(() => null);
+      throw new HttpError(409, `This template was saved again after you opened it (now version ${now.version}`
+        + `${last?.saved_by ? `, by ${last.saved_by}` : ''}${last?.saved_at ? ` at ${String(last.saved_at).slice(0, 16)}` : ''}). `
+        + 'Saving now would undo those changes. Copy anything you need, close this and open it again.');
+    }
     await ctx.db.prepare(
       `UPDATE hr_template SET name = ?2, body = ?3, kind = ?4, active = ?5, company_id = ?6, particulars = ?7,
               version = CASE WHEN body = ?3 THEN COALESCE(version, 1) ELSE COALESCE(version, 1) + 1 END,
@@ -1078,16 +1091,54 @@ export async function saveTemplate(ctx, id) {
     ).bind(Number(id), name, text, kind, bool(body.active, true) ? 1 : 0,
       body.companyId === undefined ? keep?.company_id ?? null : companyId,
       particulars === undefined ? keep?.particulars ?? null : (particulars.length ? JSON.stringify(particulars) : null)).run();
-    await audit(ctx, 'people.template_save', id, { name, companyId });
-    return json({ ok: true, id: Number(id) });
+    const saved = await ctx.db.prepare('SELECT version FROM hr_template WHERE id = ?').bind(Number(id)).first();
+    if (now.body !== text) {
+      await keepVersion(ctx, Number(id), Number(saved?.version ?? 1), name, text);
+    }
+    await audit(ctx, 'people.template_save', id, { name, companyId, version: saved?.version });
+    return json({ ok: true, id: Number(id), version: Number(saved?.version ?? 1) });
   }
 
   const created = await ctx.db.prepare(
     'INSERT INTO hr_template (name, body, kind, created_by, company_id, particulars) VALUES (?1,?2,?3,?4,?5,?6) RETURNING id',
   ).bind(name, text, kind, actorOf(ctx), companyId, particulars?.length ? JSON.stringify(particulars) : null).first();
 
+  await keepVersion(ctx, created.id, 1, name, text);
   await audit(ctx, 'people.template_new', created.id, { name });
   return json({ ok: true, id: created.id });
+}
+
+const keepVersion = (ctx, templateId, version, name, text) => ctx.db.prepare(
+  'INSERT INTO hr_template_rev (template_id, version, name, body, saved_by) VALUES (?1, ?2, ?3, ?4, ?5)',
+).bind(templateId, version, name, text, actorOf(ctx)).run().catch(() => {});
+
+/** GET /api/hr/templates/:id/versions — every kept version, newest first. */
+export async function templateVersions(ctx, id) {
+  const rows = await ctx.db.prepare(
+    'SELECT id, version, name, body, saved_by, saved_at FROM hr_template_rev WHERE template_id = ? ORDER BY id DESC LIMIT 100',
+  ).bind(Number(id)).all();
+  return json({
+    rows: (rows.results ?? []).map((r) => ({
+      id: r.id, version: r.version, name: r.name, savedBy: r.saved_by, savedAt: r.saved_at,
+      words: richToPlain(r.body).split(/\s+/).filter(Boolean).length,
+      body: r.body,
+    })),
+  });
+}
+
+/** POST /api/hr/templates/:id/versions/:rev/restore — that version, saved as the newest. */
+export async function restoreTemplateVersion(ctx, id, revId) {
+  const rev = await ctx.db.prepare('SELECT * FROM hr_template_rev WHERE id = ?1 AND template_id = ?2')
+    .bind(Number(revId), Number(id)).first();
+  if (!rev) throw notFound('No such version.');
+  await ctx.db.prepare(
+    `UPDATE hr_template SET body = ?2, version = COALESCE(version, 1) + 1, updated_at = datetime('now')
+      WHERE id = ?1 AND body != ?2`,
+  ).bind(Number(id), rev.body).run();
+  const now = await ctx.db.prepare('SELECT version, name FROM hr_template WHERE id = ?').bind(Number(id)).first();
+  await keepVersion(ctx, Number(id), Number(now?.version ?? 1), now?.name ?? rev.name, rev.body);
+  await audit(ctx, 'people.template_restore', id, { from: rev.version, now: now?.version });
+  return json({ ok: true, version: Number(now?.version ?? 1) });
 }
 
 export async function deleteTemplate(ctx, id) {

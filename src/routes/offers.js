@@ -60,13 +60,11 @@ export const DECLINE_REASONS = [
   ['other', 'Something else'],
 ];
 
-/** Things a candidate has not told HIVE yet, said plainly in the contract until they do. */
-const NOT_YET = {
-  employee_no: 'to be given on joining',
-  address: 'the address given on joining',
-  id_type: 'an identity document',
-  id_number: 'to be given on joining',
-};
+// Details a candidate has not given yet are left blank, and the phrase that
+// carries each ("of {{address}}", ", holder of {{id_type}} number
+// {{id_number}}", ", employee number {{employee_no}}") is left out of the
+// offer whole, rather than filled with "to be given on joining".
+const NOT_YET = { employee_no: '', address: '', id_type: '', id_number: '' };
 
 async function settingsOf(db) {
   const rows = await db.prepare('SELECT key, value FROM settings').all().catch(() => ({ results: [] }));

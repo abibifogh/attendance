@@ -675,6 +675,8 @@ export const ROUTES = [
   ['POST', '/api/hr/templates', 'hr_manage', (ctx) => people.saveTemplate(ctx, null)],
   ['PUT', '/api/hr/templates/:id', 'hr_manage', people.saveTemplate],
   ['DELETE', '/api/hr/templates/:id', 'hr_manage', people.deleteTemplate],
+  ['GET', '/api/hr/templates/:id/versions', 'hr_manage', people.templateVersions],
+  ['POST', '/api/hr/templates/:id/versions/:rev/restore', 'hr_manage', people.restoreTemplateVersion],
 
   ['POST', '/api/hr/people/:id/contracts', 'hr_manage', people.issueContract],
   ['POST', '/api/hr/contracts/to-many', 'hr_manage', people.issueToMany],

@@ -8053,7 +8053,11 @@ button.lp-row:disabled { cursor: default; }
 .print-cover.is-screen .pc-facts b { font-size: 1.45em; }
 .print-cover.is-screen .pc-foot { font-size: .9em; margin-top: 2em; }
 @media print {
-  .print-cover { display: block; box-sizing: border-box; height: 262mm; padding: 0; break-after: page; page-break-after: always; }
+  /* Sized from its width, not in millimetres: a browser that lays the page
+     out wider than the paper and shrinks it to fit (Safari, and Chrome when
+     anything is wide) shrank a fixed 262mm to three quarters of a page. The
+     shape of the printable area keeps it a whole page at any scale. */
+  .print-cover { display: block; box-sizing: border-box; width: 100%; height: auto; aspect-ratio: 186 / 266; padding: 0; break-after: page; page-break-after: always; break-inside: avoid; }
   .print-cover.is-screen { display: none; }
 }
 
@@ -8780,3 +8784,9 @@ button.lp-row:disabled { cursor: default; }
 .lunch-takers { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .8rem; margin: .5rem 0 .8rem; }
 .lunch-takers-group { display: flex; flex-direction: column; }
 @media (max-width: 640px) { .lunch-ask-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* A template's earlier versions. */
+.tpl-history { display: flex; flex-direction: column; gap: .3rem; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .4rem .6rem; }
+.tpl-history-row { display: flex; align-items: center; gap: .6rem; font-size: .85rem; }
+.tpl-history-row span { flex: 1; min-width: 0; color: var(--text-dim); }
+.tpl-history-words { max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .6rem .8rem; background: var(--surface); }
