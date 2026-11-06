@@ -476,13 +476,13 @@ export async function recentPunches(ctx) {
   let people = [];
   if (q) {
     const found = await ctx.db.prepare(
-      `SELECT id, name, employee_no, on_clock, active,
+      `SELECT id, name, employee_no, on_clock, active, left_on,
               (SELECT COUNT(*) FROM att_punches p WHERE p.staff_id = s.id) AS punches,
               (SELECT MAX(at_local) FROM att_punches p WHERE p.staff_id = s.id) AS last_at
          FROM att_staff s WHERE lower(name) LIKE ?1 OR employee_no = ?2 ORDER BY active DESC, name LIMIT 10`,
     ).bind(`%${q.toLowerCase()}%`, q).all();
     people = (found.results ?? []).map((r) => ({
-      id: r.id, name: r.name, employeeNo: r.employee_no, onClock: r.on_clock !== 0, active: Boolean(r.active),
+      id: r.id, name: r.name, employeeNo: r.employee_no, onClock: r.on_clock !== 0, active: Boolean(r.active), leftOn: r.left_on ?? null,
       punches: Number(r.punches), lastAt: r.last_at ? String(r.last_at).slice(0, 16) : null,
     }));
     numbers = [...new Set([q, ...people.map((p) => String(p.employeeNo))])];
@@ -509,6 +509,61 @@ export async function recentPunches(ctx) {
       name: r.name ?? null,
     })),
   });
+}
+
+/**
+ * A leaver's number has gone to somebody else on the terminal.
+ *
+ * The leaver keeps every punch before the day it changed hands; from that day
+ * the punches are the new holder's, and so is the number. The leaver's record
+ * keeps a retired copy of it ("NSS002 (left)") so it can never claim another.
+ */
+export async function handNumber(ctx, idParam) {
+  const fromId = int(idParam, 'Who had it', { required: true, min: 1 });
+  const body = await readJson(ctx.request);
+  const toId = int(body.toStaffId, 'Who has it now', { required: true, min: 1 });
+  if (toId === fromId) throw badRequest('Choose the person who has the number now.');
+  const from = readDayOrNull(body.from, 'From');
+  if (!from) throw badRequest('Say from which day the number changed hands.');
+  const old = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(fromId).first();
+  const next = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(toId).first();
+  if (!old || !next) throw notFound('No such member of staff.');
+  const number = String(old.employee_no);
+
+  // A retired copy of the number for the leaver, unique on this list.
+  let retired = `${number} (left)`;
+  for (let n = 2; await ctx.db.prepare('SELECT 1 FROM att_staff WHERE employee_no = ?').bind(retired).first(); n += 1) {
+    retired = `${number} (left ${n})`;
+  }
+  const before = next.employee_no;
+  await ctx.db.prepare('UPDATE att_staff SET employee_no = ?2 WHERE id = ?1').bind(fromId, retired).run();
+  await ctx.db.prepare('UPDATE att_staff SET employee_no = ?2, on_clock = 1 WHERE id = ?1').bind(toId, number).run();
+  // Whatever stood under the new holder's old number is theirs no longer.
+  if (String(before) !== number) {
+    await ctx.db.prepare('UPDATE att_punches SET staff_id = NULL WHERE staff_id = ? AND employee_no != ?')
+      .bind(toId, number).run();
+  }
+  const moved = await ctx.db.prepare(
+    `UPDATE att_punches SET staff_id = ?1
+      WHERE employee_no = ?2 AND day >= ?3 AND (staff_id = ?4 OR staff_id IS NULL)`,
+  ).bind(toId, number, from, fromId).run();
+  const count = Number(moved?.meta?.changes ?? 0);
+
+  // Their days worked out again: the new holder's from the change, and the
+  // leaver's cleared after they went, where the borrowed punches had made
+  // days at work of them.
+  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'").first())?.value || 'UTC';
+  const today = todayIn(timezone);
+  await ctx.db.prepare(
+    `DELETE FROM att_days WHERE staff_id = ?1 AND day >= ?2 AND (?3 IS NULL OR day > ?3)
+        AND NOT EXISTS (SELECT 1 FROM att_punches p WHERE p.staff_id = ?1 AND p.day = att_days.day)`,
+  ).bind(fromId, from, old.left_on ?? null).run().catch(() => {});
+  if (from <= today) {
+    await recompute(ctx.db, { staffIds: [toId], from, to: today });
+    await recompute(ctx.db, { staffIds: [fromId], from, to: today }).catch(() => {});
+  }
+  await audit(ctx, 'attendance.number_handed', toId, { number, from: fromId, fromDay: from, punches: count, retired });
+  return json({ ok: true, number, retired, moved: count, from, to: next.name, was: old.name });
 }
 
 /**

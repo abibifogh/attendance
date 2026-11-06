@@ -571,6 +571,7 @@ export const api = {
   attDeleteStaff: (id) => request(`/api/att/staff/${id}`, { method: 'DELETE' }),
   attUnknown: () => request('/api/att/unknown'),
   attRecentPunches: (q) => request(`/api/att/punches/recent${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  attHandNumber: (id, body) => request(`/api/att/staff/${id}/hand-number`, { method: 'POST', body }),
   attMatchUnknown: (no, staffId) => request(`/api/att/unknown/${encodeURIComponent(no)}/match`, { method: 'POST', body: { staffId } }),
 
   attShifts: () => request('/api/att/shifts'),

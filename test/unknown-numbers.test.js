@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { ingestPunches } from '../src/lib/attendance-ingest.js';
 
-import { matchUnknown, recentPunches, unknownEmployees } from '../src/routes/attendance-setup.js';
+import { handNumber, matchUnknown, recentPunches, unknownEmployees } from '../src/routes/attendance-setup.js';
 
 /** Punches from a number nobody has, matched to a new starter. Made-up people only. */
 
@@ -88,4 +89,42 @@ test('the latest punches say whose each one is, and a search finds them by numbe
   const byNumber = await get('77');
   assert.equal(byNumber.punches.length, 3);
   assert.ok(byNumber.punches.every((p) => p.name === null));
+});
+
+test('a leaver’s number handed on: punches from that day go to the new holder, the earlier stay', async () => {
+  const { raw, db } = setup();
+  raw.exec(`INSERT INTO att_staff (id, employee_no, name, department, hired_on, left_on, active, on_clock)
+            VALUES (3, 'NSS002', 'Kojo Antwi', 'Kitchen', '2025-01-01', '2026-10-31', 0, 1)`);
+  const put = raw.prepare(`INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day, source, dedupe_key)
+                           VALUES ('DEV1', 'NSS002', 3, ?, ?, ?, 'push', ?)`);
+  for (const [at, k] of [['2026-10-07 18:14:00', 'a'], ['2026-11-04 19:36:00', 'b'], ['2026-11-06 07:49:00', 'c']]) put.run(at, at, at.slice(0, 10), k);
+
+  const out = await (await handNumber(ctx(db, { toStaffId: 2, from: '2026-11-01' }), '3')).json();
+  assert.equal(out.moved, 2);
+  assert.equal(out.retired, 'NSS002 (left)');
+  const who = (k) => raw.prepare('SELECT staff_id FROM att_punches WHERE dedupe_key = ?').get(k).staff_id;
+  assert.deepEqual([who('a'), who('b'), who('c')], [3, 2, 2]);
+  assert.equal(raw.prepare('SELECT employee_no FROM att_staff WHERE id = 2').get().employee_no, 'NSS002');
+  assert.equal(raw.prepare('SELECT employee_no FROM att_staff WHERE id = 3').get().employee_no, 'NSS002 (left)');
+});
+
+test('a punch under a leaver’s number after they left is nobody’s, and shows up to be matched', async () => {
+  const { raw, db } = setup();
+  raw.exec(`INSERT INTO att_staff (id, employee_no, name, department, hired_on, left_on, active, on_clock)
+            VALUES (3, 'NSS002', 'Kojo Antwi', 'Kitchen', '2025-01-01', '2026-10-31', 0, 1)`);
+  raw.exec("INSERT INTO att_devices (id, serial, name, active) VALUES (9, 'D9', 'Front door', 1)");
+  await ingestPunches(db, {
+    device: { id: 9, serial: 'D9' },
+    events: [
+      { employeeNoString: 'NSS002', time: '2026-10-30T08:00:00Z', serialNo: 'x1' },
+      { employeeNoString: 'NSS002', time: '2026-11-06T07:49:00Z', serialNo: 'x2' },
+    ],
+    timezone: 'UTC',
+    source: 'push',
+  });
+  const who = (k) => raw.prepare('SELECT staff_id FROM att_punches WHERE dedupe_key = ?').get(k).staff_id;
+  assert.equal(who('s:x1'), 3, 'before they left: theirs');
+  assert.equal(who('s:x2'), null, 'after: asked about');
+  const { unknown } = await (await unknownEmployees(ctx(db))).json();
+  assert.ok(unknown.some((u) => u.employee_no === 'NSS002'));
 });

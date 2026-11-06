@@ -279,9 +279,20 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
   // employee number that was invented to give them a payslip, and it must not
   // be allowed to claim a punch made by whoever holds that card for real.
   const staff = await db.prepare(
-    'SELECT id, employee_no FROM att_staff WHERE on_clock = 1',
+    'SELECT id, employee_no, active, left_on FROM att_staff WHERE on_clock = 1',
   ).all();
-  const staffByNo = new Map((staff.results ?? []).map((s) => [String(s.employee_no), s.id]));
+  const holders = new Map((staff.results ?? []).map((s) => [String(s.employee_no), s]));
+  // Nor somebody who has left. Their number is usually handed to whoever came
+  // after them on the terminal, and a punch on a day after they went is that
+  // person's: kept under nobody, so it is asked about rather than quietly
+  // credited to a leaver.
+  const ownerOf = (row) => {
+    const s = holders.get(String(row.employee_no));
+    if (!s) return null;
+    if (!s.active && !s.left_on) return null;
+    if (s.left_on && row.day > s.left_on) return null;
+    return s.id;
+  };
 
   const statements = rows.map((row) => db.prepare(
     `INSERT OR IGNORE INTO att_punches
@@ -289,7 +300,7 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
         device_status, major, minor, door, verify_mode, source, dedupe_key, raw)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
   ).bind(
-    row.device_serial, row.employee_no, staffByNo.get(row.employee_no) ?? null,
+    row.device_serial, row.employee_no, ownerOf(row),
     row.at_utc, row.at_local, row.day, row.direction, row.device_status,
     row.major, row.minor, row.door, row.verify_mode, row.source, row.dedupe_key, row.raw,
   ));
@@ -320,7 +331,7 @@ export async function ingestPunches(db, { device, events, timezone, source = 'po
   const touched = new Map();
   const unknown = new Set();
   for (const row of rows) {
-    const staffId = staffByNo.get(row.employee_no);
+    const staffId = ownerOf(row);
     if (!staffId) { unknown.add(row.employee_no); continue; }
     const range = touched.get(staffId) ?? { from: row.day, to: row.day };
     if (row.day < range.from) range.from = row.day;

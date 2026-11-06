@@ -5,7 +5,7 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState, table } from './components.js';
 import { openCard } from './birthday.js';
-import { matchNumberDialog } from './unknown-numbers.js';
+import { handNumberDialog, matchNumberDialog } from './unknown-numbers.js';
 import {
   byPosition, field, formDialog, fullDayIsOwn, shiftColour, shiftColourPicker, shiftMinutes,
 } from './att-shared.js';
@@ -999,6 +999,14 @@ async function staffTab(reload) {
           ? h('div', { style: { marginBottom: '.6rem' } }, got.people.map((p) => h('div', { style: { padding: '.35rem 0', borderTop: '1px solid var(--border)' } },
             h('strong', p.name), ` · No. ${p.employeeNo}`,
             !p.active ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'Left') : null,
+            (!p.active || p.leftOn) && p.punches
+              ? h('button.btn-sm', {
+                type: 'button',
+                style: { marginLeft: '.6rem' },
+                title: 'Their number was given to somebody else on the terminal',
+                onclick: async () => { if (await handNumberDialog(p)) await look(input.value); },
+              }, 'This number is someone else’s now')
+              : null,
             !p.onClock ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'Payroll only: punches are not read') : null,
             h('div.muted', { style: { fontSize: '.85rem' } }, p.punches
               ? `${p.punches} punch${p.punches === 1 ? '' : 'es'}, the latest ${fmtDay(p.lastAt.slice(0, 10))} ${p.lastAt.slice(11, 16)}.`

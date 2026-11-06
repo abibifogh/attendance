@@ -60,3 +60,40 @@ export async function matchNumberDialog(row) {
   }
   return done;
 }
+
+/**
+ * A leaver's number given to somebody else on the terminal: the punches from
+ * the day it changed hands go to the new holder, and so does the number. The
+ * leaver keeps every punch before it.
+ */
+export async function handNumberDialog(person) {
+  const { staff = [] } = await api.attStaff();
+  const people = staff.filter((s) => s.active && Number(s.id) !== Number(person.id))
+    .sort((a, b) => (Number(a.punch_count) > 0) - (Number(b.punch_count) > 0)
+      || String(b.hired_on ?? '').localeCompare(String(a.hired_on ?? ''))
+      || a.name.localeCompare(b.name));
+  const nextDay = (d) => new Date(Date.parse(`${d}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  const from = person.leftOn ? nextDay(person.leftOn) : new Date().toISOString().slice(0, 10);
+  const option = (s) => h('option', { value: s.id },
+    `${s.name} · now no. ${s.employee_no}${Number(s.punch_count) ? '' : ' · no punches yet'}`);
+  const fresh = people.filter((s) => !Number(s.punch_count));
+  const rest = people.filter((s) => Number(s.punch_count));
+  const done = await formDialog({
+    title: `Number ${person.employeeNo} is someone else's now`,
+    submitLabel: 'Move the punches',
+    body: h('div',
+      field('Who has it now', h('select', { name: 'toStaffId', required: true },
+        fresh.length ? h('optgroup', { label: 'No punches yet' }, fresh.map(option)) : null,
+        rest.length ? h('optgroup', { label: 'Everybody else' }, rest.map(option)) : null)),
+      field('Theirs from', h('input', { type: 'date', name: 'from', value: from, required: true }),
+        person.leftOn ? `${person.name} left on ${fmtDay(person.leftOn)}` : 'The first day they punched in with it'),
+      h('p.muted', { style: { fontSize: '.85rem', marginBottom: 0 } },
+        `Punches under ${person.employeeNo} from that day on go to them, and the number becomes theirs. `
+        + `${person.name} keeps every punch before it, under a retired copy of the number, `
+        + 'so it can never claim another. Both sets of days are worked out again.'),
+    ),
+    onSubmit: async (form) => api.attHandNumber(person.id, { toStaffId: Number(form.get('toStaffId')), from: form.get('from') }),
+  });
+  if (done) toast(`${done.moved} punch${done.moved === 1 ? '' : 'es'} moved to ${done.to}. ${done.was} keeps the earlier ones.`, 'good');
+  return done;
+}
