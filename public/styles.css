@@ -8760,6 +8760,17 @@ button.lp-row:disabled { cursor: default; }
   .cover-pair .cover-mast { display: none; }
 }
 
+/* Contracts and letters saved as a PDF carry "Page 2 of 9" at the foot of
+   each sheet. With a cover, the cover is page 1 but shows no number, so the
+   count still matches the pages in the file. */
+@media print {
+  :root:has(.print-cover:not(.is-screen)) { page: hive-covered; }
+  :root:has(.contract-body, .rt-contract):not(:has(.print-cover:not(.is-screen))) { page: hive-numbered; }
+  @page hive-covered { @bottom-center { content: "Page " counter(page) " of " counter(pages); font: 9pt Georgia, "Times New Roman", serif; color: #5b6472; } }
+  @page hive-covered:first { @bottom-center { content: none; } }
+  @page hive-numbered { @bottom-center { content: "Page " counter(page) " of " counter(pages); font: 9pt Georgia, "Times New Roman", serif; color: #5b6472; } }
+}
+
 /* The lunch list: the order card on My day, and asking on the Lunch page. */
 .lunch-ask { background: var(--surface); border: 2px solid var(--warn); border-radius: var(--radius); padding: .9rem 1rem; display: flex; flex-direction: column; gap: .6rem; margin-bottom: 1rem; }
 .lunch-ask.is-done { border-width: 1px; border-color: var(--border); }

@@ -873,6 +873,7 @@ export async function offerCode(ctx, token) {
       to: route.to,
       subject,
       html,
+      replyTo: String(route.settings.email_reply_to ?? '').trim() || null,
     });
   } else {
     const out = await sendTexts(ctx.db, ctx.env, {

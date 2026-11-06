@@ -161,6 +161,7 @@ async function postIt(ctx, { user, email, url, days }) {
     to: email,
     subject: message.subject,
     html: message.html,
+    replyTo: String(await setting(ctx.db, 'email_reply_to', '') ?? '').trim() || null,
   });
   return true;
 }

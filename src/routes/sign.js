@@ -495,6 +495,7 @@ export async function signRequestCode(ctx, token) {
     to: recipient.email,
     subject,
     html,
+    replyTo: String(await setting(ctx.db, 'email_reply_to', '') ?? '').trim() || null,
   });
 
   await appendEvent(ctx.db, letter.id, {
