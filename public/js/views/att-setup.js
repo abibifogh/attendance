@@ -5,6 +5,7 @@ import {
 } from '../util.js';
 import { bulkUpload, card, emptyState, table } from './components.js';
 import { openCard } from './birthday.js';
+import { matchNumberDialog } from './unknown-numbers.js';
 import {
   byPosition, field, formDialog, fullDayIsOwn, shiftColour, shiftColourPicker, shiftMinutes,
 } from './att-shared.js';
@@ -965,21 +966,29 @@ async function staffTab(reload) {
     // and never added, whose punches are piling up unattached and who is
     // invisible in every report until this is dealt with.
     unknown.length
-      ? card('The terminal is sending numbers nobody here recognises', {
-        note: 'Their punches are being kept and will attach as soon as you add them',
+      ? card('Punches from numbers nobody here has', {
+        note: 'Kept safe. Match each number to the person, or add them, and the punches become theirs',
         wide: true,
       },
         table([
-          { key: 'employee_no', label: 'Employee number', format: (v) => h('strong', v) },
+          { key: 'employee_no', label: 'Number on the terminal', format: (v) => h('strong', v) },
           { key: 'punches', label: 'Punches', align: 'right' },
           { key: 'first_seen', label: 'First seen', format: (v) => fmtDay(v) },
           { key: 'last_seen', label: 'Last seen', format: (v) => fmtDay(v) },
           {
+            key: 'recent', label: 'Latest',
+            format: (v) => h('small.muted', (v ?? []).slice(0, 3).map((t) => `${fmtDay(t.slice(0, 10))} ${t.slice(11, 16)}`).join(' · ')),
+          },
+          {
             key: 'add',
             label: '',
-            format: (v, r) => h('button.btn-sm.btn-primary', {
-              onclick: () => edit({ employee_no: r.employee_no, name: '', active: 1 }),
-            }, 'Add this person'),
+            format: (v, r) => h('div.btn-row', { style: { margin: 0, flexWrap: 'nowrap' } },
+              h('button.btn-sm.btn-primary', {
+                onclick: async () => { if (await matchNumberDialog(r)) await reload(); },
+              }, 'Already on the list'),
+              h('button.btn-sm', {
+                onclick: () => edit({ employee_no: r.employee_no, name: '', active: 1 }),
+              }, 'Add as new')),
           },
         ], unknown))
       : null,

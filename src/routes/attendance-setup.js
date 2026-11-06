@@ -437,12 +437,69 @@ export async function deleteStaff(ctx, id) {
  * what makes them visible.
  */
 export async function unknownEmployees(ctx) {
-  const rows = await ctx.db.prepare(
+  return json({ unknown: await unknownNumbers(ctx.db) });
+}
+
+/**
+ * The numbers, each with its latest few punches: the times are usually what
+ * tells somebody who it is ("08:02 every morning since Monday: that is the new
+ * cook").
+ */
+export async function unknownNumbers(db, { limit = 100 } = {}) {
+  const rows = await db.prepare(
     `SELECT employee_no, COUNT(*) AS punches, MIN(day) AS first_seen, MAX(day) AS last_seen
      FROM att_punches WHERE staff_id IS NULL
-     GROUP BY employee_no ORDER BY last_seen DESC LIMIT 100`,
-  ).all();
-  return json({ unknown: rows.results ?? [] });
+     GROUP BY employee_no ORDER BY last_seen DESC LIMIT ?`,
+  ).bind(limit).all().catch(() => ({ results: [] }));
+  const out = [];
+  for (const row of rows.results ?? []) {
+    const recent = await db.prepare(
+      `SELECT at_local FROM att_punches WHERE staff_id IS NULL AND employee_no = ?
+       ORDER BY at_utc DESC LIMIT 6`,
+    ).bind(row.employee_no).all().catch(() => ({ results: [] }));
+    out.push({ ...row, recent: (recent.results ?? []).map((r) => String(r.at_local).slice(0, 16)) });
+  }
+  return out;
+}
+
+/**
+ * The terminal's number belongs to somebody already on the list.
+ *
+ * The usual case: a new starter was added through Hire, or by hand, under one
+ * employee number while the terminal enrolled them under another. Their record
+ * takes the terminal's number, the punches under it become theirs, and their
+ * days are worked out again from the first of them.
+ */
+export async function matchUnknown(ctx, numberParam) {
+  const employeeNo = str(decodeURIComponent(String(numberParam ?? '')), 'Employee number', { required: true, max: 40 });
+  const body = await readJson(ctx.request);
+  const staffId = int(body.staffId, 'Who', { required: true, min: 1 });
+  const person = await ctx.db.prepare('SELECT * FROM att_staff WHERE id = ?').bind(staffId).first();
+  if (!person) throw notFound('No such member of staff.');
+  const holder = await ctx.db.prepare('SELECT id, name FROM att_staff WHERE employee_no = ? AND id != ?')
+    .bind(employeeNo, staffId).first();
+  if (holder) throw badRequest(`Number ${employeeNo} already belongs to ${holder.name}.`);
+  const waiting = await ctx.db.prepare('SELECT COUNT(*) AS n FROM att_punches WHERE employee_no = ? AND staff_id IS NULL')
+    .bind(employeeNo).first();
+  if (!Number(waiting?.n)) throw badRequest(`Nothing is waiting under number ${employeeNo}.`);
+
+  const before = person.employee_no;
+  await ctx.db.prepare('UPDATE att_staff SET employee_no = ?2, on_clock = 1 WHERE id = ?1')
+    .bind(staffId, employeeNo).run();
+  // Anything under their old number stops being theirs, exactly as when the
+  // number is changed on their record.
+  if (before !== employeeNo) {
+    await ctx.db.prepare('UPDATE att_punches SET staff_id = NULL WHERE staff_id = ? AND employee_no != ?')
+      .bind(staffId, employeeNo).run();
+  }
+  const claimed = await claimOrphans(ctx.db, staffId, employeeNo);
+  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'").first())?.value || 'UTC';
+  const today = todayIn(timezone);
+  if (claimed.claimed) {
+    await recompute(ctx.db, { staffIds: [staffId], from: claimed.from, to: today });
+  }
+  await audit(ctx, 'attendance.staff_match_number', staffId, { from: before, to: employeeNo, punches: claimed.claimed });
+  return json({ ok: true, name: person.name, was: before, employeeNo, claimed: claimed.claimed, from: claimed.from });
 }
 
 // ---------------------------------------------------------------------------

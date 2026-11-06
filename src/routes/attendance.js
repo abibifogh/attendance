@@ -18,6 +18,7 @@ import { readNotification } from '../lib/push-events.js';
 import { inferShifts, mergeCandidates, parseStatusRules, shiftsFromRules } from '../lib/device-shifts.js';
 import { getPepper } from '../lib/auth.js';
 import { allows } from '../lib/permissions.js';
+import { unknownNumbers } from './attendance-setup.js';
 import { MOST_DAYS, askToMoveLeave, leaveDaysDecision } from '../lib/leave-days.js';
 import { createNotice } from '../lib/notices.js';
 import { sayAskedDays } from '../lib/asked-days.js';
@@ -702,6 +703,10 @@ export async function day(ctx) {
     // Terminals nothing has been heard from. Shown above the list, because
     // while one is quiet the list below it cannot be trusted.
     terminals,
+    // Numbers the terminal sent that belong to nobody here: a new starter's
+    // punches, waiting to be matched. Only for whoever can match them.
+    unknownNumbers: allows('att_setup', ctx.session.permissions)
+      ? await unknownNumbers(ctx.db, { limit: 10 }) : [],
     rows,
   });
 }

@@ -562,6 +562,7 @@ export const api = {
   attUpdateStaff: (id, body) => request(`/api/att/staff/${id}`, { method: 'PUT', body }),
   attDeleteStaff: (id) => request(`/api/att/staff/${id}`, { method: 'DELETE' }),
   attUnknown: () => request('/api/att/unknown'),
+  attMatchUnknown: (no, staffId) => request(`/api/att/unknown/${encodeURIComponent(no)}/match`, { method: 'POST', body: { staffId } }),
 
   attShifts: () => request('/api/att/shifts'),
   attShiftSuggestions: (days) => request(`/api/att/shift-suggestions${days ? `?days=${days}` : ''}`),

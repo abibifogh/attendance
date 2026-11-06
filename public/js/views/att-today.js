@@ -10,6 +10,7 @@ import {
 } from './att-shared.js';
 import { questionRows } from './absence.js';
 import { canLevy, levyButton, levyDialog } from './conduct.js';
+import { matchNumberDialog, sayNumber } from './unknown-numbers.js';
 
 /**
  * The morning screen.
@@ -635,6 +636,18 @@ export async function renderAttToday(params) {
         manages ? press('Record this day as…', () => resolve(r)) : null,
         !can('att_rota') && !fixesTimes && !manages ? theirDay(r) : null,
       ], r);
+  }
+
+  // A new starter clocking in under a number HIVE does not know. Said here,
+  // where somebody looks every morning, rather than only in Settings.
+  for (const u of data.unknownNumbers ?? []) {
+    need('info',
+      `The terminal has punches from number ${u.employee_no}, which nobody here has`,
+      `${sayNumber(u)} Usually a new starter added under another number.`,
+      [
+        press('Match to a person', async () => { if (await matchNumberDialog(u)) await reload(); }, { primary: true }),
+        linkTo('Add as new', 'settings', { section: 'people', panel: 'staff' }, { quiet: true }),
+      ]);
   }
 
   // On a phone, or anywhere the panel sits above the list, the first few and a
