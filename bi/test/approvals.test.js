@@ -146,3 +146,9 @@ test('a Cloudflare page in front of the POS says the address is wrong, and why',
   assert.match(approvals.posTrouble(530, '', 'https://x.example.test'), /Cloudflare answered 530/);
   assert.equal(approvals.posTrouble(500, 'oops', 'https://x.example.test'), 'The POS answered 500.');
 });
+
+test('a refusal from Appwrite itself is told apart from one from the POS', () => {
+  const said = approvals.posTrouble(401, '', 'https://x.example.test', { message: 'The current user is not authorized to perform the requested action.', code: 401, type: 'user_unauthorized' });
+  assert.match(said, /Appwrite refused it before the POS saw it \(401\)/);
+  assert.match(said, /Execute access must include Any/);
+});

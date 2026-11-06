@@ -166,7 +166,7 @@ export function posMissing(hasBase, hasSecret) {
  * does not lead to the notify function. Cloudflare puts its own code (1016
  * and so on) in the page, which says why.
  */
-export function posTrouble(status, page, base) {
+export function posTrouble(status, page, base, data = null) {
   const host = String(base || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   const code = String(page || '').match(/error(?:\s*code)?[\s:#]*(1\d{3})/i)?.[1];
   const WHY = {
@@ -178,6 +178,13 @@ export function posTrouble(status, page, base) {
   if (status === 530 || (status >= 520 && status <= 527)) {
     const why = WHY[code] || (code ? `Cloudflare error ${code}` : `Cloudflare answered ${status}`);
     return `The POS could not be reached at ${host || 'its address'}: ${why}. Check the address on the POS card in Settings › Connections & files: it must be the domain on the Notify function's Domains tab in Appwrite.`;
+  }
+  // Appwrite itself, not the POS function: it answers { message, code, type }.
+  if (data && typeof data.message === 'string' && data.type) {
+    const hint = status === 401 || status === 403
+      ? ' In Appwrite, the Notify function\'s Settings › Execute access must include Any.'
+      : '';
+    return `Appwrite refused it before the POS saw it (${status}): ${data.message.slice(0, 200)}${hint}`;
   }
   return `The POS answered ${status}.`;
 }
@@ -198,7 +205,7 @@ export async function pos(env, path, body, { fetchImpl = fetch } = {}) {
   try { data = JSON.parse(raw); } catch { data = {}; }
   if (response.status === 404 && !data?.error) throw new Error(`The POS does not answer ${path} yet: its notify function needs updating.`);
   if (!response.ok || data?.ok === false) {
-    const error = new Error(data?.error || posTrouble(response.status, raw, base));
+    const error = new Error(data?.error || posTrouble(response.status, raw, base, data));
     error.status = response.status;
     throw error;
   }
