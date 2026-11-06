@@ -594,6 +594,7 @@ export const ROUTES = [
   ['POST', '/api/att/staff/import', 'att_setup', attSetup.applyStaffImport],
   ['GET', '/api/att/unknown', 'att_setup', attSetup.unknownEmployees],
   ['POST', '/api/att/unknown/:no/match', 'att_setup', attSetup.matchUnknown],
+  ['GET', '/api/att/punches/recent', 'att_setup', attSetup.recentPunches],
 
   ['GET', '/api/att/shifts', ['att_setup', 'att_rota'], attSetup.listShifts],
   ['GET', '/api/att/shift-suggestions', 'att_setup', att.shiftSuggestions],

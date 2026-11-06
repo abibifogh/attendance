@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-import { matchUnknown, unknownEmployees } from '../src/routes/attendance-setup.js';
+import { matchUnknown, recentPunches, unknownEmployees } from '../src/routes/attendance-setup.js';
 
 /** Punches from a number nobody has, matched to a new starter. Made-up people only. */
 
@@ -70,4 +70,22 @@ test('a number already somebody else’s, or with nothing waiting, is refused', 
   const { db } = setup();
   await assert.rejects(() => matchUnknown(ctx(db, { staffId: 2 }), 'T01'), /already belongs to Kwame Asare/);
   await assert.rejects(() => matchUnknown(ctx(db, { staffId: 2 }), '99'), /Nothing is waiting/);
+});
+
+test('the latest punches say whose each one is, and a search finds them by number or name', async () => {
+  const { raw, db } = setup();
+  raw.exec(`INSERT INTO att_punches (device_serial, employee_no, staff_id, at_utc, at_local, day, source, dedupe_key)
+            VALUES ('DEV1', 'T01', 1, '2026-11-05 09:00:00', '2026-11-05 09:00:00', '2026-11-05', 'push', 'kk')`);
+  const get = async (q) => (await recentPunches({ ...ctx(db), url: new URL(`https://x/api/att/punches/recent${q ? `?q=${encodeURIComponent(q)}` : ''}`) })).json();
+  const all = await get('');
+  assert.equal(all.punches.length, 4);
+  assert.deepEqual(all.punches.map((p) => [p.employeeNo, p.name]).slice(0, 2), [['T01', 'Kwame Asare'], ['77', null]]);
+  assert.equal(all.lastAt, '2026-11-05 09:00');
+
+  const byName = await get('akosua');
+  assert.deepEqual(byName.people.map((p) => [p.name, p.employeeNo, p.punches, p.onClock]), [['Akosua Darko', 'H-0042', 0, false]]);
+  assert.equal(byName.punches.length, 0, 'nothing under her number: the terminal knows her by another');
+  const byNumber = await get('77');
+  assert.equal(byNumber.punches.length, 3);
+  assert.ok(byNumber.punches.every((p) => p.name === null));
 });

@@ -961,6 +961,66 @@ async function staffTab(reload) {
     }
   };
 
+  /**
+   * What the terminal has sent lately, whose each punch is, and a search by
+   * the number on the terminal or by name. Always here, so "I cannot see the
+   * new person's punches" has an answer even when there are no strangers:
+   * they are under somebody, under nobody, or they never arrived.
+   */
+  function terminalCard() {
+    const body = h('div');
+    const input = h('input', {
+      type: 'search', placeholder: 'Number on the terminal, or a name', maxlength: 60,
+      style: { flex: '1 1 220px', minWidth: 0 },
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); look(input.value); } },
+    });
+    const whose = (p) => (p.name
+      ? h('span', p.name)
+      : h('div.btn-row', { style: { margin: 0, flexWrap: 'wrap' } },
+        h('span.pill.warn', 'Nobody here'),
+        h('button.btn-sm.btn-primary', {
+          type: 'button',
+          onclick: async () => {
+            const row = (unknown ?? []).find((u) => u.employee_no === p.employeeNo)
+              ?? { employee_no: p.employeeNo, punches: 1, first_seen: p.at.slice(0, 10), last_seen: p.at.slice(0, 10), recent: [p.at] };
+            if (await matchNumberDialog(row)) await reload();
+          },
+        }, 'Already on the list'),
+        h('button.btn-sm', { type: 'button', onclick: () => edit({ employee_no: p.employeeNo, name: '', active: 1 }) }, 'Add as new')));
+    async function look(q) {
+      mount(body, h('p.muted', 'Looking…'));
+      let got;
+      try { got = await api.attRecentPunches(q.trim()); } catch (err) { mount(body, h('p.muted', err.message)); return; }
+      mount(body,
+        h('p.muted', { style: { margin: '0 0 .6rem' } }, got.lastAt
+          ? `Latest punch received: ${fmtDay(got.lastAt.slice(0, 10))} ${got.lastAt.slice(11, 16)}. ${got.lastDay ?? 0} in the last 24 hours.`
+          : 'Nothing has come from the terminal yet.'),
+        got.people.length
+          ? h('div', { style: { marginBottom: '.6rem' } }, got.people.map((p) => h('div', { style: { padding: '.35rem 0', borderTop: '1px solid var(--border)' } },
+            h('strong', p.name), ` · No. ${p.employeeNo}`,
+            !p.active ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'Left') : null,
+            !p.onClock ? h('span.pill', { style: { marginLeft: '.4rem' } }, 'Payroll only: punches are not read') : null,
+            h('div.muted', { style: { fontSize: '.85rem' } }, p.punches
+              ? `${p.punches} punch${p.punches === 1 ? '' : 'es'}, the latest ${fmtDay(p.lastAt.slice(0, 10))} ${p.lastAt.slice(11, 16)}.`
+              : `No punches under number ${p.employeeNo}. If the terminal knows them by another number, find it in the list below and match it to them.`))))
+          : (got.q ? h('p.muted', `Nobody here is called or numbered “${got.q}”.`) : null),
+        got.punches.length
+          ? table([
+            { key: 'at', label: 'When', format: (v) => `${fmtDay(v.slice(0, 10))} ${v.slice(11, 16)}` },
+            { key: 'employeeNo', label: 'Number on the terminal', format: (v) => h('strong', v) },
+            { key: 'name', label: 'Whose', format: (v, r) => whose(r) },
+          ], got.punches)
+          : h('p.muted', got.q ? `No punches under that number${got.people.length ? ' or theirs' : ''}. The terminal has not sent any yet: check they are enrolled on it.` : 'No punches yet.'));
+    }
+    look('');
+    return card('Latest from the terminal', {
+      note: 'Every punch, whose it is, and a search',
+      wide: true,
+      actions: h('div.btn-row', { style: { margin: 0, flexWrap: 'nowrap' } },
+        input, h('button.btn-sm', { type: 'button', onclick: () => look(input.value) }, 'Find')),
+    }, body);
+  }
+
   return h('div',
     // The single most useful diagnostic here: somebody enrolled on the terminal
     // and never added, whose punches are piling up unattached and who is
@@ -992,6 +1052,8 @@ async function staffTab(reload) {
           },
         ], unknown))
       : null,
+
+    terminalCard(),
 
     card('Staff', {
       note: (() => {

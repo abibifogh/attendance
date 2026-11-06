@@ -463,6 +463,55 @@ export async function unknownNumbers(db, { limit = 100 } = {}) {
 }
 
 /**
+ * What the terminal has sent lately, and whose each punch is.
+ *
+ * The answer to "where are the new person's punches?" when there is no list
+ * of strangers to look at: either the punches are here under somebody, or
+ * they are here under nobody, or they never arrived. With `q`, only punches
+ * under that number, or under the numbers of the people whose names match.
+ */
+export async function recentPunches(ctx) {
+  const q = String(ctx.url.searchParams.get('q') ?? '').trim().slice(0, 60);
+  let numbers = null;
+  let people = [];
+  if (q) {
+    const found = await ctx.db.prepare(
+      `SELECT id, name, employee_no, on_clock, active,
+              (SELECT COUNT(*) FROM att_punches p WHERE p.staff_id = s.id) AS punches,
+              (SELECT MAX(at_local) FROM att_punches p WHERE p.staff_id = s.id) AS last_at
+         FROM att_staff s WHERE lower(name) LIKE ?1 OR employee_no = ?2 ORDER BY active DESC, name LIMIT 10`,
+    ).bind(`%${q.toLowerCase()}%`, q).all();
+    people = (found.results ?? []).map((r) => ({
+      id: r.id, name: r.name, employeeNo: r.employee_no, onClock: r.on_clock !== 0, active: Boolean(r.active),
+      punches: Number(r.punches), lastAt: r.last_at ? String(r.last_at).slice(0, 16) : null,
+    }));
+    numbers = [...new Set([q, ...people.map((p) => String(p.employeeNo))])];
+  }
+  const where = numbers ? `WHERE p.employee_no IN (${numbers.map((_, i) => `?${i + 1}`).join(', ')})` : '';
+  const rows = await ctx.db.prepare(
+    `SELECT p.employee_no, p.at_local, p.device_serial, p.source, p.staff_id, s.name
+       FROM att_punches p LEFT JOIN att_staff s ON s.id = p.staff_id
+       ${where} ORDER BY p.at_utc DESC LIMIT 30`,
+  ).bind(...(numbers ?? [])).all();
+  const last = await ctx.db.prepare('SELECT MAX(at_local) AS at, COUNT(*) AS n FROM att_punches WHERE received_at >= datetime(\'now\', \'-1 day\')')
+    .first().catch(() => null);
+  const latest = await ctx.db.prepare('SELECT MAX(at_local) AS at FROM att_punches').first().catch(() => null);
+  return json({
+    q: q || null,
+    people,
+    lastAt: latest?.at ? String(latest.at).slice(0, 16) : null,
+    lastDay: last ? Number(last.n ?? 0) : null,
+    punches: (rows.results ?? []).map((r) => ({
+      employeeNo: r.employee_no,
+      at: String(r.at_local).slice(0, 16),
+      device: r.device_serial,
+      staffId: r.staff_id ?? null,
+      name: r.name ?? null,
+    })),
+  });
+}
+
+/**
  * The terminal's number belongs to somebody already on the list.
  *
  * The usual case: a new starter was added through Hire, or by hand, under one
