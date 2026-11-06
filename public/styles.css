@@ -8750,3 +8750,8 @@ button.lp-row:disabled { cursor: default; }
 .calc-table { max-width: 34rem; }
 .calc-table td.num, .calc-steps td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .calc-steps { margin-top: .6rem; max-width: 34rem; }
+
+/* The offer and link pages: the small cover on screen, the full page in print. */
+@media print {
+  .cover-pair .cover-mast { display: none; }
+}

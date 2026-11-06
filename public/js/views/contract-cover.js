@@ -52,10 +52,16 @@ export function contractCover(cover, { screen = false } = {}) {
         cover.subtitle ? h('div.pc-subtitle', cover.subtitle) : null,
         divider(),
         h('p.pc-sentence', cover.sentence),
-        h('div.pc-facts',
-          h('div', h('span', 'REFERENCE'), h('b', cover.reference)),
-          h('div', h('span', 'ISSUED'), h('b', longDate(cover.issued))),
-          h('div', h('span', 'EMPLOYEE NO.'), h('b', cover.employeeNo || '—'))),
+        // Only the facts there are. An offer has no employee number yet,
+        // and a row of dashes reads as something left out.
+        (() => {
+          const facts = [
+            cover.reference ? h('div', h('span', 'REFERENCE'), h('b', cover.reference)) : null,
+            cover.issued ? h('div', h('span', 'ISSUED'), h('b', longDate(cover.issued))) : null,
+            cover.employeeNo ? h('div', h('span', 'EMPLOYEE NO.'), h('b', cover.employeeNo)) : null,
+          ].filter(Boolean);
+          return facts.length ? h('div.pc-facts', facts) : null;
+        })(),
         h('div.pc-foot', `PRIVATE AND CONFIDENTIAL · CHECK THIS COPY AT ${location.host}/verify`.toUpperCase()))));
 }
 
@@ -65,6 +71,12 @@ export function contractCover(cover, { screen = false } = {}) {
  */
 export function coverMasthead(cover) {
   if (!cover) return null;
+  // On screen the small one; printed, the whole first page, the same cover
+  // the office prints and the signed PDF opens with.
+  return h('div.cover-pair', mastOf(cover), contractCover(cover));
+}
+
+function mastOf(cover) {
   return h('section.cover-mast', { 'aria-label': `${cover.title}, from ${cover.companyName}` },
     h('div.cm-inner',
       ring(cover, 'div.pc-ring.cm-ring'),
