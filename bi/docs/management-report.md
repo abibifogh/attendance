@@ -80,7 +80,7 @@ nothing twice.
 ## Who can open it
 
 Admins see it. Anybody else sees it when an admin ticks *Management* for them
-under Settings › People & access › Reports they see (see `src/routes/reportaccess.js`).
+under Settings › People & access › Who sees what (see `src/routes/reportaccess.js`).
 
 Code: `src/routes/mgmt.js`, `public/js/views/mgmt.js`, tested in
 `test/mgmt.test.js`.

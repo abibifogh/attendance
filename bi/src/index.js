@@ -28,6 +28,7 @@ import * as cashpo from './routes/cashpo.js';
 import * as prepaid from './routes/prepaid.js';
 import * as mgmt from './routes/mgmt.js';
 import * as reportAccess from './routes/reportaccess.js';
+import * as tabAccess from './routes/tabaccess.js';
 import * as supplierBook from './routes/supplierbook.js';
 import * as todo from './routes/todo.js';
 import * as advances from './routes/advances.js';
@@ -129,6 +130,9 @@ const ROUTES = [
   // The management report: a week or a month of breakfast and maintenance, from each app.
   // Who sees which reports: an admin shares report pages with people who are not admins.
   ['GET', '/api/report-access', 'session', adminOnly((env) => reportAccess.list(env))],
+  // Settings › People & access › Who sees what: everybody, tab by tab (routes/tabaccess.js).
+  ['GET', '/api/access', 'session', (env, ctx) => tabAccess.list(env, ctx.account)],
+  ['POST', '/api/access', 'session', (env, ctx) => tabAccess.save(env, ctx.body, ctx.account)],
   // Fixed assets: found in Odoo, confirmed here, kept in Maintenance's equipment register.
   ['GET', '/api/assets', 'session', adminOnly((env, ctx) => fixedAssets.faView(env, ctx.account))],
   ['POST', '/api/assets/scan', 'session', adminOnly((env) => fixedAssets.scan(env))],
@@ -604,9 +608,15 @@ export default {
       // and changing what everybody else sees are three different things.
       let account = null;
       let body = null;
-      if (permission === 'session') account = await requireSession(request, env);
+      // A tab that was an admin's alone, given to somebody in Who sees what:
+      // its endpoints answer them as an admin, for this request only.
+      const signedIn = permission === 'session' ? await requireSession(request, env)
+        : permission === 'shifts' || permission === 'insight' ? await requireInsight(request, env) : null;
+      const lifted = signedIn ? await tabAccess.lift(env, signedIn, request.method, routePath) : null;
+      if (lifted) account = lifted;
+      else if (permission === 'session') account = signedIn;
       else if (permission === 'shifts') {
-        account = await requireInsight(request, env);
+        account = signedIn;
         // An uploader reaches the upload endpoints and nothing else.
         // An uploader reaches the upload endpoints and nothing else; somebody
         // with Reports only, nothing here. Either may read the reports'
@@ -624,13 +634,18 @@ export default {
           throw new HttpError(403, 'Your account sees Nice Place and picks up its cash, and nothing else here.');
         }
       } else if (permission === 'insight') {
-        account = await requireInsight(request, env);
+        account = signedIn;
         // Anybody who is not an admin reads only the report pages an admin
         // shared with them (routes/reportaccess.js), and nothing else here.
         const who = till.roleOf(account);
         // Nice Place cash reads the Nice Place page without it being shared; anything else as for anybody.
         const npPage = who === 'npcash' && request.method === 'GET' && url.pathname === '/api/np';
         if (who !== 'admin' && !npPage) await reportAccess.requireReport(env, account, request.method, url.pathname);
+        // Reading the suppliers is the Buying report; changing them, Suppliers on Do.
+        if (who === 'supervisor' && tabAccess.SUPPLIER_WRITES.has(`${request.method} ${url.pathname}`)
+          && ((await tabAccess.tabsOf(env, account)).suppliers || 0) < 2) {
+          throw new HttpError(403, 'You may look at the suppliers but not change them. An admin can give you Suppliers on Do under Settings › People & access › Who sees what.');
+        }
       } else if (permission === 'owner') account = await requireOwner(request, env);
       // Looking as somebody else is look only: nothing may change while it is on.
       // The few POSTs that only read (to-dos and notes on the cards, Ask) still answer, so the page looks as theirs does.
@@ -881,6 +896,8 @@ async function me(env, { request }) {
       // The report pages they may open: every one for an admin, as shared for anybody else.
       reports: await reportAccess.reportsOf(env, account),
       till: till.roleOf(account) ? { role: till.roleOf(account), access: await till.accessOf(env, account) } : null,
+      // Each tab, 0 hidden, 1 see, 2 do: what the menu offers (routes/tabaccess.js).
+      tabs: await tabAccess.tabsOf(env, account),
     },
   });
 }

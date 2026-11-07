@@ -12,7 +12,7 @@ name (top right).
 | **Buying & stock** | Floats · Receipts · Spend · Stock from Odoo (admins; see stock-from-odoo.md) · Fixed assets (admins; see fixed-assets.md) · Suppliers |
 | **Team** | Everybody (admins; see team.md) · Evaluations (everybody's rating, by role) · Staff costs |
 | **Reports** | Money (Profit & loss, Health, Cash & collections) · Management report · Guests (Occupancy & spend, Prepaid stays) |
-| **Settings** | People & access (People, Supervisors, Reports they see) · Who gets what (People to ask, HIVE alerts, Management report, Prepaid summary) · Rules (Front desk, Nice Place, Receipts, Stock, Team rating) · Connections & files (Connections, Speed, Shift files) · Shared reports |
+| **Settings** | People & access (Who sees what, People; see access.md) · Who gets what (People to ask, HIVE alerts, Management report, Prepaid summary) · Rules (Front desk, Nice Place, Receipts, Stock, Team rating) · Connections & files (Connections, Speed, Shift files) · Shared reports |
 
 **Who gets what › People to ask** is every "this goes to a person" in one table:
 the kitchen's store requests, POs with a stand-in vendor or item, and "Which
@@ -57,7 +57,7 @@ given nothing in Insight gets the other systems.
 | Shifts › People | Front desk › Cashiers |
 | Shifts › Closing reports | Front desk › Shifts › Closing reports |
 | Shifts › Files | Settings › Connections & files › Shift files |
-| Shifts › Settings › Who sees what | Settings › People & access › Supervisors |
+| Shifts › Settings › Who sees what | Settings › People & access › Who sees what |
 | Shifts › Settings › Who is told | Settings › Who gets what › HIVE alerts |
 | Shifts › Settings › Front desk, Limits, Locked dates | Settings › Rules › Front desk |
 | Nice Place › Settings | Settings › Rules › Nice Place |
@@ -74,7 +74,8 @@ given nothing in Insight gets the other systems.
 | Reports › Buying | Buying & stock › Spend and Buying & stock › Suppliers |
 | Reports › Shared reports | Settings › Shared reports |
 | Admin › Accounts | Settings › People & access |
-| Admin › Who sees which reports | Settings › People & access › Reports they see |
+| Admin › Who sees which reports | Settings › People & access › Who sees what |
+| Settings › People & access › Supervisors, Reports they see | Settings › People & access › Who sees what (one table) |
 | Admin › Setup | Settings › Connections & files |
 
 Old links still open: `#/buying` opens Spend, `#/brief` opens Today, and a to-do's
