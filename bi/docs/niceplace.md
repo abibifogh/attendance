@@ -67,7 +67,7 @@ for months before the desk sent its own.
 ## Pickups
 
 Front desk › Nice Place › **Pickups**: for admins; supervisors given
-**Nice Place pickups** (Settings › People & access › Supervisors; the preset
+**Nice Place pickups** (Settings › People & access › Who sees what; the preset
 of the same name gives it with Nice Place counters), where See looks and Act
 makes pickups; and anybody whose Insight access is **Nice Place cash**.
 

@@ -20,10 +20,11 @@ const TABS = [['book', 'Safe book'], ['envelopes', 'Envelopes received'], ['susp
 const remembered = () => { try { return localStorage.getItem('insight-safe-tab') || 'book'; } catch { return 'book'; } };
 
 export async function renderSafe(root, { range }) {
-  // The safe book is the admins'. A supervisor an admin gave "Envelopes
-  // received" sees that tab alone, and marks envelopes only with Act.
+  // The safe book is the admins', and anybody given the Safe on Do under Who
+  // sees what. Somebody given it on See sees Envelopes received alone, and
+  // marks envelopes only with that tick.
   const me = state.me?.account || {};
-  const admin = Boolean(me.isOwner || me.bootstrap || me.till?.role === 'admin');
+  const admin = Boolean(me.isOwner || me.bootstrap || me.till?.role === 'admin' || (me.tabs?.safe || 0) >= 2);
   const act = admin || (me.till?.access?.envelopes || 0) >= 2;
   const tabsFor = admin ? TABS : TABS.filter(([k]) => k === 'envelopes');
   const v = h('div.sh-view');

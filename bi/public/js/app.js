@@ -21,7 +21,7 @@ import { renderJoin } from './views/join.js';
 import { renderUpload } from './views/files.js';
 import { renderPrepaid, renderPrepaidMail } from './views/prepaid.js';
 import { renderMgmt } from './views/mgmt.js';
-import { renderReportAccess } from './views/reportaccess.js';
+import { renderAccess } from './views/access.js';
 import { renderNicePlace } from './views/niceplace.js';
 import { renderPickups } from './views/nppickups.js';
 import { renderSpeed } from './views/speed.js';
@@ -116,9 +116,8 @@ const ROUTES = [
   { path: 'prepaid', label: 'Prepaid stays', section: 'reports', page: 'Guests', render: renderPrepaid, needs: 'insight', ownHash: true, own: true },
 
   // Who may do what, where the systems connect, how things are done, who is told, and reports shared by PIN.
+  { path: 'access', label: 'Who sees what', section: 'settings', page: 'People & access', render: renderAccess, needs: 'admin', own: true, aka: 'Supervisors Reports they see access' },
   { path: 'accounts', label: 'People', section: 'settings', page: 'People & access', render: renderAccounts, needs: 'owner' },
-  { path: 'supervisors', label: 'Supervisors', section: 'settings', page: 'People & access', render: shiftsPart('settings', ['who']), needs: 'shifts', part: 'settings', still: true },
-  { path: 'report-access', label: 'Reports they see', section: 'settings', page: 'People & access', render: renderReportAccess, needs: 'admin', own: true },
   { path: 'who-gets', label: 'People to ask', section: 'settings', page: 'Who gets what', render: renderWhoGets, needs: 'admin' },
   { path: 'notify', label: 'HIVE alerts', section: 'settings', page: 'Who gets what', render: shiftsPart('settings', ['told']), needs: 'shifts', part: 'settings', still: true },
   { path: 'notify-mgmt', label: 'Management report', section: 'settings', page: 'Who gets what', render: (root) => renderMgmt(root, { part: 'settings' }), needs: 'admin' },
@@ -138,7 +137,20 @@ const ROUTES = [
 ];
 
 /** Where an old address now goes: `#/buying` was Spend | Suppliers, `#/shifts?tab=inbox` the Inbox. */
-const ALIASES = { buying: 'spend', findings: 'assistant', books: 'assistant', brief: 'assistant' };
+const ALIASES = { buying: 'spend', findings: 'assistant', books: 'assistant', brief: 'assistant', supervisors: 'access', 'report-access': 'access' };
+
+/**
+ * The tab each page belongs to in Settings › People & access › Who sees what
+ * (routes/tabaccess.js TABS). Somebody who is not an admin sees a page when
+ * they have its tab; a page with no tab here is an admin's.
+ */
+const TAB_OF = {
+  assistant: 'mylist', 'my-evaluation': 'mylist', notifications: 'notifications', approvals: 'approvals', inbox: 'inbox',
+  shifts: 'shifts', closing: 'closing', people: 'cashiers', safe: 'safe', niceplace: 'npcounters', 'np-pickups': 'pickups', upload: 'upload',
+  floats: 'floats', receipts: 'receipts', spend: 'spend', stock: 'stock', assets: 'assets', suppliers: 'suppliers',
+  team: 'everybody', evaluations: 'evaluations', labour: 'labour',
+  money: 'pnl', yardstick: 'health', cash: 'cash', management: 'management', guests: 'guests', prepaid: 'prepaid',
+};
 
 const ICONS = {
   spark: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
@@ -163,22 +175,20 @@ function allowed(route) {
   const me = state.me?.account;
   if (!me) return false;
   if (route.needs === 'session') return true;
-  // Owners and admins load files under Settings › Connections & files; this page is for uploaders.
-  if (route.needs === 'upload') return me.till?.role === 'uploader';
   // Anybody given Insight in any role.
   if (route.needs === 'member') return Boolean(me.isOwner || me.bootstrap || me.till?.role);
-  if (route.part && !(me.isOwner || me.bootstrap) && !shiftsParts(me.till)[route.part]) return false;
-  if (me.isOwner || me.bootstrap) return true;
-  if (route.needs === 'shifts') return ['admin', 'supervisor'].includes(me.till?.role);
-  if (route.needs === 'owner') return false;
-  if (route.needs === 'admin') return me.till?.role === 'admin';
-  // The safe book is the admins'; a supervisor given Envelopes received sees that tab.
-  if (route.needs === 'safe') return me.till?.role === 'admin' || (me.till?.role === 'supervisor' && (me.till?.access?.envelopes || 0) >= 1);
-  if (route.needs === 'pickups') return me.till?.role === 'admin' || me.till?.role === 'npcash' || (me.till?.role === 'supervisor' && (me.till?.access?.pickups || 0) >= 1);
-  // Nice Place cash opens the Nice Place page without it being shared as a report.
-  if (route.path === 'niceplace' && me.till?.role === 'npcash') return true;
-  // A report page: every one for an admin, the ones shared with them for anybody else.
-  return me.canSeeReports === true || (me.reports || []).includes(route.report || route.path);
+  if (me.isOwner || me.bootstrap) return route.needs !== 'upload';
+  if (me.till?.role === 'admin') {
+    // Owners and admins load files under Settings › Connections & files; Upload files is for the others.
+    if (route.needs === 'upload' || route.needs === 'owner') return false;
+    return true;
+  }
+  // Anybody else: the tabs they were given under Settings › People & access › Who sees what.
+  const tab = TAB_OF[route.path];
+  if (!tab || !((me.tabs?.[tab] || 0) >= 1)) return false;
+  // A part of Shifts reads the areas behind it too.
+  if (route.part && !shiftsParts(me.till)[route.part]) return false;
+  return true;
 }
 
 const root = document.getElementById('app');

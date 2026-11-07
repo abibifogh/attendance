@@ -79,7 +79,7 @@ export async function requireReport(env, account, method, path) {
   if (!report) throw forbidden('Only an admin can open that.');
   if (!(await reportsOf(env, account)).includes(report)) {
     const label = REPORTS.find((r) => r.key === report)?.label || 'That report';
-    throw forbidden(`${label} has not been shared with you. An admin can share it under Settings › People & access › Reports they see.`);
+    throw forbidden(`${label} has not been shared with you. An admin can share it under Settings › People & access › Who sees what.`);
   }
 }
 
