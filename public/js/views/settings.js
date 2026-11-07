@@ -69,6 +69,7 @@ export const SECTIONS = [
     key: 'rota', label: 'Rota & clocking', hint: 'Shifts, clocking, limits, lunch',
     panels: [
       { key: 'shifts', label: 'Shifts', need: 'att_setup', render: setup('shifts'), words: 'start end break grace colour' },
+      { key: 'cover', label: 'On the rota', need: 'att_setup', render: setup('shifts', { only: 'cover' }), words: 'must wanted optional instead of alongside draft cover map' },
       { key: 'clocking', label: 'Clocking rules', need: 'att_setup', render: rules(['A day at work']), words: 'missing punch repeat taps window late early overtime quiet chasing' },
       { key: 'reasons', label: 'Absence reasons', need: 'att_setup', render: setup('reasons'), words: 'absent sick reason code' },
       { key: 'workload', label: 'Workload limits', need: 'att_setup', render: setup('workload'), words: 'hours limit days sunday sustainable rest' },
@@ -97,8 +98,6 @@ export const SECTIONS = [
   },
   {
     key: 'notifications', label: 'Notifications', hint: 'What goes out, reminders',
-    // One part at a time: each is long, and stacked they made one very long page.
-    tabs: true,
     panels: [
       { key: 'kinds', label: 'What goes out', need: 'users', render: notices('kinds'), words: 'alert email text push kind' },
       { key: 'reminders', label: 'Reminders to staff', need: 'att_setup', render: rules(['What their phone tells them']), words: 'clock in reminder chase clock out phone' },
@@ -190,7 +189,7 @@ export async function renderSettings(params = {}) {
   const filterPanels = () => {
     for (const p of section?.panels ?? []) {
       const el = blocks.get(p.key);
-      if (el) el.hidden = !matches(p, section) || Boolean(section.tabs && !query && tab && p.key !== tab);
+      if (el) el.hidden = !matches(p, section) || Boolean(tab && !query && p.key !== tab);
     }
     for (const b of content.querySelectorAll('.settings-tabs button')) {
       const on = !query && b.dataset.key === tab;
@@ -204,17 +203,19 @@ export async function renderSettings(params = {}) {
     replaceParams('settings', focus ? { section: s.key, panel: focus } : { section: s.key });
     paintNav();
     blocks.clear();
-    tab = s.tabs ? (s.panels.some((p) => p.key === focus) ? focus : s.panels[0].key) : null;
+    // One part at a time: stacked, the longer sections ran to ten thousand pixels and more.
+    const tabbed = s.panels.length > 1;
+    tab = tabbed ? (s.panels.some((p) => p.key === focus) ? focus : s.panels[0].key) : null;
     const heads = s.panels.map((p) => {
       const body = h('div.settings-panel-body', h('div.card', h('div.skeleton', { style: { height: '120px' } })));
       const el = h('section.settings-panel', { id: `settings-${p.key}`, 'aria-labelledby': `settings-${p.key}-h` },
-        s.panels.length > 1 && !s.tabs ? h('h2.settings-panel-head', { id: `settings-${p.key}-h` }, p.label) : null,
+        s.panels.length > 1 && !tabbed ? h('h2.settings-panel-head', { id: `settings-${p.key}-h` }, p.label) : null,
         body);
       blocks.set(p.key, el);
       return { p, el, body };
     });
     // A long section is still one page; these jump down it.
-    const jumps = s.tabs
+    const jumps = tabbed
       ? h('div.settings-tabs', { role: 'tablist', 'aria-label': `Parts of ${s.label}` }, s.panels.map((p) => h('button', {
         type: 'button', role: 'tab', 'data-key': p.key,
         onclick: () => {
@@ -222,15 +223,6 @@ export async function renderSettings(params = {}) {
           tab = p.key;
           replaceParams('settings', { section: s.key, panel: p.key });
           filterPanels();
-        },
-      }, p.label)))
-      : s.panels.length > 2
-      ? h('nav.settings-jumps', { 'aria-label': `Parts of ${s.label}` }, s.panels.map((p) => h('a', {
-        href: `#/settings?section=${s.key}&panel=${p.key}`,
-        onclick: (e) => {
-          e.preventDefault();
-          replaceParams('settings', { section: s.key, panel: p.key });
-          blocks.get(p.key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         },
       }, p.label)))
       : null;
@@ -245,7 +237,7 @@ export async function renderSettings(params = {}) {
         mount(body, h('div.card.empty', h('h3', 'Could not load this'), h('p.muted', err.message)));
       }
     }));
-    if (focus && blocks.get(focus) && !s.tabs) blocks.get(focus).scrollIntoView({ block: 'start' });
+    if (focus && blocks.get(focus) && !tabbed) blocks.get(focus).scrollIntoView({ block: 'start' });
   };
 
   const search = h('input', {

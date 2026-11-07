@@ -196,7 +196,7 @@ async function openTab(params, range, reload) {
   const problems = problemsOf(data.rows);
   const totalDays = data.rows.reduce((n, r) => n + r.days.length, 0);
 
-  const side = sidePanel({
+  const top = topBar({
     params, range, data, reload, view, clean: clearableDays, total: totalDays, problems,
   });
 
@@ -204,7 +204,7 @@ async function openTab(params, range, reload) {
     ? peopleView({ params, data, reload, groups, clearable, clearableDays })
     : problemsView({ params, data, reload, problems, clearable, clearableDays });
 
-  return h('div.so-layout', main, side);
+  return h('div.so-flow', top, main);
 }
 
 /** Each person's days split by where any question about them has got to. */
@@ -478,44 +478,86 @@ function problemLine(item, data, reload) {
   );
 }
 
+/**
+ * What one press does to a whole group, where one press is safe: the same
+ * answer the first button on each of its lines gives.
+ */
+const GROUP_SIGN = {
+  absent: { label: (n) => `Sign off all ${n} as absent`, note: 'Absent, signed off with the rest' },
+  late: { label: (n) => `Keep all ${n} as late`, note: 'Late, kept as it stands' },
+  early: { label: (n) => `Keep all ${n} as left early`, note: 'Left early, kept as it stands' },
+  noshift: { label: (n) => `Count all ${n} as worked`, note: 'Worked with no shift, counted' },
+  answered: { label: (n) => `Sign off all ${n}`, note: 'Answered, signed off with the rest' },
+};
+/** Groups folded shut by the reader, kept while the list is redrawn. */
+const SO_FOLDED = new Set();
+/** Groups the reader asked to see in full. */
+const SO_ALL = new Set();
+const SO_FIRST = 5;
+
 function problemsView({ params, data, reload, problems, clearable, clearableDays }) {
   const toSettle = problems.filter((p) => !KIND.get(p.kind)?.wait);
   const waiting = problems.filter((p) => KIND.get(p.kind)?.wait);
-
-  // Kind chips: everything, then each kind that is actually on the list.
-  const counts = new Map();
-  for (const p of problems) counts.set(p.kind, (counts.get(p.kind) ?? 0) + 1);
-  let chosen = counts.has(params.kind) ? params.kind : 'all';
-
   const listHost = h('div.so-list');
-  const chipHost = h('div.so-chips.so-kinds', { role: 'group', 'aria-label': 'Show only' });
 
-  const draw = () => {
-    mount(chipHost,
-      [['all', 'Everything', problems.length], ...KINDS.filter((k) => counts.has(k.key))
-        .map((k) => [k.key, k.label, counts.get(k.key)])]
-        .map(([key, label, n]) => h('button.so-chip', {
+  const group = (kind, items) => {
+    const meta = KIND.get(kind) ?? KIND.get('other');
+    const open = !SO_FOLDED.has(kind);
+    const all = SO_ALL.has(kind) || params.kind === kind;
+    const shown = open ? (all ? items : items.slice(0, SO_FIRST)) : [];
+    const bulk = GROUP_SIGN[kind] && (kind !== 'answered' || data.canDecide !== false) ? GROUP_SIGN[kind] : null;
+    // Grouped by person, which is what a sign-off is: one record each.
+    const entries = () => {
+      const byStaff = new Map();
+      for (const { row, day } of items) {
+        if (!byStaff.has(row.staff.id)) byStaff.set(row.staff.id, { row, days: [] });
+        byStaff.get(row.staff.id).days.push(day);
+      }
+      return [...byStaff.values()];
+    };
+    return h(`section.so-group.is-${meta.tone}`, { class: open ? 'open' : '', dataset: { kind } },
+      h('div.so-group-head',
+        h('button.so-group-toggle', {
           type: 'button',
-          class: chosen === key ? 'on' : '',
-          'aria-pressed': chosen === key ? 'true' : 'false',
-          onclick: () => {
-            chosen = key;
-            params.kind = key === 'all' ? null : key;
-            replaceParams('signoff', params);
-            draw();
-          },
-        }, label, h('span.so-chip-n', String(n)))));
+          'aria-expanded': open ? 'true' : 'false',
+          onclick: () => { if (SO_FOLDED.has(kind)) SO_FOLDED.delete(kind); else SO_FOLDED.add(kind); draw(); },
+        },
+        h('span.so-chev', { 'aria-hidden': 'true' }),
+        h('span.so-ic', { 'aria-hidden': 'true' }, meta.icon),
+        h('b', meta.label),
+        h('span.so-group-n', String(items.length))),
+        bulk && items.length > 1
+          ? h('button.so-btn.so-fix', {
+            type: 'button',
+            title: 'Shows every day first, and any of them can be taken out',
+            onclick: (event) => signMany({
+              clearable: entries(),
+              title: bulk.label(items.length),
+              intro: 'Every day here is signed off as it stands, each person on their own record. Where the '
+                + 'figures say a day counts against somebody’s leave, that is what is put to it, as on the '
+                + 'single button. Take out anything you would rather look at yourself.',
+              note: bulk.note,
+              applied: (days) => overUnderOf(days),
+            }, reload, event.currentTarget),
+          }, bulk.label(items.length))
+          : null),
+      shown.map((p) => problemLine(p, data, reload)),
+      open && shown.length < items.length
+        ? h('button.so-more', { type: 'button', onclick: () => { SO_ALL.add(kind); draw(); } },
+          `Show ${items.length - shown.length} more`)
+        : null);
+  };
 
-    const shown = (list) => (chosen === 'all' ? list : list.filter((p) => p.kind === chosen));
-    const mine = shown(toSettle);
-    const theirs = shown(waiting);
+  const byKind = (list) => KINDS.map((k) => [k.key, list.filter((p) => p.kind === k.key)]).filter(([, l]) => l.length);
+
+  function draw() {
+    const mine = byKind(toSettle);
+    const theirs = byKind(waiting);
     mount(listHost,
-      mine.map((p) => problemLine(p, data, reload)),
-      theirs.length
-        ? h('div.so-sub', `Waiting on somebody else · ${theirs.length}`)
-        : null,
-      theirs.map((p) => problemLine(p, data, reload)),
-      !mine.length && !theirs.length
+      mine.map(([kind, items]) => group(kind, items)),
+      theirs.length ? h('div.so-sub', `Waiting on somebody else · ${waiting.length}`) : null,
+      theirs.map(([kind, items]) => group(kind, items)),
+      !toSettle.length && !waiting.length
         ? h('div.so-none',
           h('span.so-none-tick', { 'aria-hidden': 'true' }, '✓'),
           h('b', data.rows.length ? 'Nothing to settle' : 'Nothing outstanding'),
@@ -525,24 +567,10 @@ function problemsView({ params, data, reload, problems, clearable, clearableDays
               + 'or there was nothing on it to sign.'))
         : null,
     );
-  };
+  }
   draw();
 
-  const period = data.limit && data.limit > data.from
-    ? `${fmtDayShort(data.from)} – ${fmtDayShort(data.limit)}`
-    : fmtDayShort(data.from);
-
-  return h('section.so-main',
-    h('div.so-main-head',
-      h('div.so-title',
-        h('b', toSettle.length
-          ? `${toSettle.length} thing${toSettle.length === 1 ? '' : 's'} to settle`
-          : 'Nothing to settle'),
-        h('span', ` · ${period}`,
-          clearableDays
-            ? ` · ${clearableDays} clean day${clearableDays === 1 ? '' : 's'} sign${clearableDays === 1 ? 's' : ''} off together`
-            : '')),
-      problems.length ? chipHost : null),
+  return h('section.so-main.so-grouped',
     undoStrip(reload),
     listHost,
     h('div.so-foot',
@@ -642,81 +670,87 @@ function peopleView({ params, data, reload, groups, clearable, clearableDays }) 
 }
 
 /** The right-hand column: how clean the period is, the controls, the last sign-off. */
-function sidePanel({ params, range, data, reload, view, clean, total, problems }) {
+/**
+ * Above the list: how far off the period is, as one line and a slim bar, and
+ * the filters in a single row. On a phone the filters fold behind one button
+ * so the list is the first thing on the screen.
+ */
+function topBar({ params, range, data, reload, view, clean, total, problems }) {
   const custom = Boolean(params.from || params.to);
   const pct = total ? Math.round((clean / total) * 100) : 100;
   const others = problems.filter((p) => !KIND.get(p.kind)?.wait).length;
+  const period = data.limit && data.limit > data.from
+    ? `${fmtDayShort(data.from)} – ${fmtDayShort(data.limit)}`
+    : fmtDayShort(data.from);
 
-  const ring = h('section.so-card.so-ring-card',
-    h('div.so-ring', { style: { '--pct': String(pct) }, role: 'img', 'aria-label': `${pct}% clean` },
-      h('div.so-ring-hole', h('b', `${pct}%`), h('small', 'clean'))),
-    h('div.so-ring-text',
-      h('b', total
-        ? `${clean} of ${total} day${total === 1 ? '' : 's'} ${clean === 1 ? 'is' : 'are'} clean`
-        : 'Nothing waiting'),
-      h('span', !total
-        ? 'Every day in this period is signed off.'
-        : others
-          ? `Settle the ${others} problem${others === 1 ? '' : 's'} and the period signs off in one press.`
-          : 'All of it can be signed off in one press.')));
+  const summary = h('section.so-sum',
+    h('div.so-sum-text',
+      h('b', !total ? 'Nothing waiting'
+        : others ? `${others} thing${others === 1 ? '' : 's'} to settle` : 'Nothing to settle'),
+      h('span', ` · ${period}`),
+      total ? h('span', ` · ${clean} of ${total} day${total === 1 ? '' : 's'} clean`) : null),
+    h('div.so-bar', { role: 'img', 'aria-label': `${pct}% clean` }, h('i', { style: { width: `${pct}%` } })));
+
+  const presetLabel = custom ? 'Chosen dates' : (PRESETS.find(([key]) => key === range.preset)?.[1] ?? 'Last 14 days');
+  const departments = data.departments ?? [];
+
+  const periodPick = h('select.so-select', {
+    'aria-label': 'Period',
+    onchange: (e) => (e.target.value === 'custom'
+      ? reload({ preset: null, from: range.from, to: range.to })
+      : reload({ preset: e.target.value, from: null, to: null })),
+  },
+  PRESETS.map(([key, label]) => h('option', { value: key, selected: !custom && range.preset === key }, label)),
+  h('option', { value: 'custom', selected: custom }, 'Dates…'));
+
+  const dates = custom
+    ? h('div.so-dates',
+      h('input', {
+        type: 'date', value: range.from, 'aria-label': 'From',
+        onchange: (e) => e.target.value && reload({ from: e.target.value, to: range.to, preset: null }),
+      }),
+      h('input', {
+        type: 'date', value: range.to, 'aria-label': 'To',
+        onchange: (e) => e.target.value && reload({ from: range.from, to: e.target.value, preset: null }),
+      }))
+    : null;
+
+  const deptPick = departments.length
+    ? h('select.so-select', {
+      'aria-label': 'Department',
+      onchange: (e) => reload({ department: e.target.value || null }),
+    },
+    h('option', { value: '' }, 'Everybody'),
+    departments.map((d) => h('option', { value: d, selected: params.department === d }, d)))
+    : null;
 
   const chip = (label, on, onclick) => h('button.so-chip', {
     type: 'button', class: on ? 'on' : '', 'aria-pressed': on ? 'true' : 'false', onclick,
   }, label);
-
-  const departments = data.departments ?? [];
-  const controls = h('section.so-card.so-controls',
-    h('span.so-label', 'Period'),
-    h('div.so-chips',
-      PRESETS.map(([key, label]) => chip(label, !custom && range.preset === key,
-        () => reload({ preset: key, from: null, to: null }))),
-      chip('Dates…', custom, () => reload({ preset: null, from: range.from, to: range.to }))),
-    custom
-      ? h('div.so-dates',
-        h('input', {
-          type: 'date', value: range.from, 'aria-label': 'From',
-          onchange: (e) => e.target.value && reload({ from: e.target.value, to: range.to, preset: null }),
-        }),
-        h('input', {
-          type: 'date', value: range.to, 'aria-label': 'To',
-          onchange: (e) => e.target.value && reload({ from: range.from, to: e.target.value, preset: null }),
-        }))
-      : null,
-    departments.length
-      ? [
-        h('span.so-label', 'Department'),
-        h('div.so-chips.so-depts',
-          chip('Everybody', !params.department, () => reload({ department: null })),
-          departments.map((d) => chip(d, params.department === d, () => reload({ department: d })))),
-        h('select.so-dept-select', {
-          'aria-label': 'Department',
-          onchange: (e) => reload({ department: e.target.value || null }),
-        },
-        h('option', { value: '' }, 'Everybody'),
-        departments.map((d) => h('option', { value: d, selected: params.department === d }, d))),
-      ]
-      : null,
-    h('span.so-label', 'Show'),
-    h('div.so-chips',
-      chip('Problems', view === 'problems', () => reload({ view: null })),
-      chip('Each person', view === 'people', () => reload({ view: 'people' }))),
-  );
+  const show = h('div.so-seg', { role: 'group', 'aria-label': 'Show' },
+    chip('Problems', view === 'problems', () => reload({ view: null })),
+    chip('Each person', view === 'people', () => reload({ view: 'people' })));
 
   const last = data.lastSigned;
-  const lastCard = h('section.so-card.so-last',
-    h('span.so-label', 'Last signed off'),
+  const lastLine = h('span.so-last-line',
     last
-      ? h('p',
+      ? ['Last signed off: ',
         `${last.from === last.to ? fmtDayShort(last.from) : `${fmtDayShort(last.from)} – ${fmtDayShort(last.to)}`}`
-        + `${last.people > 1 ? `, ${last.people} people` : ''}`
-        + `${last.by ? `, by ${last.by}` : ''}, on ${fmtDayShort(last.on)}. `,
-        h('button.so-link', {
-          type: 'button',
-          onclick: () => reload({ tab: 'months', month: last.to.slice(0, 7) }),
-        }, 'Open it'))
-      : h('p', 'Nothing has been signed off yet.'));
+        + `${last.by ? `, by ${last.by}` : ''}. `,
+        h('button.so-link', { type: 'button', onclick: () => reload({ tab: 'months', month: last.to.slice(0, 7) }) }, 'Open it')]
+      : 'Nothing signed off yet');
 
-  return h('aside.so-side', ring, controls, lastCard);
+  const filters = h('div.so-filters', periodPick, dates, deptPick, show, lastLine);
+  const toggle = h('button.so-filter-toggle', {
+    type: 'button',
+    'aria-expanded': 'false',
+    onclick: () => {
+      const open = filters.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    },
+  }, h('span', `${presetLabel} · ${params.department || 'Everybody'}`), h('b', 'Filters'));
+
+  return h('div.so-top', summary, toggle, filters);
 }
 
 /** One press: put a clock time on from the shift, as the times dialog would. */
@@ -1185,6 +1219,22 @@ async function sign(row, chosen, reload) {
  * through and the failures are named.
  */
 async function signAllClean(clearable, total, reload, button) {
+  return signMany({
+    clearable,
+    title: 'Sign off everything clean',
+    intro: 'Every day here has nothing flagged against it, nothing waiting on an '
+      + 'administrator, and nothing to charge against anybody’s leave. Take out anything '
+      + 'you would rather look at yourself.',
+    note: 'Nothing outstanding on these days',
+    applied: () => 0,
+  }, reload, button);
+}
+
+/**
+ * Sign a set of people's days, shown first with every line able to come out.
+ * `applied` says how many days each person's sign-off puts to their leave.
+ */
+async function signMany({ clearable, title, intro, note, applied }, reload, button) {
   // Shown before it happens, and every line of it can be taken back out. A
   // button that signs ninety-six days on one press has to be able to say which
   // ninety-six first — "trust me" is not a confirmation dialog, it is a dialog
@@ -1233,12 +1283,10 @@ async function signAllClean(clearable, total, reload, button) {
   ));
 
   const done = await formDialog({
-    title: 'Sign off everything clean',
+    title,
     submitLabel: 'Sign them off',
     body: h('div',
-      h('p.muted', 'Every day here has nothing flagged against it, nothing waiting on an '
-        + 'administrator, and nothing to charge against anybody’s leave. Take out anything '
-        + 'you would rather look at yourself.'),
+      h('p.muted', intro),
       h('p', 'Signing ', countLine, '.'),
       h('div.clean-list', rows),
       h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
@@ -1260,8 +1308,8 @@ async function signAllClean(clearable, total, reload, button) {
           const out = await api.attSignDays({
             staffId: row.staff.id,
             days,
-            daysApplied: 0,
-            note: 'Nothing outstanding on these days',
+            daysApplied: applied(row.days.filter((d) => days.includes(d.day))),
+            note,
           });
           signed += Number(out.signed ?? days.length);
         } catch (err) {

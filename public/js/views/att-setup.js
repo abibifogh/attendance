@@ -1143,7 +1143,10 @@ async function staffTab(reload) {
 // Shifts
 // ---------------------------------------------------------------------------
 
-async function shiftsTab(reload) {
+/** Which departments' shifts are open, kept while the screen is redrawn. */
+const SHIFT_GROUPS_OPEN = new Set();
+
+async function shiftsTab(reload, params = {}) {
   const [{ shifts, departments = [], positions = [], staff = [] }, suggested] = await Promise.all([
     api.attShifts(),
     api.attShiftSuggestions().catch(() => null),
@@ -1539,133 +1542,101 @@ async function shiftsTab(reload) {
     await reload();
   };
 
-  const tickAll = h('input.th-tick', {
-    type: 'checkbox',
-    title: 'Tick every shift',
-    onchange: (event) => {
-      const on = event.target.checked;
-      for (const box of shiftBody.querySelectorAll('input[type=checkbox]')) {
-        box.checked = on;
-        box.dispatchEvent(new Event('change'));
-      }
-    },
-  });
+  const shiftBody = h('div.shift-groups');
+  let findText = '';
 
-  const shiftBody = h('div');
+  // One line a shift: what it is, its hours and the few numbers somebody comes
+  // here to change. The rest (which days, who, alternatives) is a quiet line
+  // under the name, and only when it says something.
+  const runsLine = (r) => {
+    const days = readRunsOn(r);
+    const bits = [
+      days ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter((_, i) => days.includes(i)).join(' ') : null,
+      r.every_days > 1 ? (r.every_days === 2 ? 'every other day' : `every ${r.every_days} days`) : null,
+      r.pair_group ? `with ${r.pair_group}` : null,
+      r.alt_group ? `or ${r.alt_group}${r.alt_scope === 'week' ? ', weekly' : ''}` : null,
+      readOnlyStaff(r).length ? readOnlyStaff(r).map((id) => staff.find((p) => p.id === id)?.name ?? '?').join(', then ') : null,
+      r.needed != null ? `${fmtNum(r.needed, 0)} needed${r.optional ? ' if spare' : ''}` : null,
+    ].filter(Boolean);
+    return bits.length ? h('small.muted', bits.join(' · ')) : null;
+  };
+
+  const shiftRow = (r) => h('div.shift-line',
+    h('input', {
+      type: 'checkbox',
+      'aria-label': `Choose ${r.name}`,
+      checked: chosen.has(r.id),
+      onchange: (event) => {
+        if (event.target.checked) chosen.add(r.id); else chosen.delete(r.id);
+        refreshGroupBar();
+      },
+    }),
+    h('div.shift-line-what',
+      h('div.shift-key-item',
+        h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(r)})` } }),
+        h('strong', r.name),
+        r.position ? h('span.pill', r.position) : null),
+      runsLine(r)),
+    h('span.shift-line-hours', `${r.starts_at} – ${r.ends_at}`, r.ends_at <= r.starts_at ? h('small.muted', ' overnight') : null),
+    h('span.shift-line-num', { title: 'Break' }, r.break_minutes ? `${r.break_minutes} min break` : h('span.muted', 'no break')),
+    h('span.shift-line-num', { title: 'Grace in and out' }, `grace ${r.grace_in_minutes}/${r.grace_out_minutes} min`),
+    h('span.shift-line-num', { title: 'Half day and full day' }, `${fmtNum(r.half_day_minutes / 60, 1)} / ${fmtNum(r.full_day_minutes / 60, 1)} h`),
+    h('div.shift-line-acts',
+      // Retiring is in the shift's own form, under Status: a third button on
+      // every line was a press nobody makes twice a year.
+      h('button.btn-sm', { type: 'button', onclick: () => edit(r) }, 'Edit'),
+      r.deletable ? h('button.btn-sm.btn-danger', { type: 'button', onclick: () => remove(r) }, 'Delete') : null));
+
+  const drawShifts = () => {
+    const words = findText.trim().toLowerCase();
+    const fits = (r) => !words || `${r.name} ${r.position ?? ''} ${r.department ?? ''}`.toLowerCase().includes(words);
+    const depts = [...new Set(inUse.map((r) => r.department || ''))]
+      .sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+    const groups = depts.map((dept) => {
+      const all = inUse.filter((r) => (r.department || '') === dept);
+      const mine = all.filter(fits);
+      if (!mine.length) return null;
+      const key = dept || '—';
+      const open = Boolean(words) || depts.length === 1 || SHIFT_GROUPS_OPEN.has(key);
+      return h('section.shift-group', { class: open ? 'open' : '' },
+        h('button.shift-group-head', {
+          type: 'button',
+          'aria-expanded': open ? 'true' : 'false',
+          onclick: () => {
+            if (SHIFT_GROUPS_OPEN.has(key)) SHIFT_GROUPS_OPEN.delete(key); else SHIFT_GROUPS_OPEN.add(key);
+            drawShifts();
+          },
+        },
+        h('span.notice-chev', { 'aria-hidden': 'true' }),
+        h('strong', dept || 'No department'),
+        h('span.muted', words ? `${mine.length} of ${all.length}` : `${all.length} shift${all.length === 1 ? '' : 's'}`)),
+        open ? mine.map(shiftRow) : null);
+    }).filter(Boolean);
+    mount(shiftBody, inUse.length
+      ? (groups.length ? groups : h('p.muted', 'No shift matches that.'))
+      : h('p.muted', 'No shifts yet. Add the ones your rota actually uses — usually two or three.'));
+  };
+  drawShifts();
+
+  if (params?.only === 'cover') return h('div', coverMapCard(shifts, reload));
 
   return h('div',
     suggestionsCard(suggested, reload),
-
-    coverMapCard(shifts, reload),
 
     card('Shifts', {
       note: 'A shift is what "late" is measured against',
       actions: h('button.btn.btn-primary', { onclick: () => edit(null) }, '+ Add a shift'),
       wide: true,
     },
+      h('div.shift-tools',
+        h('input', {
+          type: 'search',
+          placeholder: 'Find a shift',
+          'aria-label': 'Find a shift',
+          oninput: (event) => { findText = event.target.value; drawShifts(); },
+        })),
       groupBar,
-      mount(shiftBody, table([
-        {
-          key: 'tick',
-          label: tickAll,
-          cls: 'no-print',
-          format: (v, r) => h('input', {
-            type: 'checkbox',
-            'aria-label': r.name,
-            onchange: (event) => {
-              if (event.target.checked) chosen.add(r.id); else chosen.delete(r.id);
-              refreshGroupBar();
-            },
-          }),
-        },
-        {
-          key: 'name',
-          label: 'Name',
-          format: (v, r) => h('div.shift-key-item',
-            h('span.shift-key-swatch', { style: { '--shift': `var(--c${shiftColour(r)})` } }),
-            h('span', v)),
-        },
-        {
-          key: 'starts_at',
-          label: 'Hours',
-          format: (v, r) => h('div',
-            h('div', `${v} – ${r.ends_at}`),
-            r.ends_at <= v ? h('small.muted', 'overnight') : null,
-          ),
-        },
-        {
-          key: 'position',
-          label: 'Position',
-          format: (v) => (v ? h('span.pill', v) : h('span.muted', 'its own')),
-        },
-        { key: 'break_minutes', label: 'Break', align: 'right', cls: 'off-phone', format: (v) => (v ? `${v} min` : h('span.muted', 'none')) },
-        { key: 'grace_in_minutes', label: 'Grace in', align: 'right', format: (v) => `${v} min` },
-        { key: 'grace_out_minutes', label: 'Grace out', align: 'right', format: (v) => `${v} min` },
-        { key: 'half_day_minutes', label: 'Half day', align: 'right', format: (v) => `${fmtNum(v / 60, 1)} h` },
-        { key: 'full_day_minutes', label: 'Full day', align: 'right', format: (v) => `${fmtNum(v / 60, 1)} h` },
-        {
-          key: 'needed',
-          label: 'Needed',
-          align: 'right',
-          cls: 'off-phone',
-          format: (v, r) => h('div',
-            v == null ? h('span.muted', 'from history') : fmtNum(v, 0),
-            r.optional ? h('small.muted', { style: { display: 'block' } }, 'if spare') : null),
-        },
-        {
-          key: 'runs_on',
-          label: 'Runs',
-          cls: 'off-phone',
-          format: (v, r) => {
-            const days = readRunsOn(r);
-            return h('div',
-              days
-                ? h('span', ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-                  .filter((_, i) => days.includes(i)).join(' '))
-                : h('span.muted', 'every day'),
-              r.pair_group
-                ? h('span.rule-chip', { title: `Runs together with the rest of ${r.pair_group}` },
-                  `with ${r.pair_group}`)
-                : null,
-              r.alt_group
-                ? h('small.muted', { style: { display: 'block' } },
-                  `or ${r.alt_group}${r.alt_scope === 'week' ? ', weekly' : ''}`)
-                : null,
-              r.every_days > 1
-                ? h('small.muted', { style: { display: 'block' } },
-                  r.every_days === 2 ? 'every other day' : `every ${r.every_days} days`)
-                : null,
-              readOnlyStaff(r).length
-                ? h('small.muted', { style: { display: 'block' } },
-                  readOnlyStaff(r).map((id) => staff.find((p) => p.id === id)?.name ?? '?')
-                    .join(', then '))
-                : null);
-          },
-        },
-        {
-          key: 'actions',
-          label: '',
-          // Delete only where there is genuinely nothing to lose. Everywhere
-          // else the honest offer is Retire, and offering Delete anyway just
-          // to refuse it afterwards teaches people the buttons are guesses.
-          format: (v, r) => h('div.btn-row',
-            h('button.btn-sm', { onclick: () => edit(r) }, 'Edit'),
-            r.active
-              ? h('button.btn-sm', { onclick: () => retire(r, true) }, 'Retire')
-              : h('button.btn-sm', { onclick: () => retire(r, false) }, 'Bring back'),
-            r.deletable
-              ? h('button.btn-sm.btn-danger', { onclick: () => remove(r) }, 'Delete')
-              : null,
-          ),
-        },
-      ], inUse, {
-        empty: 'No shifts yet. Add the ones your rota actually uses — usually two or three.',
-        // Banded by department, which is also how the rota offers them. Two
-        // dozen shifts read as one intimidating list and as five ordinary ones,
-        // and the difference is entirely the headings.
-        groupBy: (r) => r.department || null,
-        groupNoun: ['shift', 'shifts'],
-      }))),
+      shiftBody),
 
     // The positions themselves, where there are any. A property that has never
     // grouped two shifts has nothing to read here, and the card stays away.
@@ -1690,10 +1661,8 @@ async function shiftsTab(reload) {
     // leaving it in the list means reading past it every time somebody comes
     // to change a grace period.
     retired.length
-      ? card('Retired', {
-        note: `${retired.length} — off the rota, still in the history`,
-        wide: true,
-      },
+      ? h('details.shift-retired',
+        h('summary', h('strong', 'Retired'), h('span.muted', ` ${retired.length} — off the rota, still in the history`)),
         h('p.muted', { style: { fontSize: '.85rem' } },
           'These are offered nowhere: not on the rota, not in a pattern, not when somebody settles '
           + 'a day. Every day already measured against one still reads exactly as it did.'),
@@ -1748,22 +1717,13 @@ function suggestionsCard(data, reload) {
   // starts empty.
   const chosen = new Set(fresh.map((s) => `${s.starts_at}-${s.ends_at}`));
 
+  // Nothing to offer yet: one quiet line, not a card to read past every visit.
   if (!data.suggestions.length) {
-    return card('Shifts found for you', { note: 'Nothing yet', wide: true },
-      h('p.muted',
-        data.evidence.daysOfPunches
-          ? `${data.evidence.daysOfPunches} days of punches so far — not yet a clear enough pattern to `
-            + 'suggest a shift from. It usually takes a couple of weeks. Add your shifts by hand in the '
-            + 'meantime; the suggestions will stop appearing once they match.'
-          : 'No punches yet, and the terminal has not reported any attendance bands. Once the poller has '
-            + 'been running for a week or two, the shifts your staff actually work will be offered here.'),
-      h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
-        `The terminal answered ${data.evidence.deviceReported} configuration `
-        + `${data.evidence.deviceReported === 1 ? 'endpoint' : 'endpoints'} with `
-        + `${data.evidence.deviceBands} usable time ${data.evidence.deviceBands === 1 ? 'band' : 'bands'}. `
-        + 'A device that is not in automatic attendance mode reports none, which is normal — the punches '
-        + 'alone are enough.'),
-    );
+    return h('div.shift-found-none',
+      h('strong', 'Shifts found for you'),
+      h('span.muted', data.evidence.daysOfPunches
+        ? `Nothing yet: ${data.evidence.daysOfPunches} days of punches, not yet a pattern. It usually takes a couple of weeks.`
+        : 'Nothing yet: no punches so far. The shifts your staff actually work will be offered here.'));
   }
 
   const importChosen = async () => {

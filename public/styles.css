@@ -8192,7 +8192,9 @@ button.lp-row:disabled { cursor: default; }
 .settings-panel .rules-band-head { display: none; }
 .settings-panel .rules-band { margin-top: 0; }
 .settings-jumps { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
-/* A section drawn as tabs: one part at a time. */
+/* A section drawn as tabs: one part at a time. They wrap on a wide screen and
+   scroll sideways on a phone. */
+@media (min-width: 761px) { .settings-tabs { flex-wrap: wrap; overflow-x: visible; } }
 .settings-tabs { display: flex; gap: .2rem; margin-top: .7rem; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
 .settings-tabs button {
   flex: none; padding: .55rem .85rem; min-height: 40px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -8868,3 +8870,40 @@ button.lp-row:disabled { cursor: default; }
 .tpl-history-row { display: flex; align-items: center; gap: .6rem; font-size: .85rem; }
 .tpl-history-row span { flex: 1; min-width: 0; color: var(--text-dim); }
 .tpl-history-words { max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .6rem .8rem; background: var(--surface); }
+
+/* Settings › Rota & clocking › Shifts: one line a shift, grouped by department
+   and folded, rather than a thirteen-column table that ran off the edge. */
+.shift-tools { display: flex; gap: .5rem; margin-bottom: .6rem; }
+.shift-tools input { max-width: 18rem; }
+.shift-groups { display: grid; gap: .45rem; }
+.shift-group { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.shift-group-head {
+  display: flex; align-items: center; gap: .6rem; width: 100%; min-height: 44px; padding: .55rem .85rem;
+  border: 0; background: none; font: inherit; color: var(--text); text-align: left; justify-content: flex-start; cursor: pointer;
+}
+.shift-group-head:hover { background: var(--surface-2); }
+.shift-group-head .muted { font-size: .82rem; }
+.shift-group.open .notice-chev { transform: rotate(45deg); }
+.shift-line {
+  display: grid; grid-template-columns: auto minmax(9rem, 1fr) 6.8rem 5.6rem 6.8rem 4rem 3.6rem;
+  gap: .4rem .7rem; align-items: center; padding: .5rem .85rem; border-top: 1px solid var(--border); font-size: .88rem;
+}
+.shift-line input[type=checkbox] { width: auto; margin: 0; }
+.shift-line-what { display: grid; gap: .1rem; min-width: 0; }
+.shift-line-what .shift-key-item { align-items: flex-start; }
+.shift-line-what .shift-key-swatch { margin-top: .2rem; flex: none; }
+.shift-found-none { display: flex; flex-wrap: wrap; gap: .3rem .7rem; align-items: baseline; padding: .65rem .9rem; margin-bottom: .8rem; border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: .88rem; }
+.shift-line-what small { font-size: .76rem; }
+.shift-line-what .pill { font-size: .7rem; }
+.shift-line-hours { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shift-line-num { font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: .82rem; white-space: nowrap; }
+.shift-line-acts { display: flex; gap: .3rem; justify-content: flex-end; }
+.shift-retired { margin-top: .4rem; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: .6rem .85rem; }
+.shift-retired summary { cursor: pointer; }
+.shift-retired[open] summary { margin-bottom: .5rem; }
+@media (max-width: 760px) {
+  .shift-line { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .shift-line-hours { grid-column: 2; }
+  .shift-line-num { display: none; }
+  .shift-line-acts { grid-column: 3; grid-row: 1 / span 2; flex-direction: column; }
+}

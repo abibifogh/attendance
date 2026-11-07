@@ -158,3 +158,67 @@
   .so-side, .so-fixes, .so-foot, .so-tabs { display: none !important; }
   .so-layout { grid-template-columns: 1fr; }
 }
+
+/* ------------------------------------- the list grouped by problem -- */
+/* The summary and filters sit above the list instead of beside it, so the list
+   has the width and the reason on a line is never squeezed under its buttons. */
+.so-flow { display: grid; gap: .75rem; }
+.so-top { display: grid; gap: .6rem; }
+.so-sum { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: .8rem 1rem; display: grid; gap: .55rem; }
+.so-sum-text b { font-size: 1.02rem; }
+.so-sum-text span { font-size: .86rem; color: var(--text-dim); }
+.so-bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.so-bar i { display: block; height: 100%; background: var(--good); border-radius: 3px; min-width: 2px; }
+.so-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; }
+.so-select { width: auto; min-width: 9rem; padding: .42rem 2rem .42rem .7rem; font-size: .86rem; border-radius: 10px; }
+.so-filters .so-dates { display: flex; gap: .4rem; }
+.so-filters .so-dates input { width: auto; }
+.so-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.so-seg .so-chip { border: 0; background: transparent; border-radius: 9px; }
+.so-seg .so-chip.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(16, 19, 26, .12); }
+.so-last-line { margin-left: auto; font-size: .8rem; color: var(--text-dim); }
+.so-filter-toggle { display: none; }
+
+.so-grouped { background: transparent; border: 0; border-radius: 0; overflow: visible; gap: .6rem; }
+.so-grouped .so-list { display: grid; gap: .6rem; }
+.so-group { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.so-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .8rem; padding: .55rem .8rem .55rem .5rem; }
+.so-group-toggle { display: flex; align-items: center; gap: .6rem; border: 0; background: none; padding: .25rem .4rem; font: inherit; color: var(--text); cursor: pointer; min-height: 40px; border-radius: 10px; }
+.so-group-toggle:hover { background: var(--surface-2); }
+.so-group-toggle b { font-size: .98rem; }
+.so-group .so-ic { width: 1.9rem; height: 1.9rem; border-radius: 9px; font-size: .85rem; }
+.so-group.is-info .so-ic { background: var(--so-info-soft); color: var(--so-info); }
+.so-group.is-bad .so-ic { background: var(--bad-soft); color: var(--bad); }
+.so-group.is-warn .so-ic { background: var(--warn-soft); color: var(--warn); }
+.so-group.is-accent .so-ic { background: var(--so-accent-soft); color: var(--accent); }
+.so-group.is-good .so-ic { background: var(--good-soft); color: var(--good); }
+.so-group-n { font-size: .82rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.so-chev { width: .5rem; height: .5rem; border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint); transform: rotate(-45deg); transition: transform .15s; }
+.so-group.open .so-chev { transform: rotate(45deg); }
+.so-group-head > .so-btn { margin-left: auto; }
+.so-grouped .so-issue { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; padding: .65rem 1rem; }
+.so-grouped .so-issue > .so-ic { display: none; }
+.so-grouped .so-who { flex: 0 0 13rem; }
+.so-grouped .so-what { flex: 1 1 14rem; }
+.so-grouped .so-fixes { flex: 0 0 auto; margin-left: auto; }
+.so-more { display: block; width: 100%; padding: .55rem; border: 0; border-top: 1px solid var(--so-line); background: none; font: inherit; font-size: .84rem; font-weight: 650; color: var(--accent); cursor: pointer; }
+.so-grouped .so-sub { border: 0; background: none; padding: .4rem .2rem 0; }
+.so-grouped .so-foot { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.so-grouped .so-none { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+
+@media (max-width: 620px) {
+  .so-filter-toggle {
+    display: flex; align-items: center; justify-content: space-between; gap: .6rem; width: 100%; min-height: 44px;
+    padding: .5rem .85rem; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    font: inherit; font-size: .86rem; color: var(--text); cursor: pointer;
+  }
+  .so-filter-toggle b { color: var(--accent); }
+  .so-filters { display: none; }
+  .so-filters.is-open { display: flex; padding: .7rem .85rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .so-filters .so-select { flex: 1 1 100%; }
+  .so-last-line { margin-left: 0; }
+  .so-grouped .so-who, .so-grouped .so-what { flex: 1 1 100%; }
+  .so-grouped .so-fixes { margin-left: 0; justify-content: flex-start; }
+  .so-group-head > .so-btn { flex: 1 1 100%; margin-left: 0; text-align: center; }
+}
+@media print { .so-filters, .so-filter-toggle, .so-group-head > .so-btn, .so-more { display: none !important; } }
