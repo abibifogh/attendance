@@ -655,44 +655,105 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .install-nudge-what { display: grid; gap: .1rem; min-width: 12rem; }
 .install-nudge-what small { font-size: .8rem; line-height: 1.35; }
 
-/* Every kind of notice, and which ways out it may take. A grid rather than a
-   table: the rows are of different heights because each one explains itself,
-   and a table cell that wraps to three lines drags its whole row with it. */
-.notice-kinds { display: grid; gap: 0; }
+/* Settings › Notifications › What goes out. Groups fold to one line each with
+   a count of what is on; opened, each notice is a row with three switches.
+   On a phone the switches become three buttons under the notice. */
+.notice-page { display: grid; gap: .8rem; }
+.notice-lead { margin: 0; max-width: 46rem; color: var(--text-dim); font-size: .9rem; line-height: 1.5; }
+.notice-how { display: inline; }
+.notice-how summary { display: inline; cursor: pointer; color: var(--accent); font-weight: 600; list-style: none; }
+.notice-how summary::-webkit-details-marker { display: none; }
+.notice-how[open] { display: block; margin-top: .5rem; padding: .7rem .9rem; background: var(--surface-2); border-radius: var(--radius-sm); }
+.notice-how p { margin: .45rem 0 0; }
+.notice-tools { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.notice-search { flex: 1 1 16rem; max-width: 22rem; }
+.notice-filters { display: flex; flex-wrap: wrap; gap: .4rem; }
+.notice-filters .chip { min-height: 34px; padding: 0 .75rem; font-size: .82rem; }
+.notice-groups { display: grid; gap: .5rem; }
+.notice-group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.notice-group-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; width: 100%;
+  padding: .8rem 1rem; min-height: 48px; border: 0; background: none; font: inherit; color: var(--text);
+  text-align: left; justify-content: flex-start; cursor: pointer;
+}
+.notice-group-head:hover { background: var(--surface-2); }
+.notice-group-head strong { font-size: .98rem; }
+.notice-count { font-size: .82rem; }
+.notice-chev { width: .55rem; height: .55rem; border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint); transform: rotate(-45deg); transition: transform .15s; flex: none; margin-right: .1rem; }
+.notice-group.open .notice-chev { transform: rotate(45deg); }
+.notice-sum { margin-left: auto; display: flex; flex-wrap: wrap; gap: .3rem; }
+.notice-sum-one { font-size: .74rem; padding: .15rem .5rem; border-radius: 6px; background: var(--surface-2); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.notice-sum-one.all { background: var(--accent-soft); color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.notice-sum-one.none { color: var(--text-faint); }
 .notice-head, .notice-kind {
-  display: grid; grid-template-columns: 1fr repeat(3, 4.2rem);
-  gap: .5rem; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1rem; align-items: center;
+  padding: .65rem 1rem; border-top: 1px solid var(--border);
 }
-.notice-head {
-  padding: 0 0 .4rem; border-bottom: 1px solid var(--border);
-  font-size: .7rem; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--text-faint);
+.notice-head { padding-top: .45rem; padding-bottom: .45rem; background: var(--surface-2); font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
+.notice-ways { display: grid; grid-template-columns: repeat(3, 4rem); justify-items: center; align-items: center; }
+.notice-whole { display: grid; justify-items: center; gap: .15rem; cursor: pointer; }
+.notice-whole small { text-transform: none; letter-spacing: 0; font-size: .66rem; color: var(--warn); }
+.notice-whole input { width: auto; margin: 0; }
+.notice-what { display: grid; gap: .15rem; min-width: 0; }
+.notice-what strong { display: flex; align-items: center; gap: .35rem; font-size: .92rem; }
+.notice-what small { font-size: .8rem; line-height: 1.35; }
+.notice-note { margin-top: .3rem; padding: .4rem .6rem; border-radius: var(--radius-sm); background: var(--warn-soft); color: color-mix(in srgb, var(--warn) 75%, var(--text)); }
+.notice-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+.notice-kind.is-unsaved .notice-dot, .notice-savebar .notice-dot { display: inline-block; }
+.notice-way { position: relative; display: inline-flex; align-items: center; cursor: pointer; min-height: 32px; }
+.notice-way-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.notice-way input {
+  appearance: none; -webkit-appearance: none; width: 34px; height: 20px; margin: 0; padding: 0;
+  border-radius: 999px; background: var(--border-strong); position: relative; cursor: pointer; border: 0;
+  transition: background .15s;
 }
-.notice-kind { padding: .6rem 0; border-bottom: 1px solid var(--border); }
-.notice-kind:last-child { border-bottom: 0; }
-.notice-what { display: grid; gap: .1rem; min-width: 0; }
-.notice-what small { font-size: .78rem; line-height: 1.35; }
-.notice-note { color: var(--text-dim); font-style: italic; }
-.notice-way { text-align: center; }
-.notice-also { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin-top: .35rem; }
-.notice-also-pick {
-  width: auto; min-width: 9rem; max-width: 100%;
-  font-size: .78rem; padding: .18rem 1.6rem .18rem .4rem; height: auto;
+.notice-way input::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: left .15s;
 }
+.notice-way input:checked { background: var(--accent); }
+.notice-way input:checked::after { left: 16px; }
+.notice-way input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.notice-also { grid-column: 1; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin-top: -.3rem; }
+.notice-also:empty { display: none; }
+.notice-also-add { border: 0; background: none; padding: .15rem 0; font: inherit; font-size: .8rem; font-weight: 600; color: var(--accent); cursor: pointer; }
+.notice-also-pick { width: auto; min-width: 11rem; max-width: 100%; font-size: .8rem; padding: .2rem 1.6rem .2rem .45rem; height: auto; }
 .notice-also-one {
   display: inline-flex; align-items: center; gap: .3rem;
-  padding: .15rem .4rem .15rem .5rem; border-radius: 999px;
+  padding: .12rem .45rem .12rem .55rem; border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
-  background: var(--accent-soft); color: var(--text);
-  font-size: .76rem; cursor: pointer;
+  background: var(--accent-soft); color: var(--text); font: inherit; font-size: .76rem; cursor: pointer;
 }
 .notice-also-x { color: var(--text-dim); font-size: .9rem; line-height: 1; }
 .notice-also-one:hover .notice-also-x { color: var(--bad); }
-.notice-way input { width: auto; margin: 0; }
+.notice-more { display: block; width: 100%; padding: .6rem; border: 0; border-top: 1px solid var(--border); background: none; font: inherit; font-size: .85rem; color: var(--accent); font-weight: 600; cursor: pointer; }
+/* Fixed rather than sticky: the panel scrolls sideways in its own box, and a
+   sticky bar inside that box never sticks to the window. */
+.notice-savebar {
+  position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 30;
+  display: flex; align-items: center; gap: .6rem; padding: .5rem .55rem .5rem 1rem;
+  background: var(--text); color: var(--surface); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(16, 24, 40, .25);
+  font-size: .9rem;
+}
+.notice-savebar[hidden] { display: none; }
+.notice-savebar-gap { width: 1.5rem; }
+.notice-savebar .btn-ghost { color: color-mix(in srgb, var(--surface) 75%, transparent); }
+.notice-savebar .btn-ghost:hover { background: transparent; color: var(--surface); }
+.notice-savebar .btn-primary { background: var(--surface); color: var(--text); border-color: var(--surface); }
 
 @media (max-width: 620px) {
-  .notice-head, .notice-kind { grid-template-columns: 1fr repeat(3, 2.6rem); gap: .3rem; }
-  .notice-head { font-size: .62rem; }
+  .notice-head { display: none; }
+  .notice-kind { grid-template-columns: minmax(0, 1fr); }
+  .notice-ways { display: flex; flex-wrap: wrap; gap: .4rem; justify-items: start; }
+  .notice-way { min-height: 36px; padding: 0 .8rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: .82rem; color: var(--text-dim); }
+  .notice-way-name { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .notice-way input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border-radius: 999px; }
+  .notice-way:has(input:checked) { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: color-mix(in srgb, var(--accent) 80%, var(--text)); font-weight: 650; }
+  .notice-way:has(input:checked) .notice-way-name::before { content: "\2713  "; }
+  .notice-way:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .notice-sum { display: none; }
+  .notice-savebar { bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px)); width: calc(100% - 1.5rem); box-sizing: border-box; justify-content: space-between; }
+  .notice-savebar-gap { display: none; }
 }
 
 /* Who heard that the rota went out. A list of people rather than a table:
@@ -8130,9 +8191,15 @@ button.lp-row:disabled { cursor: default; }
 /* The panel's own heading says what the band heading said. */
 .settings-panel .rules-band-head { display: none; }
 .settings-panel .rules-band { margin-top: 0; }
-/* The group's own switch sits under the column name it sets. */
-.notice-whole { display: grid; justify-items: center; gap: .2rem; cursor: pointer; }
 .settings-jumps { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
+/* A section drawn as tabs: one part at a time. */
+.settings-tabs { display: flex; gap: .2rem; margin-top: .7rem; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.settings-tabs button {
+  flex: none; padding: .55rem .85rem; min-height: 40px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: none; font: inherit; font-size: .9rem; color: var(--text-dim); cursor: pointer;
+}
+.settings-tabs button:hover { color: var(--text); }
+.settings-tabs button.on { color: var(--text); font-weight: 650; border-bottom-color: var(--text); }
 .settings-jumps a {
   font-size: .82rem; padding: .25rem .65rem; border-radius: 999px; border: 1px solid var(--border);
   background: var(--surface); color: var(--text-dim); text-decoration: none;

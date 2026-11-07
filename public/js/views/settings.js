@@ -97,6 +97,8 @@ export const SECTIONS = [
   },
   {
     key: 'notifications', label: 'Notifications', hint: 'What goes out, reminders',
+    // One part at a time: each is long, and stacked they made one very long page.
+    tabs: true,
     panels: [
       { key: 'kinds', label: 'What goes out', need: 'users', render: notices('kinds'), words: 'alert email text push kind' },
       { key: 'reminders', label: 'Reminders to staff', need: 'att_setup', render: rules(['What their phone tells them']), words: 'clock in reminder chase clock out phone' },
@@ -183,10 +185,17 @@ export async function renderSettings(params = {}) {
   // Which panels of this section the search leaves showing. Hidden rather
   // than thrown away, so clearing the box does not lose what was typed.
   const blocks = new Map();
+  // A section drawn as tabs shows the one chosen; a search shows every part it matches.
+  let tab = null;
   const filterPanels = () => {
     for (const p of section?.panels ?? []) {
       const el = blocks.get(p.key);
-      if (el) el.hidden = !matches(p, section);
+      if (el) el.hidden = !matches(p, section) || Boolean(section.tabs && !query && tab && p.key !== tab);
+    }
+    for (const b of content.querySelectorAll('.settings-tabs button')) {
+      const on = !query && b.dataset.key === tab;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
     }
   };
 
@@ -195,16 +204,27 @@ export async function renderSettings(params = {}) {
     replaceParams('settings', focus ? { section: s.key, panel: focus } : { section: s.key });
     paintNav();
     blocks.clear();
+    tab = s.tabs ? (s.panels.some((p) => p.key === focus) ? focus : s.panels[0].key) : null;
     const heads = s.panels.map((p) => {
       const body = h('div.settings-panel-body', h('div.card', h('div.skeleton', { style: { height: '120px' } })));
       const el = h('section.settings-panel', { id: `settings-${p.key}`, 'aria-labelledby': `settings-${p.key}-h` },
-        s.panels.length > 1 ? h('h2.settings-panel-head', { id: `settings-${p.key}-h` }, p.label) : null,
+        s.panels.length > 1 && !s.tabs ? h('h2.settings-panel-head', { id: `settings-${p.key}-h` }, p.label) : null,
         body);
       blocks.set(p.key, el);
       return { p, el, body };
     });
     // A long section is still one page; these jump down it.
-    const jumps = s.panels.length > 2
+    const jumps = s.tabs
+      ? h('div.settings-tabs', { role: 'tablist', 'aria-label': `Parts of ${s.label}` }, s.panels.map((p) => h('button', {
+        type: 'button', role: 'tab', 'data-key': p.key,
+        onclick: () => {
+          if (query) { query = ''; search.value = ''; paintNav(); }
+          tab = p.key;
+          replaceParams('settings', { section: s.key, panel: p.key });
+          filterPanels();
+        },
+      }, p.label)))
+      : s.panels.length > 2
       ? h('nav.settings-jumps', { 'aria-label': `Parts of ${s.label}` }, s.panels.map((p) => h('a', {
         href: `#/settings?section=${s.key}&panel=${p.key}`,
         onclick: (e) => {
@@ -225,7 +245,7 @@ export async function renderSettings(params = {}) {
         mount(body, h('div.card.empty', h('h3', 'Could not load this'), h('p.muted', err.message)));
       }
     }));
-    if (focus && blocks.get(focus)) blocks.get(focus).scrollIntoView({ block: 'start' });
+    if (focus && blocks.get(focus) && !s.tabs) blocks.get(focus).scrollIntoView({ block: 'start' });
   };
 
   const search = h('input', {

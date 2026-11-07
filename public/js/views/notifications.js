@@ -87,28 +87,50 @@ function kindsTab(data, reload) {
   // Worked on as a plain object and sent whole, so one Save covers the screen
   // rather than forty separate writes as somebody works down it.
   const wanted = JSON.parse(JSON.stringify(data.channels ?? {}));
+  const groups = data.groups ?? [];
+  const kinds = data.kinds ?? [];
+  const audiences = data.audiences ?? [];
+  const nameOf = (key) => audiences.find((a) => a.key === key)?.label ?? key;
 
   // On means: somebody ticked it, or nobody has touched it and the app sends
   // it that way anyway. Both are stored as an answer to the same question, so
   // the screen does not have to explain the difference to anybody.
-  const isOn = (kind, way) => {
-    const said = wanted[kind.key]?.[way];
+  const isOnIn = (store, kind, way) => {
+    const said = store[kind.key]?.[way];
     if (said === 1 || said === true) return true;
     if (said === 0 || said === false) return false;
     return kind.ways.includes(way);
   };
+  const isOn = (kind, way) => isOnIn(wanted, kind, way);
+  const alsoIn = (store, kind) => [...(store[kind.key]?.also ?? [])].sort();
+  const shape = (store, kind) => JSON.stringify([...WAYS.map(([w]) => isOnIn(store, kind, w)), alsoIn(store, kind)]);
 
-  const box = (kind, way) => {
-    const input = h('input', {
-      type: 'checkbox',
-      checked: isOn(kind, way),
-      'aria-label': `${kind.label} by ${way}`,
-      onchange: () => {
-        wanted[kind.key] = wanted[kind.key] ?? {};
-        wanted[kind.key][way] = input.checked ? 1 : 0;
-      },
-    });
-    return input;
+  // What was saved, to tell what is not yet, and what differs from how HIVE sends it.
+  const saved = JSON.parse(JSON.stringify(data.channels ?? {}));
+  const unsaved = (kind) => shape(wanted, kind) !== shape(saved, kind);
+  const changedHere = (kind) => shape(wanted, kind) !== shape({}, kind);
+
+  const FILTERS = [
+    ['all', 'All', () => true],
+    ['text', 'Sends a text', (k) => isOn(k, 'text')],
+    ['changed', 'Changed here', changedHere],
+    ['extra', 'Sent to extra people', (k) => alsoIn(wanted, k).length > 0],
+  ];
+  let filter = 'all';
+  let query = '';
+  const opened = new Set();
+  const showAll = new Set();
+
+  const fits = (kind) => {
+    if (!FILTERS.find(([key]) => key === filter)[2](kind)) return false;
+    if (!query) return true;
+    const hay = `${kind.label} ${kind.who} ${kind.when}`.toLowerCase();
+    return query.split(/\s+/).every((w) => hay.includes(w));
+  };
+
+  const setWay = (kind, way, on) => {
+    wanted[kind.key] = wanted[kind.key] ?? {};
+    wanted[kind.key][way] = on ? 1 : 0;
   };
 
   /**
@@ -117,52 +139,164 @@ function kindsTab(data, reload) {
    * Alongside whoever it already reaches rather than instead of them. Taking
    * "your leave was approved" away from the person who asked for it is not a
    * setting anybody wants, and offering it is how somebody switches it off by
-   * accident on a Friday afternoon.
-   *
-   * Permissions rather than names, so a notice sent to "whoever signs the
-   * period off" keeps reaching somebody promoted tomorrow and stops reaching
-   * somebody demoted yesterday.
+   * accident on a Friday afternoon. Permissions rather than names, so it keeps
+   * up with promotions. Shown only once used: a link until then.
    */
   const alsoFor = (kind) => {
     const host = h('div.notice-also');
-    const chosen = new Set(wanted[kind.key]?.also ?? []);
-
-    const remember = () => {
-      wanted[kind.key] = wanted[kind.key] ?? {};
-      if (chosen.size) wanted[kind.key].also = [...chosen];
-      else delete wanted[kind.key].also;
-      draw();
-    };
-
-    const nameOf = (key) =>
-      (data.audiences ?? []).find((a) => a.key === key)?.label ?? key;
-
-    function draw() {
+    let picking = false;
+    const draw = () => {
+      const chosen = alsoIn(wanted, kind);
+      const keep = (list) => {
+        wanted[kind.key] = wanted[kind.key] ?? {};
+        if (list.length) wanted[kind.key].also = list;
+        else delete wanted[kind.key].also;
+        picking = false;
+        draw();
+        changed();
+      };
+      const left = audiences.filter((a) => !chosen.includes(a.key));
       mount(host,
-        [...chosen].map((key) => h('button.notice-also-one', {
+        chosen.map((key) => h('button.notice-also-one', {
           type: 'button',
           title: 'Stop sending it to them',
-          onclick: () => { chosen.delete(key); remember(); },
-        }, nameOf(key), h('span.notice-also-x', '\u00d7'))),
-
-        h('select.notice-also-pick', {
-          onchange: (event) => {
-            if (!event.target.value) return;
-            chosen.add(event.target.value);
-            remember();
-          },
-        },
-        h('option', { value: '' }, chosen.size ? 'and…' : 'Also send to…'),
-        ...(data.audiences ?? [])
-          .filter((a) => !chosen.has(a.key))
-          .map((a) => h('option', { value: a.key }, a.label))));
-    }
-
+          'aria-label': `Stop sending ${kind.label} to ${nameOf(key)}`,
+          onclick: () => keep(chosen.filter((k) => k !== key)),
+        }, `Also: ${nameOf(key)}`, h('span.notice-also-x', { 'aria-hidden': 'true' }, '×'))),
+        picking
+          ? h('select.notice-also-pick', {
+            'aria-label': `Also send ${kind.label} to`,
+            onchange: (event) => { if (event.target.value) keep([...chosen, event.target.value]); },
+            // Later, and only if nothing was chosen: choosing redraws the box away itself.
+            onblur: () => setTimeout(() => { if (picking) { picking = false; draw(); } }, 0),
+          }, h('option', { value: '' }, 'Choose who…'), left.map((a) => h('option', { value: a.key }, a.label)))
+          : left.length ? h('button.notice-also-add', {
+            type: 'button',
+            onclick: () => { picking = true; draw(); host.querySelector('select')?.focus(); },
+          }, '+ Also send to…') : null);
+    };
     draw();
     return host;
   };
 
-  const save = async (event) => {
+  const host = h('div.notice-page');
+  const list = h('div.notice-groups');
+  const chips = h('div.notice-filters', { role: 'group', 'aria-label': 'Show' });
+  const bar = h('div.notice-savebar', { hidden: true, role: 'status' });
+
+  const paintChips = () => mount(chips, FILTERS.map(([key, label, test]) => h('button.chip', {
+    type: 'button',
+    class: filter === key ? 'on' : '',
+    'aria-pressed': filter === key ? 'true' : 'false',
+    onclick: () => { filter = key; paintChips(); paintList(); },
+  }, label, h('small', String(kinds.filter(test).length)))));
+
+  const paintBar = () => {
+    const n = kinds.filter(unsaved).length;
+    bar.hidden = !n;
+    if (!n) return;
+    mount(bar,
+      h('span.notice-dot', { 'aria-hidden': 'true' }),
+      h('span', `${n} change${n === 1 ? '' : 's'} not saved`),
+      h('span.notice-savebar-gap'),
+      h('button.btn.btn-ghost', { type: 'button', onclick: () => reload() }, 'Discard'),
+      h('button.btn.btn-primary', { type: 'button', onclick: save }, 'Save'));
+  };
+
+  // Something was switched: the dots, the counts and the bar follow.
+  function changed() {
+    for (const row of list.querySelectorAll('.notice-kind')) {
+      const kind = kinds.find((k) => k.key === row.dataset.key);
+      if (kind) row.classList.toggle('is-unsaved', unsaved(kind));
+    }
+    for (const g of list.querySelectorAll('.notice-group')) g._sum?.();
+    paintChips();
+    paintBar();
+  }
+
+  const row = (kind) => h('div.notice-kind', { 'data-key': kind.key, class: unsaved(kind) ? 'is-unsaved' : '' },
+    h('div.notice-what',
+      h('strong', h('span.notice-dot', { 'aria-hidden': 'true', title: 'Changed, not saved' }), kind.label),
+      h('small.muted', `${kind.who} · ${kind.when.charAt(0).toLowerCase()}${kind.when.slice(1)}`),
+      kind.note ? h('small.notice-note', kind.note) : null),
+    h('div.notice-ways', WAYS.map(([way, label]) => h('label.notice-way',
+      h('input', {
+        type: 'checkbox',
+        role: 'switch',
+        checked: isOn(kind, way),
+        'aria-label': `${kind.label} by ${label.toLowerCase()}`,
+        onchange: (event) => { setWay(kind, way, event.target.checked); changed(); },
+      }),
+      h('span.notice-way-name', label)))),
+    alsoFor(kind));
+
+  const group = (g, mine) => {
+    const all = kinds.filter((k) => k.group === g.key);
+    const searching = Boolean(query) || filter !== 'all';
+    const open = searching || opened.has(g.key);
+    const sum = h('span.notice-sum');
+    const paintSum = () => mount(sum, WAYS.map(([way, label]) => {
+      const on = all.filter((k) => isOn(k, way)).length;
+      return h('span.notice-sum-one', { class: on === all.length ? 'all' : on === 0 ? 'none' : '' }, `${label} ${on}/${all.length}`);
+    }));
+    paintSum();
+
+    const el = h('section.notice-group', { class: open ? 'open' : '' },
+      h('button.notice-group-head', {
+        type: 'button',
+        'aria-expanded': open ? 'true' : 'false',
+        onclick: () => {
+          if (opened.has(g.key)) opened.delete(g.key); else opened.add(g.key);
+          paintList();
+        },
+      },
+      h('span.notice-chev', { 'aria-hidden': 'true' }),
+      h('strong', g.label),
+      h('span.muted.notice-count', searching ? `${mine.length} of ${all.length}` : `${all.length} notice${all.length === 1 ? '' : 's'}`),
+      sum));
+    el._sum = paintSum;
+    if (!open) return el;
+
+    // One switch per way for the whole group, above the column it sets: a
+    // property that wants no texts about pay unticks one box, not nine.
+    const whole = (way, label) => {
+      const input = h('input', {
+        type: 'checkbox',
+        'aria-label': `Every ${g.label.toLowerCase()} notice by ${label.toLowerCase()}`,
+        title: `Every one in this group by ${label.toLowerCase()}`,
+        onchange: () => {
+          for (const kind of all) setWay(kind, way, input.checked);
+          paintList();
+          changed();
+        },
+      });
+      const on = all.filter((k) => isOn(k, way)).length;
+      input.checked = on === all.length;
+      input.indeterminate = on > 0 && on < all.length;
+      return h('label.notice-whole', h('span', label), way === 'text' ? h('small', 'costs money') : null, input);
+    };
+
+    const LIMIT = 8;
+    const shown = searching || showAll.has(g.key) ? mine : mine.slice(0, LIMIT);
+    el.append(
+      h('div.notice-head', h('span', 'Notice'), h('div.notice-ways', WAYS.map(([way, label]) => whole(way, label)))),
+      ...shown.map(row),
+      shown.length < mine.length
+        ? h('button.notice-more', { type: 'button', onclick: () => { showAll.add(g.key); paintList(); } },
+          `Show ${mine.length - shown.length} more`)
+        : null);
+    return el;
+  };
+
+  function paintList() {
+    const drawn = groups.map((g) => {
+      const mine = kinds.filter((k) => k.group === g.key && fits(k));
+      return mine.length ? group(g, mine) : null;
+    }).filter(Boolean);
+    mount(list, drawn.length ? drawn : h('p.muted', 'No notice matches that.'));
+  }
+
+  async function save(event) {
     event.target.disabled = true;
     try {
       await api.updateNotifications({ channels: wanted });
@@ -172,80 +306,34 @@ function kindsTab(data, reload) {
       toast(err.message, 'bad');
       event.target.disabled = false;
     }
-  };
+  }
 
-  const groups = data.groups ?? [];
-  const kinds = data.kinds ?? [];
+  const search = h('input.notice-search', {
+    type: 'search',
+    placeholder: 'Find a notice, e.g. leave or payslip',
+    'aria-label': 'Find a notice',
+    oninput: () => { query = search.value.trim().toLowerCase(); paintList(); },
+  });
 
-  return h('div',
-    h('p.muted', { style: { maxWidth: '52rem' } },
-      'A tick means this kind goes out that way. Untick it and the notice still happens '
-      + 'and still shows in the bell, it just stops buzzing a phone, landing in an inbox '
-      + 'or costing a text. Tick one that was never on and it starts going out that way '
-      + 'from the next one.'),
-    h('p.muted', { style: { maxWidth: '52rem' } },
-      h('strong', 'Texts cost money every time. '),
-      'Nothing texts unless it is ticked here, and a chatty kind ticked for text is a bill '
-      + 'at the end of the month rather than a setting.'),
-    h('p.muted', { style: { maxWidth: '52rem' } },
-      '"Also send to" adds a group alongside whoever the notice already reaches. It never '
-      + 'takes anybody away: the person a notice is about is always told, whatever else is '
-      + 'set here.'),
-
-    ...groups.map((group) => {
-      const mine = kinds.filter((k) => k.group === group.key);
-      if (!mine.length) return null;
-
-      // One switch per way for the whole group, above the column it sets: a
-      // property that wants no texts about pay unticks one box, not nine.
-      const boxes = new Map(WAYS.map(([way]) => [way, []]));
-      const rows = mine.map((kind) => h('div.notice-kind',
-        h('div.notice-what',
-          h('strong', kind.label),
-          h('small.muted', `${kind.who}. ${kind.when}.`),
-          kind.note ? h('small.notice-note', kind.note) : null,
-          alsoFor(kind)),
-        ...WAYS.map(([way]) => {
-          const input = box(kind, way);
-          boxes.get(way).push({ kind, input });
-          return h('span.notice-way', input);
-        })));
-      const whole = (way, label) => {
-        const all = boxes.get(way);
-        const input = h('input', {
-          type: 'checkbox',
-          'aria-label': `Every ${group.label.toLowerCase()} notice by ${label.toLowerCase()}`,
-          title: `Every one in this group by ${label.toLowerCase()}`,
-          onchange: () => {
-            for (const { kind, input: one } of all) {
-              one.checked = input.checked;
-              wanted[kind.key] = wanted[kind.key] ?? {};
-              wanted[kind.key][way] = input.checked ? 1 : 0;
-            }
-          },
-        });
-        const sync = () => {
-          const on = all.filter((x) => x.input.checked).length;
-          input.checked = on === all.length;
-          input.indeterminate = on > 0 && on < all.length;
-        };
-        for (const { input: one } of all) one.addEventListener('change', sync);
-        sync();
-        return h('label.notice-way.notice-whole', h('span', label), input);
-      };
-
-      return card(group.label, { wide: true, note: `${mine.length}` },
-        h('div.notice-kinds',
-          h('div.notice-head',
-            h('span', 'Notice'),
-            ...WAYS.map(([way, label]) => whole(way, label))),
-          ...rows,
-        ));
-    }),
-
-    h('div.btn-row', { style: { justifyContent: 'flex-end' } },
-      h('button.btn.btn-primary', { onclick: save }, 'Save what goes out')),
-  );
+  paintChips();
+  paintList();
+  mount(host,
+    h('p.notice-lead',
+      'Switch off a way out and the notice still shows in the bell. It just stops buzzing a phone, '
+      + 'landing in an inbox or sending a text. The person a notice is about is always told. ',
+      h('details.notice-how',
+        h('summary', 'How this works'),
+        h('p', 'A switch on means this kind goes out that way. Switch one on that was never on and it '
+          + 'starts going out that way from the next one.'),
+        h('p', h('strong', 'Texts cost money every time. '),
+          'Nothing texts unless it is switched on here, and a chatty kind switched on for text is a bill '
+          + 'at the end of the month rather than a setting.'),
+        h('p', '"Also send to" adds a group alongside whoever the notice already reaches. It never takes '
+          + 'anybody away.'))),
+    h('div.notice-tools', search, chips),
+    list,
+    bar);
+  return host;
 }
 
 // ---------------------------------------------------------------------------
