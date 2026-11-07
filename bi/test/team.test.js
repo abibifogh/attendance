@@ -38,10 +38,11 @@ async function setUp({ mondaysLate = true } = {}) {
     INSERT INTO users (id, name, email, role, active, staff_id) VALUES (801, 'Yaw Test', 'Yaw@Example.test', 'staff', 1, 1), (802, 'Kojo Test', 'kojo@example.test', 'staff', 1, NULL), (804, 'Esi Test', 'esi@example.test', 'staff', 1, NULL);
     INSERT INTO user_staff (user_id, staff_id) VALUES (804, 3);
     INSERT INTO hr_profile (staff_id, personal_email) VALUES (3, 'ama@example.test');`);
-  // 120 days of day shifts, Monday to Saturday. Yaw late most Mondays; missed two.
+  // 120 days of day shifts, Monday to Saturday, and today whatever day it is,
+  // so everybody is on shift now. Yaw late most Mondays; missed two.
   for (let i = 120; i >= 0; i -= 1) {
     const d = addDays(today, -i);
-    if (dow(d) === 0) continue;
+    if (dow(d) === 0 && i !== 0) continue;
     for (const staff of [1, 2, 3]) {
       const missed = staff === 1 && (i === 40 || i === 41);
       const late = staff === 1 && mondaysLate && dow(d) === 1 && i < 85 ? 18 : 0;
@@ -53,9 +54,10 @@ async function setUp({ mondaysLate = true } = {}) {
   }
   // The rota ahead.
   for (let i = 1; i <= 3; i += 1) if (dow(addDays(today, i)) !== 0) hive.raw.prepare('INSERT INTO att_roster (staff_id, day, shift_id) VALUES (1, ?, 99)').run(addDays(today, i));
-  // What Yaw asked for in HIVE: an advance waiting, leave approved.
+  // What Yaw asked for in HIVE: an advance waiting, leave approved. The leave
+  // was asked for and decided before this week on any day the test runs.
   hive.raw.exec(`INSERT INTO hr_advance (staff_id, amount, months, monthly, status, asked_at) VALUES (1, 300, 3, 100, 'requested', '${addDays(today, -3)} 09:00:00');
-    INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status, requested_at, decided_at) VALUES (1, 'annual', '${addDays(today, 12)}', '${addDays(today, 13)}', 2, 'approved', '${addDays(today, -6)} 10:00:00', '${addDays(today, -5)} 10:00:00');`);
+    INSERT INTO att_leave (staff_id, reason_code, from_day, to_day, days, status, requested_at, decided_at) VALUES (1, 'annual', '${addDays(today, 12)}', '${addDays(today, 13)}', 2, 'approved', '${addDays(today, -10)} 10:00:00', '${addDays(today, -9)} 10:00:00');`);
   // An Insight to-do given to Yaw: overdue.
   raw.prepare(`INSERT INTO shift_task (key, what, for_id, for_name, due, made_by, made_at) VALUES ('k', 'Fix the fridge door seal', 51, 'Yaw Test', ?, 'Ama Test', ?)`).run(addDays(today, -2), `${addDays(today, -4)} 09:00:00`);
 
@@ -118,10 +120,12 @@ test('everybody in HIVE: what they are doing, have coming up, overdue, done and 
   assert.equal(p.person.name, 'Yaw Test');
   assert.deepEqual(p.lists.doing.map((x) => x.title), ['Generator service']);
   assert.ok(p.lists.overdue.some((x) => x.title === 'Fix the fridge door seal' && x.app === 'insight'));
-  assert.ok(p.lists.due.some((x) => x.kind === 'shift'), 'his shifts ahead');
-  // Asked for: what is still waiting, and what was asked or decided in the period (the leave, decided days ago, is in the month).
+  // Seen from next week, so the shifts ahead fall inside it whatever day the test runs.
+  const ahead = await team.person(env, 1, { period: 'week', day: addDays(today, 7) }, OWNER);
+  assert.ok(ahead.lists.due.some((x) => x.kind === 'shift'), 'the shifts ahead');
+  // Asked for: what is still waiting, and what was asked or decided in the period (the leave, decided before this week, is in the month it was decided).
   assert.deepEqual(p.lists.asked.map((x) => x.title).sort(), ['Advance GH₵ 300', 'Parts for R12 tap']);
-  const inMonth = await team.person(env, 1, { period: 'month', day: addDays(today, -5) }, OWNER);
+  const inMonth = await team.person(env, 1, { period: 'month', day: addDays(today, -9) }, OWNER);
   assert.ok(inMonth.lists.asked.some((x) => x.title.startsWith('Leave ') && x.decision === 'approved'));
   // Looking back at another period still says how they are today.
   const back = await team.overview(env, { period: 'week', day: addDays(today, -14) }, OWNER);
